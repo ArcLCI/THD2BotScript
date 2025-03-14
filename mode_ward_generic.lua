@@ -47,42 +47,8 @@ function GetDesire()
 	if ItemWard ~= nil
 	and ItemWard:GetCooldownTimeRemaining() == 0
 	then
-
-		Pinged, WardTargetLocation = Ward.IsPingedByHumanPlayer(bot)
-
-		if Pinged and GetUnitToLocationDistance(bot, WardTargetLocation) > 1200 then
-			if J.Utils.IsTeamPushingSecondTierOrHighGround(bot) then
-				return BOT_MODE_DESIRE_NONE;
-			end
-
-			if J.GetEnemiesAroundAncient(bot, 3200) > 0 then
-				return BOT_MODE_DESIRE_NONE
-			end
-		end
-
-		if Pinged
-		and WardTargetLocation ~= nil
-		and not Ward.IsOtherWardClose(WardTargetLocation)
-		then
-			bot.ward = true
-			return RemapValClamped(GetUnitToLocationDistance(bot, WardTargetLocation), 1200, 0, BOT_MODE_DESIRE_MODERATE, BOT_MODE_DESIRE_HIGH)
-		end
-
-		AvailableSpots = Ward.GetAvailableSpot(bot)
-		WardTargetLocation, WardTargetDist = Ward.GetClosestSpot(bot, AvailableSpots)
-
-		if WardTargetLocation and GetUnitToLocationDistance(bot, WardTargetLocation) > 1200 then
-			if J.Utils.IsTeamPushingSecondTierOrHighGround(bot) then
-				return BOT_MODE_DESIRE_NONE;
-			end
-
-			if J.GetEnemiesAroundAncient(bot, 3200) > 0 then
-				return BOT_MODE_DESIRE_NONE
-			end
-		end
-
 		if WardTargetLocation ~= nil
-		and DotaTime() > (J.IsModeTurbo() and -45 or -60)
+		and DotaTime() > -60
 		and DotaTime() < 0
 		and not IsEnemyCloserToWardLocation(WardTargetLocation, WardTargetDist)
 		then
@@ -157,7 +123,6 @@ function Think()
 	if bot.ward
 	then
 		if (WardTargetDist <= nWardCastRange)
-		or Pinged
 		then
 			if DotaTime() > ItemSwapTime + 7.0
 			and ItemWard ~= nil and not ItemWard:IsNull()
