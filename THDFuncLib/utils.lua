@@ -545,6 +545,13 @@ end
 function ____exports.IsValidUnit(target)
     return target ~= nil and not target:IsNull() and target:CanBeSeen() and target:IsAlive() and not target:IsInvulnerable()
 end
+--- Check if the target is a valid hero.
+-- 
+-- @param target - The unit to check.
+-- @returns True if the target is a valid hero, false otherwise.
+function ____exports.IsValidHero(target)
+    return ____exports.IsValidUnit(target) and target:IsHero()
+end
 --- Get the distance between two locations.
 -- 
 -- @param fLoc - The first location.
@@ -698,6 +705,8 @@ ____exports.DebugMode = false
 ____exports.ScriptID = 3246316298
 ____exports.RadiantFountainTpPoint = Vector(-7172, -6652, 384)
 ____exports.DireFountainTpPoint = Vector(6982, 6422, 392)
+____exports.RadiantRoshanLoc = Vector(-2984, 2349, 1092)
+____exports.DireRoshanLoc = Vector(2980, -2816, 1107)
 ____exports.BarrackList = {
     Barracks.TopMelee,
     Barracks.TopRanged,
@@ -900,7 +909,10 @@ function ____exports.PrintUnitModifiers(unit)
 end
 function ____exports.PrintPings(pingTimeGap)
     local listPings = {}
-    local teamPlayers = GetTeamPlayers(GetTeam())
+    local teamPlayers = GetTeamPlayers(
+        GetTeam(),
+        true
+    )
     for ____, ____value in __TS__Iterator(__TS__ArrayEntries(teamPlayers)) do
         local index = ____value[1]
         local _ = ____value[2]
@@ -915,6 +927,15 @@ function ____exports.PrintPings(pingTimeGap)
                 local ping = allyHero:GetMostRecentPing()
                 if ping.time ~= 0 and GameTime() - ping.time < pingTimeGap then
                     listPings[#listPings + 1] = ping
+                    for ____, unit in ipairs(GetUnitList(UnitType.All)) do
+                        if ____exports.IsValidHero(unit) and ____exports.GetLocationToLocationDistance(
+                            ping.location,
+                            unit:GetLocation()
+                        ) < 400 then
+                            print(unit:GetUnitName())
+                            ____exports.PrintUnitModifiers(unit)
+                        end
+                    end
                 end
                 __continue13 = true
             until true
@@ -1013,20 +1034,20 @@ function ____exports.IsPingedByAnyPlayer(bot, pingTimeGap, minDistance, maxDista
         local index = ____value[1]
         local _ = ____value[2]
         do
-            local __continue39
+            local __continue42
             repeat
                 local teamMember = GetTeamMember(index)
                 if teamMember == nil or teamMember:IsIllusion() or teamMember == bot then
-                    __continue39 = true
+                    __continue42 = true
                     break
                 end
                 local ping = teamMember:GetMostRecentPing()
                 if ping ~= nil then
                     pings[#pings + 1] = ping
                 end
-                __continue39 = true
+                __continue42 = true
             until true
-            if not __continue39 then
+            if not __continue42 then
                 break
             end
         end
@@ -1062,13 +1083,6 @@ end
 function ____exports.GetDistanceFromAncient(bot, enemy)
     local ancient = GetAncient(enemy and GetOpposingTeam() or GetTeam())
     return GetUnitToUnitDistance(bot, ancient)
-end
---- Check if the target is a valid hero.
--- 
--- @param target - The unit to check.
--- @returns True if the target is a valid hero, false otherwise.
-function ____exports.IsValidHero(target)
-    return ____exports.IsValidUnit(target) and target:IsHero()
 end
 --- Check if the target is a valid creep.
 -- 
@@ -1630,12 +1644,14 @@ function ____exports.IsTeamPushingSecondTierOrHighGround(bot)
     if cachedRes ~= nil then
         return cachedRes
     end
-    local res = #bot:GetNearbyHeroes(2000, false, BotMode.None) > 2 and (____exports.IsNearEnemySecondTierTower(bot, 2000) or ____exports.IsNearEnemyHighGroundTower(bot, 3000) or GetUnitToUnitDistance(
-        bot,
-        GetAncient(GetOpposingTeam())
-    ) < 3000)
-    ____exports.SetCachedVars(cacheKey, res)
-    return res
+    local ancient = GetAncient(GetOpposingTeam())
+    if ancient ~= nil then
+        local res = #bot:GetNearbyHeroes(2000, false, BotMode.None) > 2 and (____exports.IsNearEnemySecondTierTower(bot, 2000) or ____exports.IsNearEnemyHighGroundTower(bot, 3000) or GetUnitToUnitDistance(bot, ancient) < 3000)
+        ____exports.SetCachedVars(cacheKey, res)
+        return res
+    end
+    ____exports.SetCachedVars(cacheKey, false)
+    return false
 end
 --- Get the number of alive heroes.
 -- 
@@ -1666,7 +1682,7 @@ function ____exports.CountMissingEnemyHeroes()
     local count = 0
     for ____, playerdId in ipairs(GetTeamPlayers(GetOpposingTeam())) do
         do
-            local __continue235
+            local __continue239
             repeat
                 if IsHeroAlive(playerdId) then
                     local lastSeenInfo = GetHeroLastSeenInfo(playerdId)
@@ -1674,14 +1690,14 @@ function ____exports.CountMissingEnemyHeroes()
                         local firstInfo = lastSeenInfo[1]
                         if firstInfo.time_since_seen >= 2.5 then
                             count = count + 1
-                            __continue235 = true
+                            __continue239 = true
                             break
                         end
                     end
                 end
-                __continue235 = true
+                __continue239 = true
             until true
-            if not __continue235 then
+            if not __continue239 then
                 break
             end
         end
@@ -2078,5 +2094,143 @@ function ____exports.HasTeamMemberWithCriticalItemInCooldown(targetLoc)
     end
     ____exports.SetCachedVars(cacheKey, false)
     return false
+end
+function ____exports.HasPossibleWallOfReplicaAround(bot)
+    local cacheKey = "HasPossibleWallOfReplicaAround" .. tostring(bot:GetPlayerID())
+    local cachedRes = ____exports.GetCachedVars(cacheKey, 2)
+    if cachedRes ~= nil then
+        return cachedRes
+    end
+    if bot:HasModifier("modifier_dark_seer_wall_slow") then
+        ____exports.SetCachedVars(cacheKey, true)
+        return true
+    end
+    ____exports.SetCachedVars(cacheKey, false)
+    return false
+end
+--- Retrieves positions where the Wall of illusion can be.
+-- 
+-- These positions serve as the centers for the potential danger zones.
+-- 
+-- @returns An array of Vector positions marking danger zone centers.
+function ____exports.GetWallIllusionPositions(bot)
+    local cacheKey = "GetWallIllusionPositions" .. tostring(GetTeam())
+    local cachedRes = ____exports.GetCachedVars(cacheKey, 2)
+    if cachedRes ~= nil then
+        return cachedRes
+    end
+    local positions = {}
+    if ____exports.HasPossibleWallOfReplicaAround(bot) then
+        local enemies = bot:GetNearbyHeroes(1600, false, BotMode.None)
+        for ____, enemy in ipairs(enemies) do
+            if enemy:HasModifier("modifier_darkseer_wallofreplica_illusion") then
+                positions[#positions + 1] = enemy:GetLocation()
+            end
+        end
+    end
+    ____exports.SetCachedVars(cacheKey, positions)
+    return positions
+end
+--- Determines whether a given target location is inside any danger zone.
+-- 
+-- Danger zones are defined as circular areas centered on the location,
+-- using the ability's effective radius (e.g., 1000 units) as the zone radius.
+-- 
+-- @param targetPos - The position to test.
+-- @returns An object indicating whether
+-- the target is in danger and, if so, providing the center of the danger zone.
+function ____exports.IsLocationInDangerZone(bot, targetPos)
+    local radius = 1000 + 500
+    local dangerZones = ____exports.GetWallIllusionPositions(bot)
+    for ____, zoneCenter in ipairs(dangerZones) do
+        local diff = sub(targetPos, zoneCenter)
+        if length2D(diff) < radius then
+            return {inDanger = true, dangerCenter = zoneCenter}
+        end
+    end
+    return {inDanger = false}
+end
+--- Rotates a 2D vector by a given angle (in radians).
+-- 
+-- @param v - The vector to rotate.
+-- @param angle - The angle in radians.
+-- @returns The rotated vector.
+function ____exports.RotateVector(v, angle)
+    local cosTheta = math.cos(angle)
+    local sinTheta = math.sin(angle)
+    return Vector(v.x * cosTheta - v.y * sinTheta, v.x * sinTheta + v.y * cosTheta, v.z)
+end
+--- Calculates a safe destination based on a target position.
+-- 
+-- If the target position falls within a danger zone, this function computes a new
+-- position that lies just outside the danger zone (by moving away from its center),
+-- adding a safety margin. If no target is provided, the bot's current location is used.
+-- Finally, the code checks that the computed location is passable via IsLocationPassable.
+-- If the candidate is blocked, the function rotates the offset vector in increments until
+-- a passable location is found (up to a maximum number of attempts). If no passable location is
+-- found, the bot remains at its current location.
+-- 
+-- @param bot - The bot unit.
+-- @param targetPos - (Optional) The original target position.
+-- @returns A safe position to move to. If no valid safe destination is found,
+-- returns the bot's current location.
+function ____exports.GetSafeDestination(bot, targetPos)
+    local cacheKey = "GetSafeDestination" .. tostring(bot:GetPlayerID())
+    local cachedRes = ____exports.GetCachedVars(cacheKey, 2)
+    if cachedRes ~= nil then
+        return cachedRes
+    end
+    local referencePos = targetPos or add(
+        bot:GetLocation(),
+        RandomVector(260)
+    )
+    local result = ____exports.IsLocationInDangerZone(bot, referencePos)
+    if result.inDanger and result.dangerCenter then
+        local abilityRadius = 1000 + 500
+        local margin = 250
+        local offsetVec = sub(referencePos, result.dangerCenter)
+        if length2D(offsetVec) == 0 then
+            offsetVec = RandomVector(100)
+        end
+        offsetVec = offsetVec:Normalized()
+        local safePos = add(
+            result.dangerCenter,
+            multiply(offsetVec, abilityRadius + margin)
+        )
+        local maxAttempts = 5
+        local attempt = 0
+        while not IsLocationPassable(safePos) and attempt < maxAttempts do
+            offsetVec = ____exports.RotateVector(offsetVec, 36 * (math.pi / 180))
+            safePos = add(
+                result.dangerCenter,
+                multiply(offsetVec, abilityRadius + margin)
+            )
+            attempt = attempt + 1
+        end
+        if not IsLocationPassable(safePos) then
+            ____exports.SetCachedVars(
+                cacheKey,
+                bot:GetLocation()
+            )
+            return bot:GetLocation()
+        end
+        ____exports.SetCachedVars(cacheKey, safePos)
+        return safePos
+    end
+    ____exports.SetCachedVars(cacheKey, referencePos)
+    return referencePos
+end
+--- Checks if the bot's intended destination is within a danger zone and commands the bot to move
+-- to a safe destination if necessary.
+-- 
+-- @param targetPos - The original target destination.
+function ____exports.MoveBotSafely(bot, targetPos)
+    local botPos = bot:GetLocation()
+    local safeDestination = ____exports.GetSafeDestination(bot, targetPos)
+    if length2D(sub(botPos, safeDestination)) <= 100 then
+        bot:Action_MoveToLocation(safeDestination)
+        return
+    end
+    bot:Action_MoveToLocation(safeDestination)
 end
 return ____exports
