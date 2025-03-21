@@ -145,14 +145,7 @@ function J.IsSuspiciousIllusion( npcTarget )
 		or npcTarget:IsUsingAbility()
 		or npcTarget:IsChanneling()
 	)
-		-- or npcTarget:HasModifier( "modifier_item_satanic_unholy" )
-		-- or npcTarget:HasModifier( "modifier_item_mask_of_madness_berserk" )
-		-- or npcTarget:HasModifier( "modifier_black_king_bar_immune" )
-		-- or npcTarget:HasModifier( "modifier_rune_doubledamage" )
-		-- or npcTarget:HasModifier( "modifier_rune_regen" )
-		-- or npcTarget:HasModifier( "modifier_rune_haste" )
-		-- or npcTarget:HasModifier( "modifier_rune_arcane" )
-		-- or npcTarget:HasModifier( "modifier_item_phase_boots_active" )
+
 	then
 		npcTarget.is_suspicious_illusion = false
 		return false
@@ -162,7 +155,7 @@ function J.IsSuspiciousIllusion( npcTarget )
 
 	if npcTarget:GetTeam() == bot:GetTeam()
 	then
-		npcTarget.is_suspicious_illusion = npcTarget:IsIllusion() or npcTarget:HasModifier( "modifier_arc_warden_tempest_double" )
+		npcTarget.is_suspicious_illusion = npcTarget:IsIllusion()
 		return npcTarget.is_suspicious_illusion
 	elseif npcTarget:GetTeam() == GetOpposingTeam()
 	then
@@ -186,14 +179,6 @@ function J.IsSuspiciousIllusion( npcTarget )
 			npcTarget.is_suspicious_illusion = true
 			return true
 		end
-		--[[
-		if GetSelectedHeroName( tID ) ~= "npc_dota_hero_morphling"
-			and GetSelectedHeroName( tID ) ~= npcTarget:GetUnitName()
-		then
-			npcTarget.is_suspicious_illusion = true
-			return true
-		end
-		--]]
 	end
 
 	npcTarget.is_suspicious_illusion = false
