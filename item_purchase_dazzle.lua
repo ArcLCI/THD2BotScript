@@ -38,14 +38,6 @@ local tableItemsToBuy = {
 				"item_god_hand",
 					"item_recipe_loneliness",
 
-				"item_broom",
-				"item_wind_amulet",
-					"item_recipe_horse_green",
-				"item_broom",
-				"item_wind_amulet",
-					"item_recipe_horse_blue",
-					"item_recipe_horse_king",
-
 				"item_cat_foot",
 				"item_paper_mask",
 				"item_rocket_diagram",

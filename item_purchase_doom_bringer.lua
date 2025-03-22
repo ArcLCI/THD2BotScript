@@ -2,11 +2,9 @@
 require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
-local tableItemsToBuy = { 
+local tableItemsToBuy = {
 				"item_broom",
-					"item_wind_amulet",
-"item_recipe_horse_red",
-					
+
 				"item_bra",
 				"item_baozi",
 				"item_glue",
@@ -17,7 +15,9 @@ local tableItemsToBuy = {
 					"item_recipe_ghost_balloon",
 				"item_swimming_suit",
 						"item_recipe_xuenvdeweijin",
-						
+
+					"item_recipe_travel_boots",
+
 				"item_cat_ear",
 				"item_cherry_leaf",
 				"item_sailor_suit",
@@ -27,7 +27,7 @@ local tableItemsToBuy = {
 					"item_recipe_jiao_shou",
 				"item_wing",
 					"item_recipe_zaiezhizhurenxing",
-						
+
 				"item_baozi",
 				"item_sake",
 				"item_zun_hat",
@@ -38,21 +38,21 @@ local tableItemsToBuy = {
 				"item_cookbook",
 					"item_recipe_mushroom_soup",
 					"item_recipe_nuclear_stick",
-					
+
 				"item_gran_grimoire",
 				"item_gran_grimoire",
 					"item_recipe_bagua",
-								
+
 				"item_god_hand",
 				"item_god_hand",
 					"item_recipe_loneliness",
-					
+
 				"item_cat_foot",
 				"item_paper_mask",
 				"item_rocket_diagram",
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
-					"item_recipe_wanbaochui2",	
+					"item_recipe_wanbaochui2",
 			};
 
 

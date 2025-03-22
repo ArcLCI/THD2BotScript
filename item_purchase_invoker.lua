@@ -1,13 +1,15 @@
 
 
-local tableItemsToBuy = { 
+local tableItemsToBuy = {
 				"item_broom",
-				
+
 				"item_candle",
 				"item_mushroom",
 				"item_mushroom",
 				"item_recipe_peach",
-				
+
+				"item_recipe_travel_boots",
+
 				"item_mushroom",
 				"item_mushroom",
 				"item_recipe_touhou_banana",
@@ -15,23 +17,20 @@ local tableItemsToBuy = {
 				"item_scissors",
 				"item_recipe_quant",
 				"item_recipe_anchor",
-				
+
 				"item_god_hand",
 				"item_god_hand",
 				"item_recipe_loneliness",
-				
+
 				"item_silver_knife",
 				"item_paper_mask",
 				"item_cat_foot",
 				"item_recipe_ganggenier",
-				
-				"item_wind_amulet",
-"item_recipe_horse_red",
-				
+
 				"item_god_hand",
 				"item_god_hand",
 				"item_recipe_loneliness",
-				
+
 			};
 
 
@@ -65,9 +64,9 @@ function ItemPurchaseThink()
 	then
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchasing "..sNextItem)
 		npcBot:ActionImmediate_PurchaseItem( sNextItem );
-		if (sNextItem == "item_courier") then 
+		if (sNextItem == "item_courier") then
 			need_courier = false;
-		else 
+		else
 			table.remove( tableItemsToBuy, 1 );
 		end
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)

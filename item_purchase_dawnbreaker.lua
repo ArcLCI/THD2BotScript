@@ -44,14 +44,6 @@ local tableItemsToBuy = {
 				"item_sailor_suit",
 				"item_pant",
 					"item_recipe_diary",
-				
-				"item_broom",
-				"item_wind_amulet",
-					"item_recipe_horse_green",
-				"item_broom",
-				"item_wind_amulet",
-					"item_recipe_horse_blue",
-					"item_recipe_horse_king",
 			};
 
 

@@ -2,9 +2,9 @@
 require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
-local tableItemsToBuy = { 
+local tableItemsToBuy = {
 				"item_broom",
-				
+
 				"item_juice",
 				"item_bird",
 				"item_aunt_clothes",
@@ -20,22 +20,22 @@ local tableItemsToBuy = {
 				"item_cherry_leaf",
 				"item_recipe_tentacle",
 					"item_recipe_morenjingjuan",
-					"item_wind_amulet",
-"item_recipe_horse_red",
-						
+
+				"item_recipe_travel_boots",
+
 				"item_gran_grimoire",
 				"item_gran_grimoire",
 				"item_recipe_bagua",
-				
+
 				"item_tengu_fan",
 				"item_tengu_fan",
 					"item_recipe_camera",
-				
+
 				"item_baozi",
 				"item_sake",
 				"item_ice_block",
 					"item_recipe_hakurei_amulet",
-				
+
 
 			};
 

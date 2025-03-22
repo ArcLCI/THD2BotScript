@@ -2,11 +2,9 @@
 require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
-local tableItemsToBuy = { 
+local tableItemsToBuy = {
 				"item_broom",
-					"item_wind_amulet",
-				"item_recipe_horse_red",
-				
+
 				"item_swimming_suit",
 				"item_cherry_leaf",
 				"item_pant",
@@ -15,7 +13,9 @@ local tableItemsToBuy = {
 				"item_cherry_branch",
 					"item_recipe_mushroom_kebab",
 						"item_recipe_third_eyes",
-				
+
+				"item_recipe_travel_boots",
+
 				"item_bra",
 				"item_baozi",
 				"item_glue",
@@ -26,7 +26,7 @@ local tableItemsToBuy = {
 					"item_recipe_ghost_balloon",
 				"item_swimming_suit",
 						"item_recipe_xuenvdeweijin",
-				
+
 				"item_mushroom",
 				"item_cherry_branch",
 					"item_recipe_mushroom_kebab",
@@ -38,7 +38,7 @@ local tableItemsToBuy = {
 					"item_recipe_touhou_banana",
 				"item_cat_foot",
 					"item_recipe_brother_sharp",
-				
+
 				"item_cat_ear",
 				"item_cherry_leaf",
 				"item_sailor_suit",
@@ -48,17 +48,17 @@ local tableItemsToBuy = {
 					"item_recipe_jiao_shou",
 				"item_wing",
 					"item_recipe_zaiezhizhurenxing",
-								
+
 				"item_god_hand",
 				"item_god_hand",
 					"item_recipe_loneliness",
-					
+
 				"item_cat_foot",
 				"item_paper_mask",
 				"item_rocket_diagram",
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
-					"item_recipe_wanbaochui2",	
+					"item_recipe_wanbaochui2",
 			};
 
 
