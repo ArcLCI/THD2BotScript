@@ -16,8 +16,7 @@ local tableItemsToBuy = {
 				"item_cherry_leaf",
 					"item_recipe_smash_stick",
 
-								"item_wind_amulet",
-					"item_recipe_horse_red",
+								"item_recipe_travel_boots",
 
 				"item_recipe_yuetufensuijvren",
 

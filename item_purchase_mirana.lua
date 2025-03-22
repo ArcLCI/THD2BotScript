@@ -26,8 +26,7 @@ local tableItemsToBuy = {
 				"item_screw_driver",
 					"item_recipe_inaba_illusion_weapon",
 
-								"item_wind_amulet",
-					"item_recipe_horse_red",
+					"item_recipe_travel_boots",
 
 				"item_silver_knife",
 				"item_paper_mask",

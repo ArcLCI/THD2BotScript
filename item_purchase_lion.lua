@@ -19,8 +19,7 @@ local tableItemsToBuy = {
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
 
-								"item_wind_amulet",
-					"item_recipe_horse_red",
+								"item_recipe_travel_boots",
 
 				"item_gran_grimoire",
 				"item_gran_grimoire",

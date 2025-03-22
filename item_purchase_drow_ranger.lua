@@ -16,8 +16,7 @@ local tableItemsToBuy = {
 					"item_recipe_inaba_illusion_weapon",
 
 				--隙间鞋
-								"item_wind_amulet",
-					"item_recipe_horse_red",
+					"item_recipe_travel_boots",
 
 				"item_mushroom",
 				"item_mushroom",

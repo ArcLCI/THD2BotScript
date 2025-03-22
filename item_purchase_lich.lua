@@ -18,8 +18,7 @@ local tableItemsToBuy = {
 					"item_recipe_mushroom_soup",
 					"item_recipe_nuclear_stick",
 
-								"item_wind_amulet",
-					"item_recipe_horse_red",
+								"item_recipe_travel_boots",
 
 				"item_sake",
 				"item_rocket_diagram",
