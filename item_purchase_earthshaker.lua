@@ -12,7 +12,7 @@ local tableItemsToBuy = {
 					"item_frog",
 						"item_recipe_dummy_doll1",
 
-					"item_recipe_travel_boots",
+					"item_recipe_gap_creator",
 
 				"item_mushroom",
 				"item_mushroom",

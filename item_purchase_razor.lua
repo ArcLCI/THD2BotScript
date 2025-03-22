@@ -11,7 +11,7 @@ local tableItemsToBuy = {
 				"item_violin",
 				"item_paper_mask",
 
-				"item_recipe_travel_boots",
+				"item_recipe_gap_creator",
 
 				"item_violin",
 				"item_knife",

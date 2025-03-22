@@ -4,7 +4,7 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 local tableItemsToBuy = {
 				"item_broom",
-					"item_recipe_travel_boots",
+					"item_recipe_gap_creator",
 
 				"item_gran_grimoire",
 				"item_gran_grimoire",

@@ -14,7 +14,7 @@ local tableItemsToBuy = {
 					"item_recipe_mushroom_kebab",
 						"item_recipe_third_eyes",
 
-					"item_recipe_travel_boots",
+					"item_recipe_gap_creator",
 
 				"item_cat_ear",
 				"item_cherry_leaf",

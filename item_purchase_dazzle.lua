@@ -13,7 +13,7 @@ local tableItemsToBuy = {
 					"item_recipe_rocket",
 					"item_recipe_rocket",
 
-					"item_recipe_travel_boots",
+					"item_recipe_gap_creator",
 
 				"item_wind_amulet",
 				"item_magic_guide_book",

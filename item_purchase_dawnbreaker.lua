@@ -11,7 +11,7 @@ local tableItemsToBuy = {
 					"item_recipe_jiaokeshu",
 					"item_recipe_touhou_banana",
 
-				"item_recipe_travel_boots",
+				"item_recipe_gap_creator",
 				
 				"item_knife",
 				"item_scissors",

@@ -10,7 +10,7 @@ local tableItemsToBuy = {
 				"item_cherry_leaf",
 				"item_recipe_tentacle",
 
-				"item_recipe_travel_boots",
+				"item_recipe_gap_creator",
 
 				"item_wind_lace",
 				"item_sailor_suit",

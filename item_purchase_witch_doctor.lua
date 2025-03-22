@@ -13,7 +13,7 @@ local tableItemsToBuy = {
 					"item_recipe_doctor_doll",
 					"item_recipe_jiao_shou",
 
-					"item_recipe_travel_boots",
+					"item_recipe_gap_creator",
 
 				"item_wing",
 					"item_recipe_zaiezhizhurenxing",

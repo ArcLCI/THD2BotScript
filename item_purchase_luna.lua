@@ -11,7 +11,7 @@ local tableItemsToBuy = {
 				"item_cat_foot",
 					"item_recipe_yuemianzhinu",
 
-					"item_recipe_travel_boots",
+					"item_recipe_gap_creator",
 
 				"item_wind_amulet",
 				"item_wind_amulet",

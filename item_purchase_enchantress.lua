@@ -17,7 +17,7 @@ local tableItemsToBuy = {
 				"item_gran_grimoire",
 				"item_recipe_nuetrident",
 
-				"item_recipe_travel_boots",
+				"item_recipe_gap_creator",
 
 				"item_bloodthirstiest",
 

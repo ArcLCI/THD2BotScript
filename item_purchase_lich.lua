@@ -18,7 +18,7 @@ local tableItemsToBuy = {
 					"item_recipe_mushroom_soup",
 					"item_recipe_nuclear_stick",
 
-								"item_recipe_travel_boots",
+								"item_recipe_gap_creator",
 
 				"item_sake",
 				"item_rocket_diagram",
