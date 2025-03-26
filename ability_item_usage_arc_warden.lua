@@ -170,7 +170,7 @@ end
 
 
 function CanCastEllen03OnTarget( npcTarget )
-	return npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
 end
 
 function CanCastEllen04OnTarget( npcTarget )
