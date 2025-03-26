@@ -170,7 +170,7 @@ end
 
 
 function CanCastEllen03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
 end
 
 function CanCastEllen04OnTarget( npcTarget )
@@ -205,7 +205,7 @@ function ConsiderAbilityEllen01()
 		do
 			if ( CanCastEllen01OnTarget( npcEnemy ) )
 			then
-				return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation();
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 			end
 		end
 
@@ -256,7 +256,7 @@ function ConsiderAbilityEllen03()
 	local nCastRange = ability03:GetCastRange();
 	local nRadius = 275;
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1600, true, BOT_MODE_NONE );
-	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or  npcBot:GetActiveMode() == BOT_MODE_RETREAT then
+	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT then
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy )
@@ -265,6 +265,31 @@ function ConsiderAbilityEllen03()
 			end
 		end
 	end
+
+	if ( npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_TOP or
+		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_MID or
+		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_BOTTOM or
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_TOP or
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_MID or
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOTTOM )
+	then
+		local tableNearbylanecreeps = npcBot:GetNearbyLaneCreeps(750,true)
+		for _,npccreeps in pairs( tableNearbylanecreeps )
+		do
+			return BOT_ACTION_DESIRE_HIGH, npccreeps;
+		end
+	end
+
+	if npcBot:GetActiveMode() == BOT_MODE_LANING and bot:GetMana()/bot:GetMaxMana() > 0.58 and #tableNearbyEnemyHeroes > 0 then
+		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+		do
+			if ( npcBot:GetTarget() == npcEnemy )
+			then
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+			end
+		end
+	end
+
 	return BOT_ACTION_DESIRE_NONE, 0;
 end
 
@@ -292,6 +317,17 @@ function ConsiderAbilityEllen04()
 			end
 		end
 	end
+
+	if npcBot:GetActiveMode() == BOT_MODE_LANING and bot:GetMana()/bot:GetMaxMana() > 0.42 and #tableNearbyEnemyHeroes > 0 then
+		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+		do
+			if ( npcBot:GetTarget() == npcEnemy )
+			then
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+			end
+		end
+	end
+
 	return BOT_ACTION_DESIRE_NONE, 0;
 end
 
