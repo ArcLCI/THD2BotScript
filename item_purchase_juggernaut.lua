@@ -9,7 +9,9 @@ local tableItemsToBuy = {
 				"item_baozi",
 				"item_glue",
 					"item_recipe_pad",
-				"item_harvest_cradle",
+				"item_cake",
+				"item_juice",
+				"item_recipe_harvest_cradle",
 
 				"item_hammer",
 				"item_throwing_knive",
