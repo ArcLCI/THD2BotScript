@@ -202,7 +202,7 @@ function ConsiderAbilityCirno03()
 	local nRadius = 100;
 	local nDamage = ability03:GetAbilityDamage();
 	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange-50, nRadius, 0, 0 );
-		if ( locationAoE.count >= 2 ) then
+		if ( #locationAoE >= 2 ) then
 			return BOT_ACTION_DESIRE_MODERATE, locationAoE.targetloc;
 		end
 

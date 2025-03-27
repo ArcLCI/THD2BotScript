@@ -54,8 +54,8 @@ function AbilityUsageThink()
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
 
 	ability01 = npcBot:GetAbilityByName( "ability_thdots_mokou01" );
-	--ability03 = npcBot:GetAbilityByName( "ability_thdots_mokou03" );
-	ability03 = npcBot:GetAbilityByName( "phoenix_supernova" );
+	ability03 = npcBot:GetAbilityByName( "ability_thdots_mokou03" );
+	--ability03 = npcBot:GetAbilityByName( "phoenix_supernova" );
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_mokou04" );
 	
 	-- Consider using each ability
@@ -135,7 +135,7 @@ function ConsiderAbilityMokou01()
 	if ( npcBot:GetActiveMode() == BOT_MODE_FARM ) then
 		local locationAoE = CachedFindAoELocation( npcBot, 1, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, nDamage );
 
-		if ( locationAoE.count >= 3 ) then
+		if ( #locationAoE >= 3 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 	end
@@ -150,7 +150,7 @@ function ConsiderAbilityMokou01()
 	then
 		local locationAoE = CachedFindAoELocation( npcBot, 2, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
 
-		if ( locationAoE.count >= 4 ) 
+		if ( #locationAoE >= 4 ) 
 		then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end

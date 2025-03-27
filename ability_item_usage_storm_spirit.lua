@@ -137,7 +137,7 @@ function ConsiderAbilityShikieiki01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastShikieiki01OnTarget( npcEnemy ) and locationAoE.count >= 1 ) 
+			if ( npcBot:GetTarget() == npcEnemy and CanCastShikieiki01OnTarget( npcEnemy ) and #locationAoE >= 1 ) 
 			then
 				return BOT_ACTION_DESIRE_VERYHIGH, locationAoE.targetloc;
 			end

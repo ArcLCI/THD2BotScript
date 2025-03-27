@@ -181,7 +181,7 @@ function ConsiderAbilityShou04()
 	local nCastRange = ability04:GetCastRange();
 	local nRadius = 550
 	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius, 1, 0 );
-		if ( locationAoE.count >= 3 ) then
+		if ( #locationAoE >= 3 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 

@@ -138,7 +138,7 @@ function ConsiderAbilityMiko01()
 	
 	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_GANK then
 		local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius, 1, 0 );
-		if ( locationAoE.count >= 2 ) then
+		if ( #locationAoE >= 2 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 

@@ -245,7 +245,7 @@ function ConsiderAbilityMeirin04()
 	local nCastRange = ability04:GetCastRange();
 	local nRadius = 500;
 	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius-100, 0, 0 );
-		if ( locationAoE.count >= 2 ) then
+		if ( #locationAoE >= 2 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 		--[[

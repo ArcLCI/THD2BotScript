@@ -91,7 +91,7 @@ local function RandomChoose( tTargets, vBaseLocation, nMaxDistanceFromBase, nRad
 
 		for i=1,RandomTimes do
 			local vPoint = tTagers_InRange1[RandomInt( 1, #tTagers_InRange1 )]:GetLocation();
-			vPoint = vPoint + RandomVector( nRadius ) * RandomFloat( 0.0, 1.0 );
+			vPoint = vPoint + RandomVector( nRadius ) * math.random(0, 1);
 
 			table.insert(vReservePoints, vPoint);
 
@@ -102,7 +102,7 @@ local function RandomChoose( tTargets, vBaseLocation, nMaxDistanceFromBase, nRad
 	-- completely random
 	for i=1,RandomTimes do
 
-		local vPoint = RandomVector( nMaxDistanceFromBase ) * RandomFloat( 0.0, 1.0 );
+		local vPoint = RandomVector( nMaxDistanceFromBase ) * math.random(0, 1);
 		vPoint = vBaseLocation + vPoint;
 
 		table.insert(vReservePoints, vPoint);
@@ -519,14 +519,14 @@ function ConsiderItemSlow( item_slow )
 	if ( (npcBot:GetActiveMode() == BOT_MODE_ATTACK or
 			npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 			and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
-			and locationAoE.count > 2 ) then
+			and #locationAoE > 2 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 	end
 
 	if ( (npcBot:GetActiveMode() == BOT_MODE_ATTACK or
 			npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 			and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH
-			and locationAoE.count > 0 ) then
+			and #locationAoE > 0 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 	end
 
@@ -893,7 +893,7 @@ function ConsiderItemFan( item_fan )
 	if ( npcBot:GetActiveMode() == BOT_MODE_FARM ) then
 		local locationAoE = CachedFindAoELocation( npcBot, 60002, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, nDamage );
 
-		if ( locationAoE.count >= 1 ) then
+		if ( #locationAoE >= 1 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 	end
@@ -908,7 +908,7 @@ function ConsiderItemFan( item_fan )
 	then
 		local locationAoE = CachedFindAoELocation( npcBot, 60003, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
 
-		if ( locationAoE.count >= 2 )
+		if ( #locationAoE >= 2 )
 		then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
@@ -919,7 +919,7 @@ function ConsiderItemFan( item_fan )
 
 		local locationAoE = CachedFindAoELocation( npcBot, 60004, true, true, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
 
-		if ( locationAoE.count >= 1 )
+		if ( #locationAoE >= 1 )
 		then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end

@@ -163,7 +163,7 @@ function ConsiderAbilityKisume01()
 	if ( npcBot:GetActiveMode() == BOT_MODE_FARM ) then
 		local locationAoE = CachedFindAoELocation( npcBot, 1, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, nDamage );
 
-		if ( locationAoE.count >= 3 ) then
+		if ( #locationAoE >= 3 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 	end
@@ -178,7 +178,7 @@ function ConsiderAbilityKisume01()
 	then
 		local locationAoE = CachedFindAoELocation( npcBot, 2, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
 
-		if ( locationAoE.count >= 4 ) 
+		if ( #locationAoE >= 4 ) 
 		then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
@@ -257,7 +257,7 @@ function ConsiderAbilityKisume02()
 			 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY ) 
 		then
 			local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius, 1, 0 );
-			if ( locationAoE.count >= 2 ) then
+			if ( #locationAoE >= 2 ) then
 				return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 			end
 			local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius - 100, true, BOT_MODE_NONE );
@@ -326,7 +326,7 @@ function ConsiderAbilityKisume04()
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY ) 
 	then
 		local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), 0, nRadius, 0.1, nDamage );
-		if ( locationAoE.count >= 2 ) then
+		if ( #locationAoE >= 2 ) then
 			return BOT_ACTION_DESIRE_HIGH;
 		end
 	end
