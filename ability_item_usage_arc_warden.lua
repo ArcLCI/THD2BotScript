@@ -205,7 +205,7 @@ function ConsiderAbilityEllen01()
 		do
 			if ( CanCastEllen01OnTarget( npcEnemy ) )
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+				return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation();
 			end
 		end
 
@@ -246,6 +246,7 @@ end
 function ConsiderAbilityEllen03()
 
 	local npcBot = GetBot();
+	local nMP = npcBot:GetMana()/npcBot:GetMaxMana();
 
 	-- Make sure it's castable
 	if ( not ability03:IsFullyCastable() )
@@ -274,13 +275,13 @@ function ConsiderAbilityEllen03()
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOTTOM )
 	then
 		local tableNearbylanecreeps = npcBot:GetNearbyLaneCreeps(750,true)
-		for _,npccreeps in pairs( tableNearbylanecreeps )
+		for _,npcCreeps in pairs( tableNearbylanecreeps )
 		do
-			return BOT_ACTION_DESIRE_HIGH, npccreeps;
+			return BOT_ACTION_DESIRE_HIGH, npcCreeps:GetLocation();
 		end
 	end
 
-	if npcBot:GetActiveMode() == BOT_MODE_LANING and bot:GetMana()/bot:GetMaxMana() > 0.58 and #tableNearbyEnemyHeroes > 0 then
+	if npcBot:GetActiveMode() == BOT_MODE_LANING and nMP > 0.58 and #tableNearbyEnemyHeroes > 0 then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy )
@@ -318,7 +319,7 @@ function ConsiderAbilityEllen04()
 		end
 	end
 
-	if npcBot:GetActiveMode() == BOT_MODE_LANING and bot:GetMana()/bot:GetMaxMana() > 0.42 and #tableNearbyEnemyHeroes > 0 then
+	if npcBot:GetActiveMode() == BOT_MODE_LANING and npcBot:GetMana()/npcBot:GetMaxMana() > 0.42 and #tableNearbyEnemyHeroes > 0 then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy )

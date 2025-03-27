@@ -47,24 +47,24 @@ function AbilityUsageThink()
 
 	-- Consider using each ability
 	cast02Desire = ConsiderAbilityReisen02();
-	if ( cast02Desire > 0 and not npcBot:IsChanneling() )
+	if ( cast02Desire > 0 )
 	then
-		npcBot:Action_UseAbility( ability02 );
+		npcBot:ActionQueue_UseAbility( ability02 );
 		return;
 	end
 
 	cast03Desire, cast03Location = ConsiderAbilityReisen03();
-	if ( cast03Desire > 0 and not npcBot:IsChanneling() )
+	if ( cast03Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnLocation( ability03, cast03Location);
+		npcBot:ActionQueue_UseAbilityOnLocation( ability03, cast03Location);
 		return;
 	end
 
 	cast04Desire = ConsiderAbilityReisen04();
 
-	if ( cast04Desire > 0 and not npcBot:IsChanneling() )
+	if ( cast04Desire > 0 )
 	then
-		npcBot:Action_UseAbility( ability04 );
+		npcBot:ActionQueue_UseAbility( ability04 );
 		return;
 	end
 
