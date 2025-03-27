@@ -49,6 +49,7 @@ function AbilityUsageThink()
 	cast02Desire = ConsiderAbilityReisen02();
 	if ( cast02Desire > 0 )
 	then
+		npcBot:Action_ClearActions(false);
 		npcBot:ActionQueue_UseAbility( ability02 );
 		return;
 	end
@@ -56,6 +57,7 @@ function AbilityUsageThink()
 	cast03Desire, cast03Location = ConsiderAbilityReisen03();
 	if ( cast03Desire > 0 )
 	then
+		npcBot:Action_ClearActions(false);
 		npcBot:ActionQueue_UseAbilityOnLocation( ability03, cast03Location);
 		return;
 	end
@@ -64,6 +66,7 @@ function AbilityUsageThink()
 
 	if ( cast04Desire > 0 )
 	then
+		npcBot:Action_ClearActions(false);
 		npcBot:ActionQueue_UseAbility( ability04 );
 		return;
 	end
