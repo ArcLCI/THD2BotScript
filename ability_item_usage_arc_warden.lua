@@ -281,7 +281,7 @@ function ConsiderAbilityEllen03()
 		end
 	end
 
-	if npcBot:GetActiveMode() == BOT_MODE_LANING and nMP > 0.58 and #tableNearbyEnemyHeroes > 0 then
+	if nMP > 0.58 and #tableNearbyEnemyHeroes > 0 then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy )
@@ -320,7 +320,7 @@ function ConsiderAbilityEllen04()
 		end
 	end
 
-	if npcBot:GetActiveMode() == BOT_MODE_LANING and nMP > 0.42 and #tableNearbyEnemyHeroes > 0 then
+	if nMP > 0.32 and #tableNearbyEnemyHeroes > 0 then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy )
