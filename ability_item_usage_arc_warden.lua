@@ -299,6 +299,7 @@ end
 function ConsiderAbilityEllen04()
 
 	local npcBot = GetBot();
+	local nMP = npcBot:GetMana()/npcBot:GetMaxMana();
 
 	-- Make sure it's castable
 	if ( not ability04:IsFullyCastable() )
@@ -319,7 +320,7 @@ function ConsiderAbilityEllen04()
 		end
 	end
 
-	if npcBot:GetActiveMode() == BOT_MODE_LANING and npcBot:GetMana()/npcBot:GetMaxMana() > 0.42 and #tableNearbyEnemyHeroes > 0 then
+	if npcBot:GetActiveMode() == BOT_MODE_LANING and nMP > 0.42 and #tableNearbyEnemyHeroes > 0 then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy )
