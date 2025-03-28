@@ -132,7 +132,7 @@ function ConsiderAbilityHatate02()
 	local nCastRange = ability02:GetCastRange();
 	local nRadius = 300
 	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange + 50, nRadius, 1, 0 );
-		if ( #locationAoE >= 2 ) then
+		if ( locationAoE.count >= 2 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 

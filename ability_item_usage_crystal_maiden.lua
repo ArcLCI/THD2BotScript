@@ -145,7 +145,7 @@ function ConsiderAbilityMarisa02()
 	if ( npcBot:GetActiveMode() == BOT_MODE_FARM ) then
 		local locationAoE = CachedFindAoELocation( npcBot, 1, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, nDamage );
 
-		if ( #locationAoE >= 3 ) then
+		if ( locationAoE.count >= 3 ) then
 			return BOT_ACTION_DESIRE_LOW, locationAoE.targetloc;
 		end
 	end

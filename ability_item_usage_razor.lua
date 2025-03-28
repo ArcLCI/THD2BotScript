@@ -243,7 +243,7 @@ function ConsiderAbilityIkuEx()
 	local nRadius = 250
 	local nDamage = 100+10*npcBot:GetLevel()
 	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius, 1.7, nDamage );
-	if ( #locationAoE >= 1 ) then
+	if ( locationAoE.count >= 1 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 	end
 	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT) 
@@ -252,7 +252,7 @@ function ConsiderAbilityIkuEx()
 		local locationAoE = CachedFindAoELocation( npcBot, 2, true, true, npcBot:GetLocation(), 800, nRadius, 1.7, 0 );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastIkuExOnTarget( npcEnemy ) and #locationAoE >= 1) 
+			if ( CanCastIkuExOnTarget( npcEnemy ) and locationAoE.count >= 1) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 			end
@@ -315,7 +315,7 @@ function ConsiderAbilityIkuPose()
 			return BOT_ACTION_DESIRE_HIGH;
 		end
 		local locationAoE = CachedFindAoELocation( npcBot, 3, true, true, npcBot:GetLocation(), nCastRange, nRadius, 1.7, 0 );
-		if ( #locationAoE >= 3 ) then
+		if ( locationAoE.count >= 3 ) then
 			return BOT_ACTION_DESIRE_HIGH;
 		end
 	end
