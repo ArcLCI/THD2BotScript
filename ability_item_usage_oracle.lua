@@ -156,7 +156,7 @@ function ConsiderAbilityStar01()
 	local nRadius = ability01:GetSpecialValueInt( "radius" )
 	local nTime = 0.57
 	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius, nTime, 0 );
-		if ( #locationAoE >= 2 ) then
+		if ( locationAoE.count >= 2 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 

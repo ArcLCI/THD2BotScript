@@ -134,7 +134,7 @@ function ConsiderAbilityTojiko01()
 	local nRadius = 150
 	local nTime = 0
 	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius, nTime, 0 );
-	if ( #locationAoE >= 1 ) then
+	if ( locationAoE.count >= 1 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 	end	
 	return BOT_ACTION_DESIRE_NONE, 0;
@@ -156,7 +156,7 @@ function ConsiderAbilityTojiko02()
 	local nRadius = 250
 	local nTime = 0.75
 	local locationAoE = CachedFindAoELocation( npcBot, 2, true, true, npcBot:GetLocation(), nCastRange, nRadius, nTime, 0 );
-	if ( #locationAoE >= 1 ) then
+	if ( locationAoE.count >= 1 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 	end	
 	return BOT_ACTION_DESIRE_NONE, 0;
@@ -179,7 +179,7 @@ function ConsiderAbilityTojiko03()
 	local nRadius = 185
 	local nTime = 0
 	local locationAoE = CachedFindAoELocation( npcBot, 3, true, true, npcBot:GetLocation(), nCastRange, nRadius, nTime, 0 );
-	if ( #locationAoE >= 1 ) then
+	if ( locationAoE.count >= 1 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 	end	
 	return BOT_ACTION_DESIRE_NONE, 0;
@@ -202,7 +202,7 @@ function ConsiderAbilityTojiko04()
 	local nDamage = 900
 	local nTime = 2.5
 	local locationAoE = CachedFindAoELocation( npcBot, 4, true, true, npcBot:GetLocation(), nCastRange, nRadius, nTime, nDamage );
-	if ( #locationAoE >= 1 ) then
+	if ( locationAoE.count >= 1 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 	end
 	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT) 
@@ -211,7 +211,7 @@ function ConsiderAbilityTojiko04()
 		local locationAoE = CachedFindAoELocation( npcBot, 5, true, true, npcBot:GetLocation(), 1000, nRadius, nTime, 0 );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastTojiko04OnTarget( npcEnemy ) and #locationAoE >= 2) 
+			if ( CanCastTojiko04OnTarget( npcEnemy ) and locationAoE.count >= 2) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 			end

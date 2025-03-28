@@ -519,14 +519,14 @@ function ConsiderItemSlow( item_slow )
 	if ( (npcBot:GetActiveMode() == BOT_MODE_ATTACK or
 			npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 			and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
-			and #locationAoE > 2 ) then
+			and locationAoE.count > 2 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 	end
 
 	if ( (npcBot:GetActiveMode() == BOT_MODE_ATTACK or
 			npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 			and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH
-			and #locationAoE > 0 ) then
+			and locationAoE.count > 0 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 	end
 
@@ -893,7 +893,7 @@ function ConsiderItemFan( item_fan )
 	if ( npcBot:GetActiveMode() == BOT_MODE_FARM ) then
 		local locationAoE = CachedFindAoELocation( npcBot, 60002, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, nDamage );
 
-		if ( #locationAoE >= 1 ) then
+		if ( locationAoE.count >= 1 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 	end
@@ -908,7 +908,7 @@ function ConsiderItemFan( item_fan )
 	then
 		local locationAoE = CachedFindAoELocation( npcBot, 60003, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
 
-		if ( #locationAoE >= 2 )
+		if ( locationAoE.count >= 2 )
 		then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
@@ -919,7 +919,7 @@ function ConsiderItemFan( item_fan )
 
 		local locationAoE = CachedFindAoELocation( npcBot, 60004, true, true, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
 
-		if ( #locationAoE >= 1 )
+		if ( locationAoE.count >= 1 )
 		then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end

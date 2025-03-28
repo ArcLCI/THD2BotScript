@@ -150,7 +150,7 @@ function ConsiderAbilityLuna02()
 	local nCastRange = ability02:GetCastRange();
 	local nRadius = ability02:GetSpecialValueInt( "radius" );
 	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
-		if ( #locationAoE >= 2 ) then
+		if ( locationAoE.count >= 2 ) then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 
@@ -185,7 +185,7 @@ function ConsiderAbilityLuna04()
 	local nRadius = 200
 	local nDamage = 100 + 100 * ability04:GetLevel();
 	local locationAoE = CachedFindAoELocation( npcBot, 2, true, true, npcBot:GetLocation(), nCastRangeNear, nRadius, 0, 0 );
-		if ( #locationAoE >= 3 ) then
+		if ( locationAoE.count >= 3 ) then
 			return BOT_ACTION_DESIRE_MODERATE, locationAoE.targetloc;
 		end
 	

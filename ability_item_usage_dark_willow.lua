@@ -280,7 +280,7 @@ function ConsiderAbilityLarva04()
 		or npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 		and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) then
 		local locationAoE = CachedFindAoELocation( npcBot, 60001, true, true, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
-		if #locationAoE > 1 then
+		if locationAoE.count > 1 then
 			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 		end
 	end
