@@ -21,6 +21,7 @@ function MyItemUsageThink()
 	end
 
 	item_teeth = IsItemAvailable( "item_teeth" )
+	item_tideng = IsItemAvailable( "item_tsundere" )
 
 	if ( item_stun~=nil and item_stun:IsFullyCastable() )
 	then
@@ -52,16 +53,16 @@ function MyItemUsageThink()
 		end
 	end
 
-	local item_travel_boots = IsItemAvailable( "item_travel_boots" )
-
-	if ( item_travel_boots~=nil and item_travel_boots:IsFullyCastable() )
+	if ( item_tideng~=nil and item_tideng:IsFullyCastable() )
 	then
-		CastItemTravelBootsDesire = ConsiderItemTravelBoots(item_travel_boots)
-		if ( CastItemTravelBootsDesire > 0 )
+		castItemTiDengDesire = ConsiderItemTiDeng( item_tideng )
+		if ( castItemTiDengDesire > 0 )
 		then
+			npcBot:Action_UseAbility( item_tideng );
 			return;
 		end
 	end
+
 
 end
 
@@ -93,7 +94,7 @@ function AbilityUsageThink()
 	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location );
-		if item_tideng:IsFullyCastable() then
+		if item_tideng ~= nil and item_tideng:IsFullyCastable() then
 			npcBot:Action_UseAbility( item_tideng );
 		end
 		return;
@@ -172,8 +173,11 @@ function ConsiderAbilityYoumu01()
 
 	-- Get some of its values
 	local nRadius = ability01:GetSpecialValueInt( "radius" );
-	local nCastRange = ability01:GetCastRange();
 	local nDamage = ability01:GetAbilityDamage();
+	local nLevel = ability01:GetLevel();
+	local nCastRange = (nLevel-1)*100 + 699
+
+	-- consider attack range
 
 	--------------------------------------
 	-- Mode based usage
@@ -210,10 +214,9 @@ function ConsiderAbilityYoumu01()
 	end
 	-- 我军败了！快撤！
 	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and not npcBot:HasModifier("modifier_fountain_aura_buff")) then
-		local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
-		local v_target = - npcBot:GetLocation() + v_shop
-		local dis = GetUnitToLocationDistance( npcBot,v_shop)
-		local v_final = v_target/dis * nCastRange + npcBot:GetLocation()
+		local v_home = GetAncient(npcBot:GetTeam()):GetLocation()
+		local v_target = ( v_home - npcBot:GetLocation() ) / GetUnitToLocationDistance( npcBot, v_home)
+		local v_final = npcBot:GetLocation() + v_target * nCastRange
 		return BOT_ACTION_DESIRE_HIGH, v_final;
 	end
 

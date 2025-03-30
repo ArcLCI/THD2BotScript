@@ -1218,10 +1218,20 @@ end
 
 ----------------------------------------------------------------------------------------------------
 
-function ConsiderItemTravelBoots( item_travel_boots )
+function ConsiderItemTiDeng( item_tideng )
+	local npcBot = GetBot();
 
+	-- Make sure it's castable
+	if ( not item_tideng:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE;
+	end
 
+	if (npcBot:GetHealth() < npcBot:GetMaxHealth()* 0.35) then
+		return BOT_ACTION_DESIRE_HIGH;
+	end
+
+	return BOT_ACTION_DESIRE_NONE;
 end
 
 ----------------------------------------------------------------------------------------------------
