@@ -16,6 +16,14 @@ function MyItemUsageThink()
 
 	local item_jump = IsItemAvailable( "item_wanmeitiaoyuezhuangzhi" )
 	local item_yuemianjidongzhuangzhi = IsItemAvailable( "item_yuemianjidongzhuangzhi" );
+	item_stun = IsItemAvailable( "item_yuetufensuijvren" )
+	if item_stun == nil then
+		item_stun = IsItemAvailable( "item_pocket_watch" )
+	end
+	local item_root = IsItemAvailable( "item_morenjingjuan" )
+	if item_root == nil then
+		item_root = IsItemAvailable( "item_tentacle" )
+	end
 
 	if ( item_jump~=nil and item_jump:IsFullyCastable() )
 	then
@@ -26,9 +34,16 @@ function MyItemUsageThink()
 			return;
 		end
 	end
-	item_stun = IsItemAvailable( "item_yuetufensuijvren" )
-	if item_stun == nil then
-		item_stun = IsItemAvailable( "item_pocket_watch" )
+	if ( item_root~=nil and item_root:IsFullyCastable() )
+	then
+		--print("stun item exist")
+		castItemRootDesire, castItemRootTarget = ConsiderItemRoot( item_root )
+		if ( castItemRootDesire > 0 )
+		then
+			--print("stun luanch")
+			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget );
+			return;
+		end
 	end
 
 	if ( item_stun~=nil and item_stun:IsFullyCastable() )
@@ -43,6 +58,7 @@ function MyItemUsageThink()
 		end
 	end
 
+--大推逻辑
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
@@ -72,14 +88,6 @@ function AbilityUsageThink()
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_yugi04" );
 
 	-- Consider using each ability
-	cast04Desire, cast04Target = ConsiderAbilityYugi04();
-
-	if ( cast04Desire > 0 )
-	then
-		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target );
-		return;
-	end
-
 	cast02Desire = ConsiderAbilityYugi02();
 	if ( cast02Desire > 0 )
 	then
@@ -87,6 +95,13 @@ function AbilityUsageThink()
 		return;
 	end
 
+	cast04Desire, cast04Target = ConsiderAbilityYugi04();
+
+	if ( cast04Desire > 0 )
+	then
+		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target );
+		return;
+	end
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -107,7 +122,7 @@ function ConsiderAbilityYugi02()
 	-- Fighting or Retreating with hero
 	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 300, true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 290, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcEnemy ~= nil )
@@ -133,10 +148,10 @@ function ConsiderAbilityYugi04()
 	-- Fighting or Retreating with hero
 	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 280, true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 270, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil )
+			if ( npcEnemy ~= nil and not npcEnemy:IsRooted() and not npcEnemy:HasModifier("modifier_item_morenjingjuan_antiblink"))
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 			end
