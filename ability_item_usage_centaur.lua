@@ -143,7 +143,7 @@ function ConsiderAbilityYugi02()
 	-- Fighting or Retreating with hero
 	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 290, true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 300, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcEnemy ~= nil )
@@ -193,7 +193,7 @@ function ConsiderAbilityYugi04()
 	-- Fighting or Retreating with hero
 	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 270, true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 285, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcEnemy ~= nil)
