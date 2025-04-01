@@ -172,7 +172,7 @@ function ConsiderAbilityYugi02WithJump(item_jump)
 		do
 			if ( npcEnemy ~= nil )
 			then
-				return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation()
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 			end
 		end
 	end
@@ -225,7 +225,7 @@ function ConsiderAbilityYugi04WithJump(item_jump)
 		do
 			if ( npcEnemy ~= nil)
 			then
-				return BOT_ACTION_DESIRE_MODERATE, npcEnemy,  npcEnemy:GetLocation()
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy,  npcEnemy:GetLocation()
 			end
 		end
 	end
