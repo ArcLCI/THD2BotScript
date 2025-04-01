@@ -473,7 +473,7 @@ function ConsiderItemRoot( item_root )
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200 , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ) and not npcEnemy:HasModifier( "modifier_thdots_yugi04_think_interval" ))
+		if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 		end

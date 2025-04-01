@@ -151,7 +151,7 @@ function ConsiderAbilityYugi04()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 270, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil and not npcEnemy:IsRooted() and not npcEnemy:HasModifier("modifier_item_morenjingjuan_antiblink"))
+			if ( npcEnemy ~= nil)
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 			end
