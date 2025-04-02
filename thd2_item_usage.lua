@@ -1003,12 +1003,16 @@ end
 function ConsiderItemDuQun( item_duqun )
 
 	local npcBot = GetBot();
+	local nModifier = npcBot:GetModifierByName("modifier_ability_thdots_ellen04_debuff")
 
 	-- Make sure it's castable
 	if ( not item_duqun:IsFullyCastable() )
 	then
 		return BOT_ACTION_DESIRE_NONE;
 	end;
+	if npcBot:GetModifierStackCount(nModifier) >= 4 and npcBot:GetModifierRemainingDuration(nModifier) <= 0.35 then
+		return BOT_ACTION_DESIRE_VERYHIGH;
+	end
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1600 , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do

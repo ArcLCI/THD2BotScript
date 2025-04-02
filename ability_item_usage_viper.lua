@@ -226,11 +226,13 @@ function ConsiderAbilityMedicine03()
 	
 	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE );
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
+	local nModifier = npcBot:GetModifierByName("modifier_ability_thdots_ellen04_debuff")
 	
 	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 	do
 		if ( CanCastMedicine03OnTarget( npcFriend ) and 
-				( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
+				((npcFriend:GetModifierStackCount(nModifier) >= 4 and npcFriend:GetModifierRemainingDuration(nModifier) <= 0.35) or
+				GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
 				npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
 				IsUnderAttack( npcFriend )
 				)
