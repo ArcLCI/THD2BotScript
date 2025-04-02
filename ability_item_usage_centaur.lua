@@ -97,13 +97,16 @@ function AbilityUsageThink()
 		return;
 	end
 
-	cast02JumpDesire, cast02JumpLoc = ConsiderAbilityYugi02WithJump(item_jump);
-	if ( cast02JumpDesire > 0 )
+	if ( item_jump~=nil and item_jump:IsFullyCastable() )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnLocation(item_jump,cast02JumpLoc)
-		npcBot:ActionQueue_UseAbility( ability02 );
-		return;
+		cast02JumpDesire, cast02JumpLoc = ConsiderAbilityYugi02WithJump(item_jump);
+		if ( cast02JumpDesire > 0 )
+		then
+			npcBot:Action_ClearActions(false)
+			npcBot:ActionQueue_UseAbilityOnLocation(item_jump,cast02JumpLoc)
+			npcBot:ActionQueue_UseAbility( ability02 );
+			return;
+		end
 	end
 
 	cast04Desire, cast04Target = ConsiderAbilityYugi04();
@@ -115,13 +118,16 @@ function AbilityUsageThink()
 		return;
 	end
 
-	cast04JumpDesire, cast04JumpTarget, cast04JumpLoc = ConsiderAbilityYugi04WithJump(item_jump);
-	if ( cast04JumpDesire > 0 )
+	if ( item_jump~=nil and item_jump:IsFullyCastable() )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnLocation(item_jump,cast04JumpLoc)
-		npcBot:ActionQueue_UseAbilityOnEntity(ability04, cast04JumpTarget)
-		return;
+		cast04JumpDesire, cast04JumpTarget, cast04JumpLoc = ConsiderAbilityYugi04WithJump(item_jump);
+		if ( cast04JumpDesire > 0 )
+		then
+			npcBot:Action_ClearActions(false)
+			npcBot:ActionQueue_UseAbilityOnLocation(item_jump,cast04JumpLoc)
+			npcBot:ActionQueue_UseAbilityOnEntity(ability04, cast04JumpTarget)
+			return;
+		end
 	end
 end
 
@@ -148,7 +154,7 @@ function ConsiderAbilityYugi02()
 		do
 			if ( npcEnemy ~= nil )
 			then
-				return BOT_ACTION_DESIRE_MODERATE;
+				return BOT_ACTION_DESIRE_HIGH
 			end
 		end
 	end
@@ -160,7 +166,7 @@ function ConsiderAbilityYugi02WithJump(item_jump)
 
 	local npcBot = GetBot();
 
-	if (not ability02:IsFullyCastable() and not item_jump:IsFullyCastable())
+	if (not ability02:IsFullyCastable())
 	then
 		return BOT_ACTION_DESIRE_NONE, nil;
 	end
@@ -198,7 +204,7 @@ function ConsiderAbilityYugi04()
 		do
 			if ( npcEnemy ~= nil)
 			then
-				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end
 		end
 	end
@@ -212,7 +218,7 @@ function ConsiderAbilityYugi04WithJump(item_jump)
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if (ability02:IsFullyCastable() or (not ability04:IsFullyCastable() and not item_jump:IsFullyCastable()))
+	if (ability02:IsFullyCastable() or not ability04:IsFullyCastable())
 	then
 		return BOT_ACTION_DESIRE_NONE, nil, nil;
 	end;
@@ -225,7 +231,7 @@ function ConsiderAbilityYugi04WithJump(item_jump)
 		do
 			if ( npcEnemy ~= nil)
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy,  npcEnemy:GetLocation()
+				return BOT_ACTION_DESIRE_MODERATE, npcEnemy,  npcEnemy:GetLocation()
 			end
 		end
 	end

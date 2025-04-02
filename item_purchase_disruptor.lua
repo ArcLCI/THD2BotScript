@@ -1,7 +1,7 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
-
+ItemSold = 0
 local tableItemsToBuy = {
 				"item_broom",
 
@@ -15,6 +15,12 @@ local tableItemsToBuy = {
 						"item_recipe_third_eyes",
 
 					"item_recipe_gap_creator",
+
+				"item_cat_foot",
+				"item_paper_mask",
+				"item_rocket_diagram",
+				"item_zun_hat",
+					"item_recipe_wanbaochui",
 
 				"item_cat_ear",
 				"item_cherry_leaf",
@@ -41,16 +47,19 @@ local tableItemsToBuy = {
 				"item_gran_grimoire",
 					"item_recipe_bagua",
 
+					"item_recipe_wanbaochui2",
+
 				"item_god_hand",
 				"item_god_hand",
 					"item_recipe_loneliness",
 
-				"item_cat_foot",
-				"item_paper_mask",
-				"item_rocket_diagram",
-				"item_zun_hat",
-					"item_recipe_wanbaochui",
-					"item_recipe_wanbaochui2",
+				"item_frog",
+				"item_juice",
+				"item_magic_guide_book",
+					"item_recipe_eyunzhifu",
+				"item_gran_grimoire",
+					"item_recipe_pomojinlingli",
+
 			};
 
 
@@ -62,7 +71,13 @@ function ItemPurchaseThink()
 	if seed_id == nil then
 		seed_id = RandomInt(1,999999999)
 	end
+	local npcBot = GetBot()
 	ConsiderItemPurchase(tableItemsToBuy,seed_id)
+
+	if npcBot:FindItemSlot("item_loneliness") >=0 and ItemSold == 0 then
+		npcBot:ActionImmediate_SellItem(npcBot:GetItemInSlot(npcBot:FindItemSlot("item_third_eyes")))
+		ItemSold = 1
+	end
 end
 
 ----------------------------------------------------------------------------------------------------
