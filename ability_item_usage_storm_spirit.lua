@@ -137,7 +137,7 @@ function ConsiderAbilityShikieiki01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastShikieiki01OnTarget( npcEnemy ) and locationAoE.count >= 1 ) 
+			if ( npcBot:GetTarget() == npcEnemy and CanCastShikieiki01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and locationAoE.count >= 1 ) 
 			then
 				return BOT_ACTION_DESIRE_VERYHIGH, locationAoE.targetloc;
 			end
@@ -164,7 +164,7 @@ function ConsiderAbilityShikieiki02()
 	
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastShikieiki02OnTarget( npcEnemy ) or 
+			if ( npcBot:GetTarget() == npcEnemy and not IsPossibleIllusion( npcEnemy ) and CanCastShikieiki02OnTarget( npcEnemy ) or 
 			( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
 			) 
 			then
@@ -196,7 +196,7 @@ function ConsiderAbilityShikieiki04()
 		local mxTarget=nil;
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastShikieiki04OnTarget( npcEnemy ) ) 
+			if ( CanCastShikieiki04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				local capability = GetCapability(npcEnemy)
 				if capability > mxcap then

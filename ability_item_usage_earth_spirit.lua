@@ -168,7 +168,7 @@ function ConsiderAbilityMerlin01()
 		local mxTarget=nil;
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastMerlin01OnTarget( npcEnemy ) ) 
+			if ( CanCastMerlin01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				local capability = GetCapability(npcEnemy)
 				if capability > mxcap then
@@ -236,7 +236,7 @@ function ConsiderAbilityMerlin04()
 		local mxTarget=nil;
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastMerlin04OnTarget( npcEnemy ) ) 
+			if ( CanCastMerlin04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				local capability = GetCapability(npcEnemy)
 				if capability > mxcap then

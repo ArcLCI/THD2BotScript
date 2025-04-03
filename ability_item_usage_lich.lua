@@ -119,7 +119,7 @@ function ConsiderAbilityKoakuma01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastKoakuma01OnTarget( npcEnemy ) )
+			if ( CanCastKoakuma01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end
@@ -157,7 +157,7 @@ function ConsiderAbilityKoakuma02()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastKoakuma02OnTarget( npcEnemy ) )
+			if ( CanCastKoakuma02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end

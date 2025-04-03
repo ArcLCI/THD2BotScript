@@ -130,7 +130,7 @@ function ConsiderAbilityDaiyousei01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget()==npcEnemy and CanCastDaiyousei01OnTarget( npcEnemy ) ) 
+			if ( npcBot:GetTarget()==npcEnemy and CanCastDaiyousei01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end
@@ -205,7 +205,7 @@ function ConsiderAbilityDaiyousei02()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange - 50, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastDaiyousei02OnTarget( npcEnemy ) ) 
+			if ( CanCastDaiyousei02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH;
 			end
@@ -282,7 +282,7 @@ function ConsiderAbilityDaiyousei04()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastDaiyousei04OnTarget( npcEnemy ) ) 
+			if ( CanCastDaiyousei04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH;
 			end

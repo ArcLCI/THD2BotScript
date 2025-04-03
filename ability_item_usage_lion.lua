@@ -157,14 +157,14 @@ function ConsiderAbilitySanae( abilityX )
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius + 200, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastSanae01OnTarget( npcEnemy )  )
+			if ( npcBot:GetTarget() == npcEnemy and CanCastSanae01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 			end
 
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
+			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ))
 			then
-				if ( CanCastSanae01OnTarget( npcEnemy ) )
+				if ( CanCastSanae01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 				then
 					return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation();
 				end
@@ -181,7 +181,7 @@ function ConsiderAbilitySanae( abilityX )
 
 		if ( npcTarget ~= nil )
 		then
-			if ( CanCastSanae01OnTarget( npcTarget ) )
+			if ( CanCastSanae01OnTarget( npcTarget ) and not IsPossibleIllusion( npcTarget ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetLocation();
 			end

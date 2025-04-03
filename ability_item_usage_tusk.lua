@@ -148,7 +148,7 @@ function ConsiderAbilityJyoon02()
 				
 		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
 		then
-			if ( CanCastJyoon02OnTarget( npcEnemy ) ) 
+			if ( CanCastJyoon02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation();
 			end
@@ -196,7 +196,7 @@ function ConsiderAbilityJyoon03()
 		local tableNearbyEnemyHeroes = npcBot:GetNearbyHeroes(nRadius, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil ) 
+			if ( npcEnemy ~= nil and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE;
 			end

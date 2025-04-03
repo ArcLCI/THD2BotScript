@@ -127,7 +127,7 @@ function ConsiderAbilityKomachi01()
 			then
 				return BOT_ACTION_DESIRE_NONE;
 			end;	
-			if (npcBot:IsFacingLocation( npcEnemy:GetLocation(), 90 ) and CanCastKomachi01OnTarget(npcEnemy))
+			if (npcBot:IsFacingLocation( npcEnemy:GetLocation(), 90 ) and CanCastKomachi01OnTarget(npcEnemy) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH;
 			end
@@ -160,7 +160,7 @@ function ConsiderAbilityKomachi03()
 	do
 		if ( npcEnemy~=nil )
 		then
-		if ( npcEnemy:IsAlive() and CanCastKomachi03OnTarget(npcEnemy) )
+		if ( npcEnemy:IsAlive() and CanCastKomachi03OnTarget(npcEnemy) and not IsPossibleIllusion( npcEnemy ))
 		then
 		local soul_index = npcEnemy:GetModifierByName("modifier_thdots_komachi_03_soul")
 		if (soul_index ~= nil)
@@ -222,7 +222,7 @@ function ConsiderAbilityKomachi04()
 		local target_cache = nil
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if (CanCastKomachi04OnTarget( npcEnemy ))
+			if (CanCastKomachi04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				if (npcEnemy:GetHealthRegen() >= max_hr) then target_cache = npcEnemy end
 				if (npcEnemy:GetUnitName() == "npc_dota_hero_drow_ranger" or
@@ -244,7 +244,7 @@ function ConsiderAbilityKomachi04()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if (npcEnemy:GetHealth() < npcEnemy:GetMaxHealth()*kill_coef)
+		if (npcEnemy:GetHealth() < npcEnemy:GetMaxHealth()*kill_coef and not IsPossibleIllusion( npcEnemy ))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 		end

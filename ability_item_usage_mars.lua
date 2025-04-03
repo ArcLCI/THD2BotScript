@@ -128,7 +128,7 @@ function ConsiderAbilityShou01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil ) 
+			if ( npcEnemy ~= nil and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE;
 			end
@@ -156,7 +156,7 @@ function ConsiderAbilityShou02()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastShou02OnTarget( npcEnemy ) ) 
+			if ( CanCastShou02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 			end
@@ -188,7 +188,7 @@ function ConsiderAbilityShou04()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastShou04OnTarget( npcEnemy ) ) 
+			if ( CanCastShou04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 			end

@@ -129,7 +129,7 @@ function ConsiderAbilityRumia04()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100 , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( CanCastRumia04OnTarget( npcEnemy ) and nDamage > npcEnemy:GetHealth() ) 
+		if ( CanCastRumia04OnTarget( npcEnemy ) and nDamage > npcEnemy:GetHealth() and not IsPossibleIllusion( npcEnemy )) 
 		then
 			return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 		end

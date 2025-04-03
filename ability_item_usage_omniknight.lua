@@ -187,14 +187,14 @@ function ConsiderAbilityKisume01()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius, true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( npcBot:GetTarget() == npcEnemy and CanCastKisume01OnTarget( npcEnemy )  ) 
+		if ( npcBot:GetTarget() == npcEnemy and CanCastKisume01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 		end
 			
 		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
 		then
-			if ( CanCastKisume01OnTarget( npcEnemy ) ) 
+			if ( CanCastKisume01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation();
 			end
@@ -263,7 +263,7 @@ function ConsiderAbilityKisume02()
 			local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius - 100, true, BOT_MODE_NONE );
 			for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 			do
-				if ( CanCastKisume02OnTarget( npcEnemy ) ) 
+				if ( CanCastKisume02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 				then
 					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 				end

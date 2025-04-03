@@ -177,14 +177,14 @@ function ConsiderAbilityReimu01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius + 200, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastReimu01OnTarget( npcEnemy )  ) 
+			if ( npcBot:GetTarget() == npcEnemy and CanCastReimu01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 			end
 				
 			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
 			then
-				if ( CanCastReimu01OnTarget( npcEnemy ) ) 
+				if ( CanCastReimu01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 				then
 					return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation();
 				end
@@ -201,7 +201,7 @@ function ConsiderAbilityReimu01()
 
 		if ( npcTarget ~= nil ) 
 		then
-			if ( CanCastReimu01OnTarget( npcTarget ) )
+			if ( CanCastReimu01OnTarget( npcTarget ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetLocation();
 			end
@@ -237,14 +237,14 @@ function ConsiderAbilityReimu02()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius + 200, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastReimu01OnTarget( npcEnemy )  ) 
+			if ( npcBot:GetTarget() == npcEnemy and CanCastReimu01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH;
 			end
 				
 			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
 			then
-				if ( CanCastReimu02OnTarget( npcEnemy ) ) 
+				if ( CanCastReimu02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 				then
 					return BOT_ACTION_DESIRE_MODERATE;
 				end
@@ -313,7 +313,7 @@ function ConsiderAbilityReimu03()
 		do
 			if ( npcBot:GetTarget() == npcEnemy ) 
 			then
-				if ( CanCastReimu03OnTarget( npcEnemy ) ) 
+				if ( CanCastReimu03OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 				then
 					return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 				end
@@ -391,7 +391,7 @@ function ConsiderAbilityReimu04()
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
+			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				if ( CanCastReimu04OnTarget( npcBot ) ) 
 				then

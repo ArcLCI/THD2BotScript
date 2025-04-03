@@ -214,7 +214,7 @@ function ConsiderAbilityAya02()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if CanCastAya02OnTarget( npcEnemy ) then
+			if CanCastAya02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) then
 				if ( not npcEnemy:HasModifier("modifier_thdots_aya02_buff") ) 
 				then
 					return BOT_ACTION_DESIRE_MODERATE, npcEnemy;

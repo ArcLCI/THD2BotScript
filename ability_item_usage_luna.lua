@@ -126,7 +126,7 @@ function ConsiderAbilityLuna01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastLuna01OnTarget( npcEnemy ) ) 
+			if ( npcBot:GetTarget() == npcEnemy and CanCastLuna01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 			end
@@ -192,7 +192,7 @@ function ConsiderAbilityLuna04()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( CanCastLuna04OnTarget( npcEnemy ) and nDamage > npcEnemy:GetHealth()) 
+		if ( CanCastLuna04OnTarget( npcEnemy ) and nDamage > npcEnemy:GetHealth() and not IsPossibleIllusion( npcEnemy )) 
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 		end

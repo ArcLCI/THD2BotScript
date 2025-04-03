@@ -166,7 +166,7 @@ function ConsiderAbilityMystia01()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 550, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastMystia01OnTarget( npcEnemy ) )
+			if ( CanCastMystia01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH;
 			end
@@ -189,7 +189,7 @@ function ConsiderAbilityMystia02()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1000, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastMystia02OnTarget( npcEnemy ) ) 
+			if ( CanCastMystia02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH;
 			end
@@ -214,7 +214,7 @@ function ConsiderAbilityMystia04()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 750, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastMystia04OnTarget( npcEnemy ) and
+			if ( CanCastMystia04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and
 				(npcBot:GetActiveMode() == BOT_MODE_RETREAT or 
 				(npcBot:GetActiveMode() == BOT_MODE_ATTACK and #tableNearbyEnemyHeroes>1))) 
 			then

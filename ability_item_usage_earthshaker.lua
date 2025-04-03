@@ -110,7 +110,7 @@ function ConsiderAbilityTenshi01()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( CanCastTenshi01OnTarget(npcEnemy) )
+		if ( CanCastTenshi01OnTarget(npcEnemy) and not IsPossibleIllusion( npcEnemy ))
 		then
 			if ( npcEnemy:GetHealth() < nDamage )
 			then
@@ -128,7 +128,7 @@ function ConsiderAbilityTenshi01()
 		do
 			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
 			then
-				if ( CanCastTenshi01OnTarget( npcEnemy ) ) 
+				if ( CanCastTenshi01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 				then
 					return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation()
 				end
@@ -143,7 +143,7 @@ function ConsiderAbilityTenshi01()
 		do
 			if ( npcBot:GetTarget() == npcEnemy ) 
 			then
-				if ( CanCastTenshi01OnTarget( npcEnemy ) ) 
+				if ( CanCastTenshi01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 				then
 					return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation()
 				end
@@ -187,7 +187,7 @@ function ConsiderAbilityTenshi04()
 	do
 		if ( Enemy~=nil )
 		then
-			if ( Enemy:IsAlive() and CanCastTenshi04OnTarget(Enemy) )
+			if ( Enemy:IsAlive() and CanCastTenshi04OnTarget(Enemy) and not IsPossibleIllusion( Enemy ))
 			then
 				if ( Enemy:GetHealth() < nDamage )
 				then

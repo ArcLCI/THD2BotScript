@@ -147,7 +147,7 @@ function ConsiderAbilitySunny02()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastSunny02OnTarget( npcEnemy ) ) 
+			if ( CanCastSunny02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH;
 			end
@@ -180,7 +180,7 @@ function ConsiderAbilitySunny03()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastSunny03OnTarget( npcEnemy ) ) 
+			if ( CanCastSunny03OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 			end
@@ -207,7 +207,7 @@ function ConsiderAbilitySunny04()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastSunny04OnTarget( npcEnemy ) and 
+			if ( CanCastSunny04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and 
 			npcBot:GetActiveMode() == BOT_MODE_ATTACK and
 			npcBot:GetTarget() == npcEnemy) 
 			then

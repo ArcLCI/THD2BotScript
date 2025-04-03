@@ -204,7 +204,7 @@ function ConsiderAbilityIku02()
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastIku02OnTarget( npcEnemy ) and 
+			if ( CanCastIku02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and 
 			GetUnitToLocationDistance(npcBot:GetTarget(),GetShopLocation(npcBot:GetTeam(),SHOP_HOME))<=
 			GetUnitToLocationDistance(npcBot,GetShopLocation(npcBot:GetTeam(),SHOP_HOME))) 
 			then
@@ -252,7 +252,7 @@ function ConsiderAbilityIkuEx()
 		local locationAoE = CachedFindAoELocation( npcBot, 2, true, true, npcBot:GetLocation(), 800, nRadius, 1.7, 0 );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastIkuExOnTarget( npcEnemy ) and locationAoE.count >= 1) 
+			if ( CanCastIkuExOnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and locationAoE.count >= 1) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
 			end
@@ -278,7 +278,7 @@ function ConsiderAbilityIku04()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange-50, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastIku04OnTarget( npcEnemy ) ) 
+			if ( CanCastIku04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 			end

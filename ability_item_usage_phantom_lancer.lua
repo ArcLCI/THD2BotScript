@@ -151,7 +151,7 @@ function ConsiderAbilityReisen_2_01()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( npcBot:GetTarget() == npcEnemy ) 
+		if ( npcBot:GetTarget() == npcEnemy and not IsPossibleIllusion( npcEnemy )) 
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcBot;
 		end

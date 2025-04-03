@@ -135,7 +135,7 @@ function ConsiderAbilityByakuren01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil ) 
+			if ( npcEnemy ~= nil and not IsPossibleIllusion(npcEnemy) ) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 			end
@@ -167,7 +167,7 @@ function ConsiderAbilityByakuren02()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil ) 
+			if ( npcEnemy ~= nil and not IsPossibleIllusion(npcEnemy) ) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 			end
@@ -240,7 +240,7 @@ function ConsiderAbilityByakuren04()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil ) 
+			if ( npcEnemy ~= nil and not IsPossibleIllusion(npcEnemy) ) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 			end

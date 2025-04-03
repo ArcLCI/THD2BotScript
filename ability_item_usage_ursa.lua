@@ -154,12 +154,12 @@ function ConsiderAbilityNazrin01()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( npcBot:GetTarget() == npcEnemy ) 
+		if ( npcBot:GetTarget() == npcEnemy and not IsPossibleIllusion( npcEnemy )) 
 		then
 			return BOT_ACTION_DESIRE_HIGH;
 		end
 		
-		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
+		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) and not IsPossibleIllusion( npcEnemy )) 
 		then
 			return BOT_ACTION_DESIRE_MODERATE;
 		end
@@ -220,7 +220,7 @@ function ConsiderAbilityNazrin04()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if (CanCastNazrin04OnTarget( npcEnemy ))
+			if (CanCastNazrin04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end

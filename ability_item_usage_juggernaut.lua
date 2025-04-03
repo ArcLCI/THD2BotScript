@@ -188,7 +188,7 @@ function ConsiderAbilityYoumu01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastYoumu01OnTarget( npcEnemy )  )
+			if ( npcBot:GetTarget() == npcEnemy and CanCastYoumu01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 			end
@@ -276,13 +276,13 @@ function ConsiderAbilityYoumu04()
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes500 )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastYoumu04OnTarget( npcEnemy )  )
+			if ( npcBot:GetTarget() == npcEnemy and CanCastYoumu04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 --				print('youmu_debug_01')
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end
 
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
+			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				if ( CanCastYoumu04OnTarget( npcEnemy ) )
 				then
@@ -295,7 +295,7 @@ function ConsiderAbilityYoumu04()
 
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastYoumu04OnTarget( npcEnemy ) and
+			if ( CanCastYoumu04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and
 					( nDamage * GetPhysicalDamageRemain( npcEnemy:GetArmor() )
 						+ exDamage > npcEnemy:GetHealth()
 					)
@@ -319,7 +319,7 @@ function ConsiderAbilityYoumu04()
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			local is_tp=GetModifierTimeLeft( npcEnemy, "modifier_teleporting" );
-			if ( npcBot:GetTarget() == npcEnemy and
+			if ( npcBot:GetTarget() == npcEnemy and not IsPossibleIllusion( npcEnemy ) and
 			CanCastYoumu04OnTarget( npcEnemy ) and
 			is_tp < 1.0 and is_tp > 0.2 )
 			then

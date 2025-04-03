@@ -265,7 +265,7 @@ function ConsiderAbilityMedicine04()
 		local mxTarget=nil;
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastMedicine04OnTarget( npcEnemy ) ) 
+			if ( CanCastMedicine04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				local capability = GetCapability(npcEnemy)
 				if capability > mxcap then

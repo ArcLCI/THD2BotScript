@@ -139,7 +139,7 @@ function ConsiderAbilitySagume01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastSagume01OnTarget( npcEnemy ) ) 
+			if ( CanCastSagume01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end
@@ -222,7 +222,7 @@ function ConsiderAbilitySagume03()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if CanCastSagume03OnTarget( npcEnemy ) then
+			if CanCastSagume03OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 			end
 		end

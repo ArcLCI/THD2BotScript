@@ -144,7 +144,7 @@ function ConsiderAbilityMiko01()
 
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastMiko01OnTarget( npcEnemy ) ) 
+			if ( CanCastMiko01OnTarget( npcEnemy ) and not IsPossibleIllusion(npcEnemy)) 
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 			end
@@ -161,7 +161,7 @@ function ConsiderAbilityMiko01()
 		else
 			for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 			do
-				if ( CanCastMiko01OnTarget( npcEnemy ) ) 
+				if ( CanCastMiko01OnTarget( npcEnemy ) and not IsPossibleIllusion(npcEnemy) ) 
 				then
 					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 				end

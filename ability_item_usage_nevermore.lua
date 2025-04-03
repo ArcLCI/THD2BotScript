@@ -100,14 +100,14 @@ function ConsiderAbilityShizuha01()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius - 50, true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( npcBot:GetTarget() == npcEnemy and CanCastShizuha01OnTarget( npcEnemy )  ) 
+		if ( npcBot:GetTarget() == npcEnemy and CanCastShizuha01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
 		end
 				
 		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
 		then
-			if ( CanCastShizuha01OnTarget( npcEnemy ) ) 
+			if ( CanCastShizuha01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation();
 			end
@@ -124,7 +124,7 @@ function ConsiderAbilityShizuha01()
 
 		if ( npcTarget ~= nil ) 
 		then
-			if ( CanCastShizuha01OnTarget( npcTarget ) )
+			if ( CanCastShizuha01OnTarget( npcTarget ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetLocation();
 			end
