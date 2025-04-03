@@ -410,7 +410,20 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastStunOnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen()
+	and not npcTarget:IsMagicImmune()
+	and not npcTarget:IsInvulnerable()
+	and not IsPossibleIllusion( npcTarget )
+end
+
+function IsPossibleIllusion( npcTarget )
+	return npcTarget:HasModifier("modifier_flandre01_illusion_model")
+	or npcTarget:HasModifier("modifier_illusion")
+end
+
+function IsSpellVulnerable( npcTarget )
+	return npcTarget:HasModifier("modifier_item_three_dimension_debuff")
+	or npcTarget:HasModifier("modifier_item_ghost_spoon")
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -435,12 +448,14 @@ function ConsiderItemStun( item_stun )
 		local j_time=0.2;
 		if IsRocket( item_stun:GetName() ) then j_time = 0.7 end
 		if GetModifiersTimeLeft( npcEnemy, ModifierNamesStun ) < j_time then
-			if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy )  )
+			if ( npcBot:GetTarget() == npcEnemy
+			and CanCastStunOnTarget( npcEnemy )
+			and not (npcEnemy:IsStunned() or npcEnemy:IsRooted()))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end
 
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
+			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ))
 			then
 				if ( CanCastStunOnTarget( npcEnemy ) )
 				then
@@ -473,12 +488,14 @@ function ConsiderItemRoot( item_root )
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200 , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ))
+		if ( npcBot:GetTarget() == npcEnemy
+		and CanCastStunOnTarget( npcEnemy )
+		and not (npcEnemy:IsStunned() or npcEnemy:IsRooted()))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 		end
 
-		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
+		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ))
 		then
 			if ( CanCastStunOnTarget( npcEnemy ) )
 			then
@@ -819,7 +836,7 @@ function ConsiderItemFeiXiangJian( item_feixiangjian )
 			return BOT_ACTION_DESIRE_NONE, nil;
 		end
 
-		if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy )  )
+		if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 		end
@@ -1010,7 +1027,7 @@ function ConsiderItemDuQun( item_duqun )
 	then
 		return BOT_ACTION_DESIRE_NONE;
 	end;
-	if npcBot:GetModifierStackCount(nModifier) >= 4 and npcBot:GetModifierRemainingDuration(nModifier) <= 0.35 then
+	if npcBot:GetModifierStackCount(nModifier) >= 4 and npcBot:GetModifierRemainingDuration(nModifier) <= 1 then
 		return BOT_ACTION_DESIRE_VERYHIGH;
 	end
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1600 , true, BOT_MODE_NONE );
@@ -1202,12 +1219,12 @@ function ConsiderItemYukkuriStick( item_yukkuri_stick )
 			return BOT_ACTION_DESIRE_NONE, nil;
 		end
 		if GetModifiersTimeLeft( npcEnemy, ModifierNamesStun ) < j_time then
-			if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy )  )
+			if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end
 
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
+			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ))
 			then
 				if ( CanCastStunOnTarget( npcEnemy ) )
 				then
@@ -1257,12 +1274,12 @@ function ConsiderItemBook( item_three_dimension )
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+200 , true, BOT_MODE_NONE );
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy )  )
+		if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 		end
 
-		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
+		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ))
 		then
 			if ( CanCastStunOnTarget( npcEnemy ) )
 			then

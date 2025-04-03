@@ -176,7 +176,7 @@ function ConsiderAbilityYugi02WithJump(item_jump)
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil )
+			if ( npcEnemy ~= nil and CanCastStunOnTarget( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 			end
@@ -202,7 +202,7 @@ function ConsiderAbilityYugi04()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 285, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil)
+			if ( npcEnemy ~= nil and CanCastStunOnTarget( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end
@@ -229,7 +229,7 @@ function ConsiderAbilityYugi04WithJump(item_jump)
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil)
+			if ( npcEnemy ~= nil and CanCastStunOnTarget( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy,  npcEnemy:GetLocation()
 			end

@@ -57,7 +57,7 @@ function AbilityUsageThink()
 	cast03Desire, cast03Location = ConsiderAbilityReisen03();
 	if ( cast03Desire > 0 )
 	then
-		npcBot:Action_ClearActions(false);
+		npcBot:Action_ClearActions(true);
 		npcBot:ActionQueue_UseAbilityOnLocation( ability03, cast03Location);
 		npcBot:ActionQueue_Delay(1);
 		return;
