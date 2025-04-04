@@ -33,6 +33,13 @@ local tableItemsToBuy = {
 				"item_god_hand",
 					"item_recipe_loneliness",
 
+				"item_cat_foot",
+				"item_paper_mask",
+				"item_rocket_diagram",
+				"item_zun_hat",
+					"item_recipe_wanbaochui",
+					"item_recipe_wanbaochui2",
+
 				"item_mushroom",
 				"item_mushroom",
 					"item_recipe_touhou_banana",
@@ -45,12 +52,6 @@ local tableItemsToBuy = {
 				"item_ice_block",
 					"item_recipe_laevateinn",
 
-				"item_cat_foot",
-				"item_paper_mask",
-				"item_rocket_diagram",
-				"item_zun_hat",
-					"item_recipe_wanbaochui",
-					"item_recipe_wanbaochui2",
 			};
 
 

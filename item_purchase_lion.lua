@@ -40,7 +40,6 @@ local tableItemsToBuy = {
 					"item_recipe_mushroom_soup",
 				"item_baozi",
 				"item_sake",
-					"item_recipe_picnic_basket",
 				"item_zun_hat",
 						"item_recipe_nuclear_stick",
 

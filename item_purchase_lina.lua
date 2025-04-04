@@ -25,26 +25,30 @@ local tableItemsToBuy = {
 				"item_ice_block",
 					"item_recipe_hakurei_amulet",
 
-				"item_gran_grimoire",
-				"item_gran_grimoire",
-				"item_recipe_bagua",
-
-				"item_cat_ear",
-				"item_cherry_leaf",
-				"item_sailor_suit",
-				"item_wind_amulet",
-				"item_magic_guide_book",
-					"item_recipe_doctor_doll",
-					"item_recipe_jiao_shou",
-				"item_wing",
-					"item_recipe_zaiezhizhurenxing",
-
 				"item_cat_foot",
 				"item_paper_mask",
 				"item_rocket_diagram",
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
 					"item_recipe_wanbaochui2",
+
+				"item_gran_grimoire",
+				"item_gran_grimoire",
+				"item_recipe_bagua",
+
+				"item_wind_amulet",
+				"item_magic_guide_book",
+					"item_recipe_doctor_doll",
+				"item_cat_ear",
+				"item_cherry_leaf",
+				"item_sailor_suit",
+					"item_recipe_jiao_shou",
+				"item_wing",
+					"item_recipe_zaiezhizhurenxing",
+
+				"item_gran_grimoire",
+				"item_gran_grimoire",
+					"item_recipe_bagua",
 
 			};
 

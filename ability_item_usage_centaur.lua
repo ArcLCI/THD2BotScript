@@ -129,6 +129,16 @@ function AbilityUsageThink()
 			return;
 		end
 	end
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE );
+	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+	do
+		if ( npcEnemy ~= nil
+		and npcEnemy:HasModifier( "modifier_thdots_yugi04_think_interval" ))
+		then
+			npcBot:Action_AttackUnit(npcEnemy, false)
+			return;
+		end
+	end
 end
 
 ----------------------------------------------------------------------------------------------------

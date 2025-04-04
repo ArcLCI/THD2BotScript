@@ -37,17 +37,17 @@ local tableItemsToBuy = {
 				"item_sailor_suit",
 					"item_recipe_frock",
 
-
-				"item_god_hand",
-				"item_god_hand",
-					"item_recipe_loneliness",
-
 				"item_cat_foot",
 				"item_paper_mask",
 				"item_rocket_diagram",
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
 					"item_recipe_wanbaochui2",
+
+				"item_god_hand",
+				"item_god_hand",
+					"item_recipe_loneliness",
+
 			};
 
 

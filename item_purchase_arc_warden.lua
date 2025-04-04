@@ -17,15 +17,15 @@ local tableItemsToBuy = {
 				"item_gran_grimoire",
 					"item_recipe_pomojinlingli",
 
-					"item_cat_ear",
-					"item_cherry_leaf",
-					"item_sailor_suit",
-					"item_wind_amulet",
-					"item_magic_guide_book",
-						"item_recipe_doctor_doll",
-						"item_recipe_jiao_shou",
-					"item_wing",
-						"item_recipe_zaiezhizhurenxing",
+				"item_cat_ear",
+				"item_cherry_leaf",
+				"item_sailor_suit",
+				"item_wind_amulet",
+				"item_magic_guide_book",
+					"item_recipe_doctor_doll",
+					"item_recipe_jiao_shou",
+				"item_wing",
+					"item_recipe_zaiezhizhurenxing",
 
 				"item_bra",
 				"item_baozi",
@@ -37,8 +37,6 @@ local tableItemsToBuy = {
 					"item_recipe_ghost_balloon",
 				"item_swimming_suit",
 						"item_recipe_xuenvdeweijin",
-
-
 
 				"item_god_hand",
 				"item_god_hand",

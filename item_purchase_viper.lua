@@ -25,17 +25,17 @@ local tableItemsToBuy = {
 				"item_gran_grimoire",
 				"item_recipe_bagua",
 
-				"item_silver_knife",
-				"item_paper_mask",
-				"item_cat_foot",
-				"item_recipe_ganggenier",
-
 				"item_cat_foot",
 				"item_paper_mask",
 				"item_rocket_diagram",
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
 					"item_recipe_wanbaochui2",
+
+				"item_silver_knife",
+				"item_paper_mask",
+				"item_cat_foot",
+				"item_recipe_ganggenier",
 
 			};
 

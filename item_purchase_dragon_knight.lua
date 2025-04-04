@@ -29,15 +29,10 @@ local tableItemsToBuy = {
 				"item_paper_mask",
 				"item_cat_foot",
 					"item_recipe_ganggenier",
-
+				
 				"item_god_hand",
 				"item_god_hand",
 					"item_recipe_loneliness",
-
-				"item_frog",
-				"item_ice_block",
-				"item_ice_block",
-				"item_recipe_frozen",
 
 				"item_cat_foot",
 				"item_paper_mask",
@@ -45,6 +40,12 @@ local tableItemsToBuy = {
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
 					"item_recipe_wanbaochui2",
+
+				"item_frog",
+				"item_ice_block",
+				"item_ice_block",
+				"item_recipe_frozen",
+
 			};
 
 
