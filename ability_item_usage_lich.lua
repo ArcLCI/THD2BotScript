@@ -16,15 +16,15 @@ function MyItemUsageThink()
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
 
 	local item_travel_boots = IsItemAvailable( "item_travel_boots" )
-	local item_moon_bow  = IsItemAvailable( "item_moon_bow" )
+	local item_slow = IsItemAvailable( "item_zaiezhizhurenxing" ) or IsItemAvailable( "item_jiao_shou" )
 	local item_book = IsItemAvailable( "item_three_dimension" )
 
-	if ( item_moon_bow~=nil and item_moon_bow:IsFullyCastable() )
+	if ( item_slow~=nil and item_slow:IsFullyCastable() )
 	then
-		castItemMoonBowDesire, castItemMoonBowTarget = ConsiderItemMoonBow( item_moon_bow )
-		if ( castItemMoonBowDesire > 0 )
+		castItemSlowDesire, castItemSlowTarget = ConsiderItemSlow( item_slow )
+		if ( castItemSlowDesire > 0 )
 		then
-			npcBot:Action_UseAbilityOnLocation( item_moon_bow , castItemMoonBowTarget);
+			npcBot:Action_UseAbilityOnLocation( item_slow, castItemSlowTarget);
 			return;
 		end
 	end
