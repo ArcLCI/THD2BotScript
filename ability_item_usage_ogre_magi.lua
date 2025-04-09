@@ -20,6 +20,7 @@ function MyItemUsageThink()
 	local item_pomo = IsItemAvailable( "item_pomojinlingli" )
 	local item_xinyan = IsItemAvailable( "item_third_eyes" )
 	local item_jump = IsItemAvailable( "item_wanmeitiaoyuezhuangzhi" )
+	local item_qijizhixing = IsItemAvailable( "item_qijizhixing" ) or IsItemAvailable( "item_tuzhushen" )
 	if ( item_xinyan~=nil and item_xinyan:IsFullyCastable() )
 	then 
 		castItemXinYanDesire, castItemXinYanTarget = ConsiderItemXinYan( item_xinyan )
@@ -44,6 +45,15 @@ function MyItemUsageThink()
 		if ( castItemJumpDesire > 0 ) 
 		then
 			npcBot:Action_UseAbilityOnLocation( item_jump, castItemJumpTarget);
+			return;
+		end
+	end
+	if ( item_qijizhixing~=nil and item_qijizhixing:IsFullyCastable() )
+	then 
+		castItemQiJjZhiXingDesire, castItemQiJjZhiXingTarget = ConsiderItemQiJiZhiXing(item_qijizhixing)
+		if ( castItemQiJjZhiXingDesire > 0 ) 
+		then
+			npcBot:Action_UseAbilityOnEntity( item_qijizhixing, castItemQiJjZhiXingTarget );
 			return;
 		end
 	end

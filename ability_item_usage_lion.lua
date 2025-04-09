@@ -40,17 +40,6 @@ function MyItemUsageThink()
 		end
 	end
 
-	local item_travel_boots = IsItemAvailable( "item_travel_boots" )
-
-	if ( item_travel_boots~=nil and item_travel_boots:IsFullyCastable() )
-	then
-		CastItemTravelBootsDesire = ConsiderItemTravelBoots(item_travel_boots)
-		if ( CastItemTravelBootsDesire > 0 )
-		then
-			return;
-		end
-	end
-
 end
 
 ----------------------------------------------------------------------------------------------------
