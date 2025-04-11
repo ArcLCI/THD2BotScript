@@ -10,38 +10,36 @@ cast04Desire = 0;
 
 
 function MyItemUsageThink()
-	
+
 	local npcBot = GetBot();
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
-	
-	local item_feixiangjian = IsItemAvailable( "item_feixiangjian" )
-	item_stun = IsItemAvailable( "item_yuetufensuijvren" )
-	if item_stun == nil then
-		item_stun = IsItemAvailable( "item_pocket_watch" )
-	end
-	
-	if ( item_stun~=nil and item_stun:IsFullyCastable() )
-	then 
-		--print("stun item exist")
-		castItemStunDesire, castItemStunTarget = ConsiderItemStun(item_stun)
-		if ( castItemStunDesire > 0 ) 
+
+	local item_horse_red = IsItemAvailable( "item_horse_red" )
+	local item_horse_green = IsItemAvailable( "item_horse_green" )
+	local item_horse_king = IsItemAvailable( "item_horse_king")
+
+	if ( item_horse_red~=nil and item_horse_red:IsFullyCastable() )
+	then
+		local castItemHorseRedDesire = ConsiderItemHorseRed(item_horse_red)
+		if ( castItemHorseRedDesire > 0 )
 		then
-			--print("stun luanch")
-			npcBot:Action_UseAbilityOnEntity( item_stun, castItemStunTarget );
-			return;
+			npcBot:Action_UseAbility( item_horse_red )
+			return
 		end
 	end
-	if ( item_feixiangjian~=nil and item_feixiangjian:IsFullyCastable() )
-	then 
-		castItemFeiXiangJianDesire, castItemFeiXiangJianTarget = ConsiderItemFeiXiangJian( item_feixiangjian )
-		if ( castItemFeiXiangJianDesire > 0 ) 
+
+	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
+	then
+		local castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
+		if ( castItemHorseKingDesire > 0 )
 		then
-			npcBot:Action_UseAbilityOnEntity( item_feixiangjian, castItemFeiXiangJianTarget );
-			return;
+			npcBot:Action_UseAbility( item_horse_king )
+			return
 		end
 	end
+	
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -64,29 +62,29 @@ function AbilityUsageThink()
 
 	-- Consider using each ability
 	cast01Desire, cast01Target = ConsiderAbilityDaiyousei01();
-	if ( cast01Desire > 0 ) 
+	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability01 , cast01Target);
 		return;
 	end
 
 	cast02Desire = ConsiderAbilityDaiyousei02();
-	if ( cast02Desire > 0 ) 
+	if ( cast02Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability02 );
 		return;
 	end
 
 	cast03Desire, cast03Target = ConsiderAbilityDaiyousei03();
-	if ( cast03Desire > 0 ) 
+	if ( cast03Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability03, cast03Target);
 		return;
 	end
 
 	cast04Desire = ConsiderAbilityDaiyousei04();
-	
-	if ( cast04Desire > 0 ) 
+
+	if ( cast04Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability04);
 		return;
@@ -118,11 +116,11 @@ function ConsiderAbilityDaiyousei01()
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() ) 
-	then 
+	if ( not ability01:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, nil;
 	end;
-	
+
 	local nCastRange = ability01:GetCastRange();
 	local tableNearbyTrees = npcBot:GetNearbyTrees ( nCastRange )
 	local dis = 0
@@ -130,7 +128,7 @@ function ConsiderAbilityDaiyousei01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget()==npcEnemy and CanCastDaiyousei01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
+			if ( npcBot:GetTarget()==npcEnemy and CanCastDaiyousei01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
 			end
@@ -141,7 +139,7 @@ function ConsiderAbilityDaiyousei01()
 			for _,tree in pairs( tableNearbyTrees )
 			do
 				dis = GetUnitToLocationDistance( npcBot:GetTarget(),GetTreeLocation( tree ))
-				if dis < dismin then 
+				if dis < dismin then
 					dismin = dis
 					treeid = tree
 				end
@@ -161,7 +159,7 @@ function ConsiderAbilityDaiyousei01()
 			for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 			do
 				if npcFriend:DistanceFromFountain() < dismin then
-					opfriendhero = npcFriend	
+					opfriendhero = npcFriend
 				end
 			end
 			if opfriendhero ~= 0 then
@@ -174,7 +172,7 @@ function ConsiderAbilityDaiyousei01()
 		do
 			local v = GetTreeLocation( tree ) - GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 			dis = math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
-			if dis < dismin then 
+			if dis < dismin then
 				dismax = dis
 				treeid = tree
 			end
@@ -182,7 +180,7 @@ function ConsiderAbilityDaiyousei01()
 		if treeid ~= 0 then
 			npcBot:Action_UseAbilityOnTree( ability01, treeid )
 			return BOT_ACTION_DESIRE_NONE, nil
-		end		
+		end
 	end
 	return BOT_ACTION_DESIRE_NONE, nil;
 end
@@ -194,18 +192,18 @@ function ConsiderAbilityDaiyousei02()
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if ( not ability02:IsFullyCastable() ) 
-	then 
+	if ( not ability02:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE;
 	end;
-	
+
 
 	local nCastRange = ability02:GetCastRange();
 
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange - 50, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastDaiyousei02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
+			if ( CanCastDaiyousei02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH;
 			end
@@ -218,12 +216,12 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityDaiyousei03()
-	
+
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if ( not ability03:IsFullyCastable() ) 
-	then 
+	if ( not ability03:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE,nil;
 	end;
 
@@ -234,7 +232,7 @@ function ConsiderAbilityDaiyousei03()
 			then
 			if ( npcFriend:IsAlive())
 			then
-			if ( CanCastDaiyousei03OnTarget( npcFriend ) and 
+			if ( CanCastDaiyousei03OnTarget( npcFriend ) and
 				( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
 				npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
 				IsUnderAttack( npcFriend )
@@ -248,10 +246,10 @@ function ConsiderAbilityDaiyousei03()
 	else
 		-- Get some of its values
 		local nCastRange = ability03:GetCastRange();
-		local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE );	
+		local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE );
 		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 		do
-			if ( CanCastDaiyousei03OnTarget( npcFriend ) and 
+			if ( CanCastDaiyousei03OnTarget( npcFriend ) and
 				( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
 				npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
 				IsUnderAttack( npcFriend )
@@ -271,18 +269,18 @@ function ConsiderAbilityDaiyousei04()
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if ( not ability04:IsFullyCastable() ) 
-	then 
+	if ( not ability04:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE;
 	end;
-	
+
 
 	local nCastRange = ability04:GetCastRange();
 
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastDaiyousei04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
+			if ( CanCastDaiyousei04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH;
 			end
