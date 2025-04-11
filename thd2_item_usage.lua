@@ -1129,6 +1129,33 @@ end
 
 ----------------------------------------------------------------------------------------------------
 
+function ConsiderItemHorseRed( item_horse_red )
+
+	local npcBot = GetBot()
+
+	-- Make sure it's castable
+	if ( not item_horse_red:IsFullyCastable() ) then
+		return BOT_ACTION_DESIRE_NONE
+	end;
+
+	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT )
+	then
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 550, true, BOT_MODE_NONE );
+		if ( not #tableNearbyEnemyHeroes >= 1 ) then
+			return BOT_ACTION_DESIRE_MODERATE
+		end
+	end
+
+	if ( npcBot:GetHealth()/npcBot:GetMaxHealth() <= 0.8 and (npcBot:TimeSinceDamagedByAnyHero() >= 3.5 or npcBot:TimeSinceDamagedByCreep() >= 2)) then
+		return BOT_ACTION_DESIRE_MODERATE
+	end
+
+	return BOT_ACTION_DESIRE_NONE
+
+end
+
+----------------------------------------------------------------------------------------------------
+
 function ConsiderItemHorseGreen( item_horse_green )
 
 	local npcBot = GetBot();

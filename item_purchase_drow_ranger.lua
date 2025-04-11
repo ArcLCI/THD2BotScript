@@ -3,8 +3,9 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
 local tableItemsToBuy = {
-				--扫把+补刀斧转河童手枪
 				"item_broom",
+				"item_wind_amulet",
+					"item_recipe_horse_red",
 				"item_quelling_blade",
 
 				"item_knife",
@@ -14,9 +15,6 @@ local tableItemsToBuy = {
 				"item_recipe_watermelon",
 				"item_screw_driver",
 				"item_recipe_cirno_claymore",
-
-				--隙间鞋
-					"item_recipe_gap_creator",
 
 				"item_mushroom",
 				"item_mushroom",
@@ -31,6 +29,9 @@ local tableItemsToBuy = {
 				"item_cat_foot",
 					"item_recipe_ganggenier",
 
+				"item_horse_king_compressor",
+					"item_recipe_horse_king",
+
 				--月兔幻觉兵器
 				"item_violin",
 				"item_screw_driver",
@@ -39,6 +40,13 @@ local tableItemsToBuy = {
 				"item_god_hand",
 				"item_god_hand",
 					"item_recipe_loneliness",
+
+				"item_knife",
+				"item_scissors",
+					"item_recipe_quant",
+				"item_wrench",
+					"item_recipe_sampan",
+					"item_recipe_ertianyiliu",
 
 			};
 

@@ -10,14 +10,27 @@ function MyItemUsageThink()
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
 
-	local item_travel_boots = IsItemAvailable( "item_travel_boots" )
+	local item_horse_red = IsItemAvailable( "item_horse_red" )
+	local item_horse_green = IsItemAvailable( "item_horse_green" )
+	local item_horse_king = IsItemAvailable( "item_horse_king")
 
-	if ( item_travel_boots~=nil and item_travel_boots:IsFullyCastable() )
+	if ( item_horse_red~=nil and item_horse_red:IsFullyCastable() )
 	then
-		CastItemTravelBootsDesire = ConsiderItemTravelBoots(item_travel_boots)
-		if ( CastItemTravelBootsDesire > 0 )
+		local castItemHorseRedDesire = ConsiderItemHorseRed(item_horse_red)
+		if ( castItemHorseRedDesire > 0 )
 		then
-			return;
+			npcBot:Action_UseAbility( item_horse_red )
+			return
+		end
+	end
+
+	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
+	then
+		local castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
+		if ( castItemHorseKingDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_horse_king )
+			return
 		end
 	end
 

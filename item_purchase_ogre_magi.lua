@@ -71,8 +71,11 @@ function ItemPurchaseThink()
 	ConsiderItemPurchase(tableItemsToBuy,seed_id)
 
 	if npcBot:FindItemSlot("item_pomojinlingli") >=0 and ItemSold == 0 then
-		npcBot:ActionImmediate_SellItem(npcBot:GetItemInSlot(npcBot:FindItemSlot("item_third_eyes")))
-		ItemSold = 1
+		local item_xinyan = IsItemAvailable( "item_third_eyes" )
+		if item_xinyan~=nil and item_xinyan:IsFullyCastable() then
+			npcBot:ActionImmediate_SellItem(npcBot:GetItemInSlot(npcBot:FindItemSlot("item_third_eyes")))
+			ItemSold = 1
+		end
 	end
 end
 

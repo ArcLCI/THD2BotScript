@@ -15,27 +15,15 @@ function MyItemUsageThink()
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
 
-	item_stun = IsItemAvailable( "item_yuetufensuijvren" )
-	if item_stun == nil then
-		item_stun = IsItemAvailable( "item_pocket_watch" )
-	end
 
-	item_teeth = IsItemAvailable( "item_teeth" )
-	item_tideng = IsItemAvailable( "item_tsundere" )
+	local item_teeth = IsItemAvailable( "item_teeth" )
+	local item_speed = IsItemAvailable( "item_mystia_wings" ) or
+	IsItemAvailable( "item_brother_sharp" )
+	local item_horse_red = IsItemAvailable( "item_horse_red" )
+	local item_horse_green = IsItemAvailable( "item_horse_green" )
+	local item_horse_king = IsItemAvailable( "item_horse_king")
 
-	if ( item_stun~=nil and item_stun:IsFullyCastable() )
-	then
-		--print("stun item exist")
-		castItemStunDesire, castItemStunTarget = ConsiderItemStun(item_stun)
-		if ( castItemStunDesire > 0 )
-		then
-			--print("stun luanch")
-			npcBot:Action_UseAbilityOnEntity( item_stun, castItemStunTarget );
-			return;
-		end
-	end
-
-	ability03 = npcBot:GetAbilityByName( "ability_thdots_youmu03" )
+	local ability03 = npcBot:GetAbilityByName( "ability_thdots_youmu03" )
 
 	if ( item_teeth~=nil and item_teeth:IsFullyCastable() and
 			( npcBot:IsSilenced()
@@ -45,24 +33,43 @@ function MyItemUsageThink()
 			)
 		)
 	then
-		castItemTeethDesire = ConsiderItemTeeth( item_teeth )
+		local castItemTeethDesire = ConsiderItemTeeth( item_teeth )
 		if ( castItemTeethDesire > 0 )
 		then
-			npcBot:Action_UseAbility( item_teeth );
-			return;
+			npcBot:Action_UseAbility( item_teeth )
+			return
 		end
 	end
 
-	if ( item_tideng~=nil and item_tideng:IsFullyCastable() )
+	if ( item_speed~=nil and item_speed:IsFullyCastable() )
 	then
-		castItemTiDengDesire = ConsiderItemTiDeng( item_tideng )
-		if ( castItemTiDengDesire > 0 )
+		local castItemSpeedDesire = ConsiderItemSpeed( item_speed )
+		if ( castItemSpeedDesire > 0 )
 		then
-			npcBot:Action_UseAbility( item_tideng );
-			return;
+			npcBot:Action_UseAbility( item_speed )
+			return
 		end
 	end
 
+	if ( item_horse_red~=nil and item_horse_red:IsFullyCastable() )
+	then
+		local castItemHorseRedDesire = ConsiderItemHorseRed(item_horse_red)
+		if ( castItemHorseRedDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_horse_red )
+			return
+		end
+	end
+
+	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
+	then
+		local castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
+		if ( castItemHorseKingDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_horse_king )
+			return
+		end
+	end
 
 end
 
@@ -94,9 +101,6 @@ function AbilityUsageThink()
 	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location );
-		if item_tideng ~= nil and item_tideng:IsFullyCastable() then
-			npcBot:Action_UseAbility( item_tideng );
-		end
 		return;
 	end
 
