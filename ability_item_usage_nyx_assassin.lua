@@ -64,21 +64,25 @@ function AbilityUsageThink()
 	cast01Desire, cast01Target = ConsiderAbilityDaiyousei01();
 	if ( cast01Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnEntity( ability01 , cast01Target);
+		npcBot:Action_ClearActions(false)
+		npcBot:ActionQueue_UseAbilityOnEntity( ability01 , cast01Target)
+		npcBot:ActionQueue_AttackUnit(cast01Target, true)
 		return;
 	end
 
 	cast02Desire = ConsiderAbilityDaiyousei02();
 	if ( cast02Desire > 0 )
 	then
-		npcBot:Action_UseAbility( ability02 );
+		npcBot:Action_ClearActions(false)
+		npcBot:ActionQueue_UseAbility( ability02 );
 		return;
 	end
 
 	cast03Desire, cast03Target = ConsiderAbilityDaiyousei03();
 	if ( cast03Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnEntity( ability03, cast03Target);
+		npcBot:Action_ClearActions(false)
+		npcBot:ActionQueue_UseAbilityOnEntity( ability03, cast03Target);
 		return;
 	end
 
@@ -86,7 +90,8 @@ function AbilityUsageThink()
 
 	if ( cast04Desire > 0 )
 	then
-		npcBot:Action_UseAbility( ability04);
+		npcBot:Action_ClearActions(false)
+		npcBot:ActionQueue_UseAbility( ability04);
 		return;
 	end
 
@@ -145,7 +150,8 @@ function ConsiderAbilityDaiyousei01()
 				end
 			end
 			if treeid ~= 0 then
-				npcBot:Action_UseAbilityOnTree( ability01, treeid )
+				npcBot:Action_ClearActions(false)
+				npcBot:ActionQueue_UseAbilityOnTree( ability01, treeid )
 				return BOT_ACTION_DESIRE_NONE, nil
 			end
 		end
@@ -178,7 +184,8 @@ function ConsiderAbilityDaiyousei01()
 			end
 		end
 		if treeid ~= 0 then
-			npcBot:Action_UseAbilityOnTree( ability01, treeid )
+			npcBot:Action_ClearActions(false)
+			npcBot:ActionQueue_UseAbilityOnTree( ability01, treeid )
 			return BOT_ACTION_DESIRE_NONE, nil
 		end
 	end

@@ -1134,14 +1134,14 @@ function ConsiderItemHorseRed( item_horse_red )
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not item_horse_red:IsFullyCastable() ) then
+	if (not item_horse_red:IsFullyCastable()) then
 		return BOT_ACTION_DESIRE_NONE
 	end;
 
 	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 550, true, BOT_MODE_NONE );
-		if ( not #tableNearbyEnemyHeroes >= 1 ) then
+		if not ( #tableNearbyEnemyHeroes >= 1 ) then
 			return BOT_ACTION_DESIRE_MODERATE
 		end
 	end
@@ -1161,7 +1161,7 @@ function ConsiderItemHorseGreen( item_horse_green )
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if ( not item_horse_green:IsFullyCastable() ) then
+	if (not item_horse_green:IsFullyCastable()) then
 		return BOT_ACTION_DESIRE_NONE;
 	end;
 
@@ -1185,7 +1185,7 @@ function ConsiderItemHorseKing( item_horse_king )
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if ( not item_horse_king:IsFullyCastable() )
+	if (not item_horse_king:IsFullyCastable() )
 	then
 		return BOT_ACTION_DESIRE_NONE;
 	end;

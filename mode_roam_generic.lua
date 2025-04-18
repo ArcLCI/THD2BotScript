@@ -5,15 +5,33 @@ local bot = GetBot();
 
 local botName = bot:GetUnitName()
 
+local cAbility = nil
+local ConsiderHeroSpecificRoaming = {}
+
 local droppedCheck = -90;
 local pickedItem = nil;
 local debug_printed = false;
 
 function GetDesire()
+	botName = bot:GetUnitName()
 
 	if not debug_printed then
 		print('roam_generic_ok')
 		debug_printed = true
+	end
+
+	-- unit special abilities
+	local specialRoaming = ConsiderHeroSpecificRoaming[botName]
+	if specialRoaming then
+		-- return specialRoaming
+		local specialDesire = specialRoaming()
+		if specialDesire and specialDesire > 0 then
+			if specialDesire <= 1 then
+				return Clamp(specialDesire, 0, 0.99)
+			else
+				return specialDesire
+			end
+		end
 	end
 
 	if not bot:IsAlive() or bot:GetCurrentActionType() == BOT_ACTION_TYPE_DELAY then
@@ -72,4 +90,21 @@ function Think()
 		end
 	end
 
+end
+
+------------------------------
+-- 持续施法
+------------------------------
+
+function CheckHighPriorityChannelAbility(abilityName)
+	if cAbility == nil then cAbility = bot:GetAbilityByName(abilityName) end
+	if cAbility:IsTrained() and (cAbility:IsInAbilityPhase() or bot:IsChanneling()) then
+		print("now channeling:"..abilityName)
+		return BOT_MODE_DESIRE_ABSOLUTE
+	end
+	return BOT_MODE_DESIRE_NONE
+end
+
+ConsiderHeroSpecificRoaming['npc_dota_hero_mirana'] = function ()
+	return CheckHighPriorityChannelAbility("ability_thdots_reisenOld03")
 end

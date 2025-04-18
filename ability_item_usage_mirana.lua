@@ -72,7 +72,6 @@ function AbilityUsageThink()
 	then
 		npcBot:Action_ClearActions(true);
 		npcBot:ActionQueue_UseAbilityOnLocation( ability03, cast03Location);
-		npcBot:ActionQueue_Delay(1);
 		return;
 	end
 
