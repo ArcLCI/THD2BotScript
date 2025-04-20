@@ -279,6 +279,39 @@ function IsBotAwake( bot )
 
 end
 
+function IsValid( nTarget )
+	return nTarget ~= nil
+			and not nTarget:IsNull()
+			and nTarget:CanBeSeen()
+			and nTarget:IsAlive()
+			and not nTarget:IsBuilding()
+end
+
+function GetCenterOfUnits( nUnits )
+
+	if #nUnits == 0
+	then
+		return Vector( 0.0, 0.0 )
+	end
+
+	local sum = Vector( 0.0, 0.0 )
+	local num = 0
+
+	for _, unit in pairs( nUnits )
+	do
+		if IsValid(unit)
+		then
+			sum = sum + unit:GetLocation()
+			num = num + 1
+		end
+	end
+
+	if num == 0 then return Vector( 0.0, 0.0 ) end
+
+	return sum / num
+
+end
+
 ----------------------------------------------------------------------------------------------------
 
 local function IsRocket(item_name)
@@ -1140,13 +1173,13 @@ function ConsiderItemHorseRed( item_horse_red )
 
 	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 550, true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 600, true, BOT_MODE_NONE );
 		if not ( #tableNearbyEnemyHeroes >= 1 ) then
 			return BOT_ACTION_DESIRE_MODERATE
 		end
 	end
 
-	if ( npcBot:GetHealth()/npcBot:GetMaxHealth() <= 0.8 and (npcBot:TimeSinceDamagedByAnyHero() >= 3.5 or npcBot:TimeSinceDamagedByCreep() >= 2)) then
+	if ( npcBot:GetHealth()/npcBot:GetMaxHealth() <= 0.8 and (npcBot:TimeSinceDamagedByAnyHero() >= 2.5 )) then
 		return BOT_ACTION_DESIRE_MODERATE
 	end
 

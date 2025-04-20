@@ -119,14 +119,30 @@ function ConsiderAbilityReisen03()
 	end;
 
 	local nCastRange = ability03:GetCastRange();
-
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
-	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-	do
-		if ( CanCastReisen03OnTarget( npcEnemy ) )
-		then
-			return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK )
+	then
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
+		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+		do
+			if ( CanCastReisen03OnTarget( npcEnemy ) )
+			then
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(1);
+			end
 		end
+	end
+
+	if ( npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_TOP or
+		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_MID or
+		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_BOTTOM or
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_TOP or
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_MID or
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOTTOM )
+	then
+		local tableNearbylanecreeps = npcBot:GetNearbyLaneCreeps(750,true)
+		if tableNearbylanecreeps ~= nil and #tableNearbylanecreeps >= 3
+        then
+            return BOT_ACTION_DESIRE_HIGH, GetCenterOfUnits(tableNearbylanecreeps)
+        end
 	end
 
 	return BOT_ACTION_DESIRE_NONE, 0;

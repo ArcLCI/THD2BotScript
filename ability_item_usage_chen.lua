@@ -10,46 +10,52 @@ cast04Desire = 0;
 
 
 function MyItemUsageThink()
-	
+
 	local npcBot = GetBot();
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
-	
+
 
 	local item_ghost = IsItemAvailable( "item_ghost_balloon" )
-	local item_weijin = IsItemAvailable( "item_xuenvdeweijin" )
-	
+	local item_xinyan = IsItemAvailable( "item_third_eyes" )
+
 	local item_slow = IsItemAvailable( "item_zaiezhizhurenxing" ) or
 					IsItemAvailable( "item_jiao_shou" )
-
-	local item_speed = IsItemAvailable( "item_mystia_wings" ) or
-					IsItemAvailable( "item_brother_sharp" ) or
-					IsItemAvailable( "item_bone_flute" )	
 
 	local item_rocket = IsItemAvailable( "item_rocket" ) or
 					IsItemAvailable( "item_rocket_2" ) or
 					IsItemAvailable( "item_rocket_3" ) or
 					IsItemAvailable( "item_rocket_4" ) or
-					IsItemAvailable( "item_rocket_5" )	
-	
-	local item_qijizhixing = IsItemAvailable( "item_qijizhixing" )
-	
+					IsItemAvailable( "item_rocket_5" )
+
+	local item_qijizhixing = IsItemAvailable( "item_qijizhixing" ) or IsItemAvailable( "item_tuzhushen" )
+
+	if ( item_xinyan~=nil and item_xinyan:IsFullyCastable() )
+	then
+		castItemXinYanDesire, castItemXinYanTarget = ConsiderItemXinYan( item_xinyan )
+		if ( castItemXinYanDesire > 0 )
+		then
+			npcBot:Action_UseAbilityOnEntity( item_xinyan, castItemXinYanTarget );
+			return;
+		end
+	end
+
 	if ( item_slow~=nil and item_slow:IsFullyCastable() )
-	then 
+	then
 		castItemSlowDesire, castItemSlowTarget = ConsiderItemSlow( item_slow )
-		if ( castItemSlowDesire > 0 ) 
+		if ( castItemSlowDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnLocation( item_slow, castItemSlowTarget);
 			return;
 		end
 	end
-	
+
 	if ( item_ghost~=nil and item_ghost:IsFullyCastable() )
-	then 
+	then
 		--print("stun item exist")
 		castItemGhostDesire = ConsiderItemGhost(item_ghost)
-		if ( castItemGhostDesire > 0 ) 
+		if ( castItemGhostDesire > 0 )
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbility( item_ghost );
@@ -57,40 +63,28 @@ function MyItemUsageThink()
 		end
 	end
 
-	if ( item_weijin~=nil and item_weijin:IsFullyCastable() )
-	then 
-		--print("stun item exist")
-		castItemWeijinDesire = ConsiderItemWeiJin(item_weijin)
-		if ( castItemWeijinDesire > 0 ) 
-		then
-			--print("stun luanch")
-			npcBot:Action_UseAbility( item_weijin );
-			return;
-		end
-	end
-	
 	if ( item_speed~=nil and item_speed:IsFullyCastable() )
-	then 
+	then
 		castItemSpeedDesire = ConsiderItemSpeed( item_speed )
-		if ( castItemSpeedDesire > 0 or cast04Desire > 0) 
+		if ( castItemSpeedDesire > 0 or cast04Desire > 0)
 		then
 			npcBot:Action_UseAbility( item_speed );
 			return;
 		end
 	end
 	if ( item_rocket~=nil and item_rocket:IsFullyCastable() )
-	then 
+	then
 		castItemStunDesire, castItemStunTarget = ConsiderItemStun( item_rocket )
-		if ( castItemStunDesire > 0 ) 
+		if ( castItemStunDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget );
 			return;
 		end
 	end
 	if ( item_qijizhixing~=nil and item_qijizhixing:IsFullyCastable() )
-	then 
+	then
 		castItemQiJjZhiXingDesire, castItemQiJjZhiXingTarget = ConsiderItemQiJiZhiXing(item_qijizhixing)
-		if ( castItemQiJjZhiXingDesire > 0 ) 
+		if ( castItemQiJjZhiXingDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity( item_qijizhixing, castItemQiJjZhiXingTarget );
 			return;
@@ -105,7 +99,9 @@ function AbilityUsageThink()
 	if not IsBotAwake() then return end
 
 	MyItemUsageThink();
-	local npcBot = GetBot();
+	local npcBot = GetBot()
+	print("current active mode:")
+	print(npcBot:GetActiveMode())
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
@@ -113,28 +109,24 @@ function AbilityUsageThink()
 	ability01 = npcBot:GetAbilityByName( "ability_thdotsr_star01" );
 	ability02 = npcBot:GetAbilityByName( "ability_thdotsr_star02" );
 	ability03 = npcBot:GetAbilityByName( "ability_thdotsr_star03" );
-
-	--ability01 = npcBot:GetAbilityInSlot( 0 );
-	--ability02 = npcBot:GetAbilityInSlot( 1 );
-	--ability03 = npcBot:GetAbilityInSlot( 2 );
 	-- Consider using each ability
 	cast01Desire, cast01Location = ConsiderAbilityStar01();
 
-	if ( cast01Desire > 0 ) 
+	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnLocation( ability01 , cast01Location);
 		return;
 	end
-	
+
 	cast02Desire, cast02Target = ConsiderAbilityStar02();
-	if ( cast02Desire > 0 ) 
+	if ( cast02Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability02, cast02Target );
 		return;
 	end
 
 	cast03Desire = ConsiderAbilityStar03();
-	if ( cast03Desire > 0 ) 
+	if ( cast03Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability03);
 		return;
@@ -163,11 +155,11 @@ function ConsiderAbilityStar01()
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() or ability02:IsFullyCastable()) 
-	then 
+	if ( not ability01:IsFullyCastable() or ability02:IsFullyCastable())
+	then
 		return BOT_ACTION_DESIRE_NONE, 0;
 	end;
-	
+
 	local nCastRange = ability01:GetCastRange();
 	local nRadius = ability01:GetSpecialValueInt( "radius" )
 	local nTime = 0.57
@@ -179,33 +171,33 @@ function ConsiderAbilityStar01()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastStar01OnTarget( npcEnemy ) ) 
+			if ( CanCastStar01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(nTime);
 			end
 		end
-		
+
 	return BOT_ACTION_DESIRE_NONE, 0;
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityStar02()
-	
+
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if ( not ability02:IsFullyCastable() ) 
-	then 
+	if ( not ability02:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, nil;
 	end;
-	
+
 	local nCastRange = ability02:GetCastRange();
 
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastStar02OnTarget( npcEnemy ) ) 
+			if ( CanCastStar02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
 			end
@@ -215,13 +207,13 @@ function ConsiderAbilityStar02()
 	if ( npcBot:GetActiveMode() == BOT_MODE_ROAM or
 		 npcBot:GetActiveMode() == BOT_MODE_TEAM_ROAM or
 		 npcBot:GetActiveMode() == BOT_MODE_GANK or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY ) 
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY )
 	then
 		local npcTarget = npcBot:GetTarget();
 
-		if ( npcTarget ~= nil ) 
+		if ( npcTarget ~= nil )
 		then
-			if ( CanCastStar02OnTarget( npcTarget ) )
+			if ( CanCastStar02OnTarget( npcTarget ) and not IsPossibleIllusion( npcTarget ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcTarget;
 			end
@@ -235,12 +227,12 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityStar03()
-	
+
 	local npcBot = GetBot();
 
 	-- Make sure it's castable
-	if ( not ability03:IsFullyCastable() ) 
-	then 
+	if ( not ability03:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE;
 	else
 		return BOT_ACTION_DESIRE_HIGH;

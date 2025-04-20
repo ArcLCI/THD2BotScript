@@ -21,12 +21,11 @@ function MyItemUsageThink()
 	local item_doupeng = IsItemAvailable( "item_zun_glasses" )
 	local item_slow = IsItemAvailable( "item_zaiezhizhurenxing" ) or
 						IsItemAvailable( "item_jiao_shou" )
-	local item_speed = IsItemAvailable( "item_mystia_wings" ) or
-					IsItemAvailable( "item_brother_sharp" ) or
-					IsItemAvailable( "item_bone_flute" )
 	local item_ghost = IsItemAvailable( "item_ghost_balloon" )
-	local item_weijin = IsItemAvailable( "item_xuenvdeweijin" )
 	local item_pomo = IsItemAvailable( "item_pomojinlingli" )
+	local item_horse_red = IsItemAvailable( "item_horse_red" )
+	local item_horse_green = IsItemAvailable( "item_horse_green" )
+	local item_horse_king = IsItemAvailable( "item_horse_king")
 
 	if ( item_doupeng~=nil and item_doupeng:IsFullyCastable() )
 	then
@@ -47,16 +46,6 @@ function MyItemUsageThink()
 		end
 	end
 
-	if ( item_speed~=nil and item_speed:IsFullyCastable() )
-	then
-		castItemSpeedDesire = ConsiderItemSpeed( item_speed )
-		if ( castItemSpeedDesire > 0 or cast04Desire > 0)
-		then
-			npcBot:Action_UseAbility( item_speed );
-			return;
-		end
-	end
-
 	if ( item_ghost~=nil and item_ghost:IsFullyCastable() )
 	then
 		--print("stun item exist")
@@ -65,18 +54,6 @@ function MyItemUsageThink()
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbility( item_ghost );
-			return;
-		end
-	end
-
-	if ( item_weijin~=nil and item_weijin:IsFullyCastable() )
-	then
-		--print("stun item exist")
-		castItemWeijinDesire = ConsiderItemWeiJin(item_weijin)
-		if ( castItemWeijinDesire > 0 )
-		then
-			--print("stun luanch")
-			npcBot:Action_UseAbility( item_weijin );
 			return;
 		end
 	end
@@ -90,6 +67,27 @@ function MyItemUsageThink()
 			return;
 		end
 	end
+
+	if ( item_horse_red~=nil and item_horse_red:IsFullyCastable() )
+	then
+		local castItemHorseRedDesire = ConsiderItemHorseRed(item_horse_red)
+		if ( castItemHorseRedDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_horse_red )
+			return
+		end
+	end
+
+	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
+	then
+		local castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
+		if ( castItemHorseKingDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_horse_king )
+			return
+		end
+	end
+
 
 end
 
@@ -185,6 +183,7 @@ end
 function ConsiderAbilityEllen01()
 
 	local npcBot = GetBot();
+	local nCastPoint = ability01:GetCastPoint()
 
 	-- Make sure it's castable
 	if ( not ability01:IsFullyCastable() )
@@ -205,7 +204,7 @@ function ConsiderAbilityEllen01()
 		do
 			if ( CanCastEllen01OnTarget( npcEnemy ) )
 			then
-				return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation();
+				return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetExtrapolatedLocation(nCastPoint)
 			end
 		end
 
@@ -247,6 +246,8 @@ function ConsiderAbilityEllen03()
 
 	local npcBot = GetBot();
 	local nMP = npcBot:GetMana()/npcBot:GetMaxMana();
+	local nCastPoint = 0.2
+    local nSpeed = 650
 
 	-- Make sure it's castable
 	if ( not ability03:IsFullyCastable() )
@@ -262,7 +263,8 @@ function ConsiderAbilityEllen03()
 		do
 			if ( npcBot:GetTarget() == npcEnemy )
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+				local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
 			end
 		end
 	end
@@ -275,10 +277,10 @@ function ConsiderAbilityEllen03()
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOTTOM )
 	then
 		local tableNearbylanecreeps = npcBot:GetNearbyLaneCreeps(750,true)
-		for _,npcCreeps in pairs( tableNearbylanecreeps )
-		do
-			return BOT_ACTION_DESIRE_HIGH, npcCreeps:GetLocation();
-		end
+		if tableNearbylanecreeps ~= nil and #tableNearbylanecreeps >= 3
+        then
+            return BOT_ACTION_DESIRE_HIGH, GetCenterOfUnits(tableNearbylanecreeps)
+        end
 	end
 
 	if nMP > 0.58 and #tableNearbyEnemyHeroes > 0 then
@@ -286,7 +288,8 @@ function ConsiderAbilityEllen03()
 		do
 			if ( npcBot:GetTarget() == npcEnemy )
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+				local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
 			end
 		end
 	end
@@ -308,14 +311,17 @@ function ConsiderAbilityEllen04()
 	end;
 	-- Get some of its values
 	local nCastRange = ability04:GetCastRange();
-	local nRadius = 225;
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange*1.1, true, BOT_MODE_NONE );
+	local nRadius = 225
+	local nCastPoint = 0.3
+    local nSpeed = 1200
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange*1.1, true, BOT_MODE_NONE )
 	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or  npcBot:GetActiveMode() == BOT_MODE_RETREAT then
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy )
 			then
-				return BOT_ACTION_DESIRE_VERYHIGH, npcEnemy:GetLocation();
+				local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
+				return BOT_ACTION_DESIRE_VERYHIGH, npcEnemy:GetExtrapolatedLocation(eta)
 			end
 		end
 	end
@@ -325,7 +331,8 @@ function ConsiderAbilityEllen04()
 		do
 			if ( npcBot:GetTarget() == npcEnemy )
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+				local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
 			end
 		end
 	end
@@ -358,7 +365,8 @@ end
 
 function ConsiderAbilityEllen05()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
+	local nActivationDelay = ability05:GetSpecialValueFloat('activation_delay')
 
 	-- Make sure it's castable
 	if ( not ability05:IsFullyCastable() )
@@ -371,9 +379,13 @@ function ConsiderAbilityEllen05()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange-50, true, BOT_MODE_NONE );
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastEllen05OnTarget( npcEnemy ) )
+			if ( CanCastEllen05OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+				if npcEnemy:IsChanneling()
+				then
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+				end
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(nActivationDelay)
 			end
 		end
 	return BOT_ACTION_DESIRE_NONE, 0;
