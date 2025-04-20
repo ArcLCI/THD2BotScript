@@ -31,6 +31,11 @@ function MyItemUsageThink()
 
 	local item_qijizhixing = IsItemAvailable( "item_qijizhixing" ) or IsItemAvailable( "item_tuzhushen" )
 
+	local item_horse_red = IsItemAvailable( "item_horse_red" )
+	local item_horse_green = IsItemAvailable( "item_horse_green" )
+	local item_horse_king = IsItemAvailable( "item_horse_king")
+
+
 	if ( item_xinyan~=nil and item_xinyan:IsFullyCastable() )
 	then
 		castItemXinYanDesire, castItemXinYanTarget = ConsiderItemXinYan( item_xinyan )
@@ -90,6 +95,26 @@ function MyItemUsageThink()
 			return;
 		end
 	end
+	if ( item_horse_red~=nil and item_horse_red:IsFullyCastable() )
+	then
+		local castItemHorseRedDesire = ConsiderItemHorseRed(item_horse_red)
+		if ( castItemHorseRedDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_horse_red )
+			return
+		end
+	end
+
+	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
+	then
+		local castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
+		if ( castItemHorseKingDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_horse_king )
+			return
+		end
+	end
+	
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -100,8 +125,6 @@ function AbilityUsageThink()
 
 	MyItemUsageThink();
 	local npcBot = GetBot()
-	print("current active mode:")
-	print(npcBot:GetActiveMode())
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
