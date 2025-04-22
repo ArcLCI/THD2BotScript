@@ -228,20 +228,30 @@ function ConsiderAbilityMedicine03()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
 	local nModifier = npcBot:GetModifierByName("modifier_ability_thdots_ellen04_debuff")
 	
-	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
-	do
-		if ( CanCastMedicine03OnTarget( npcFriend ) and 
-				((npcFriend:GetModifierStackCount(nModifier) >= 4 and npcFriend:GetModifierRemainingDuration(nModifier) <= 0.35) or
-				GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
-				npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
-				IsUnderAttack( npcFriend )
-				)
-			) then
-			return BOT_ACTION_DESIRE_HIGH, npcFriend;
+	if HasSpecificEnemyHero("npc_dota_hero_arc_warden") then
+		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
+		do
+			if (npcFriend:GetModifierStackCount(nModifier) >= 5 and npcFriend:GetModifierRemainingDuration(nModifier) <= 1.2) or
+			(npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.28 and IsUnderAttack(npcFriend))
+			then
+				return BOT_ACTION_DESIRE_HIGH, npcFriend
+			end
+		end
+	else
+		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
+		do
+			if ( CanCastMedicine03OnTarget( npcFriend ) and 
+					((npcFriend:GetModifierStackCount(nModifier) >= 5 and npcFriend:GetModifierRemainingDuration(nModifier) <= 1.2) or
+					GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
+					npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
+					IsUnderAttack(npcFriend)
+					)
+				) then
+				return BOT_ACTION_DESIRE_HIGH, npcFriend
+			end
 		end
 	end
-
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 
 end
 
