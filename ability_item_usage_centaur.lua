@@ -135,7 +135,7 @@ function AbilityUsageThink()
 		if ( npcEnemy ~= nil
 		and npcEnemy:HasModifier( "modifier_thdots_yugi04_think_interval" ))
 		then
-			npcBot:ActionQueue_AttackUnit(npcEnemy, false)
+			npcBot:SetTarget(npcEnemy)
 			return;
 		end
 	end
