@@ -312,6 +312,23 @@ function GetCenterOfUnits( nUnits )
 
 end
 
+function GetEnemyPlayersID()
+	if GetTeam() == TEAM_RADIANT then
+		return GetTeamPlayers(TEAM_DIRE)
+		else
+		return GetTeamPlayers(TEAM_RADIANT)
+	end
+end
+
+function HasSpecificEnemyHero( nHeroName )
+	local tEnemyPlayers = GetEnemyPlayersID()
+	for _, i in pairs(tEnemyPlayers) do
+		if GetSelectedHeroName(i) == nHeroName then
+			return true
+		end
+	end
+	return false
+end
 ----------------------------------------------------------------------------------------------------
 
 local function IsRocket(item_name)
@@ -981,7 +998,8 @@ end
 
 function ConsiderItemQiJiZhiXing( item_qijizhixing )
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
+	local nModifier = npcBot:GetModifierByName("modifier_ability_thdots_ellen04_debuff")
 
 	-- Make sure it's castable
 	if ( not item_qijizhixing:IsFullyCastable() )
@@ -994,14 +1012,24 @@ function ConsiderItemQiJiZhiXing( item_qijizhixing )
 
 	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200, false, BOT_MODE_NONE );
 
-	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
-	do
-		if ( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
-			npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
-			IsUnderAttack( npcFriend ) or
-			npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.5)
+	if HasSpecificEnemyHero("npc_dota_hero_arc_warden") then
+		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
+		do
+		if ( npcBot:GetModifierStackCount(nModifier) >= 4 or
+			npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.28)
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcFriend;
+		end
+	end
+	else
+		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
+		do
+			if ( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
+				npcFriend:WasRecentlyDamagedByAnyHero( 2.5 ) or
+				npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.5)
+			then
+				return BOT_ACTION_DESIRE_HIGH, npcFriend;
+			end
 		end
 	end
 	return BOT_ACTION_DESIRE_NONE, nil;
@@ -1058,17 +1086,21 @@ function ConsiderItemDuQun( item_duqun )
 	-- Make sure it's castable
 	if ( not item_duqun:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE;
-	end;
-	if npcBot:GetModifierStackCount(nModifier) >= 4 and npcBot:GetModifierRemainingDuration(nModifier) <= 1 then
-		return BOT_ACTION_DESIRE_VERYHIGH;
+		return BOT_ACTION_DESIRE_NONE
 	end
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1600 , true, BOT_MODE_NONE );
-	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-	do
-		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
-			then
-			return BOT_ACTION_DESIRE_HIGH;
+
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1600 , true, BOT_MODE_NONE )
+	if HasSpecificEnemyHero("npc_dota_hero_arc_warden") then
+		if npcBot:GetModifierStackCount(nModifier) >= 5 and npcBot:GetModifierRemainingDuration(nModifier) <= 1.3 then
+			return BOT_ACTION_DESIRE_VERYHIGH;
+		end
+	else
+		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+		do
+			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
+				then
+				return BOT_ACTION_DESIRE_HIGH;
+			end
 		end
 	end
 	return BOT_ACTION_DESIRE_NONE;

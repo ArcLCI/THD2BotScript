@@ -1,5 +1,8 @@
 local J = {}
 
+local RadiantFountain = Vector( -6619, -6336, 384 )
+local DireFountain = Vector( 6928, 6372, 392 )
+
 J.Utils = require( GetScriptDirectory()..'/THDFuncLib/utils' )
 
 
@@ -69,29 +72,10 @@ function J.GetEnemiesAroundLoc(vLoc, nRadius)
 			local unitName = unit:GetUnitName()
 			if unit:IsCreep() then
 				nUnitCount = nUnitCount + 1
-				if unit:IsAncientCreep()
-				or unit:HasModifier('modifier_chen_holy_persuasion')
-				or unit:HasModifier('modifier_dominated') then
+				if unit:IsAncientCreep() then
 					nUnitCount = nUnitCount + 1
 				end
-			elseif string.find(unit:GetUnitName(), 'spiderling') then nUnitCount = nUnitCount + 0.1
-			elseif string.find(unit:GetUnitName(), 'eidolon') then nUnitCount = nUnitCount + 0.3
-			elseif string.find(unitName, 'siege') and not string.find(unitName, 'upgraded') then
-				nUnitCount = nUnitCount + 0.6
-			elseif string.find(unitName, 'upgraded') then nUnitCount = nUnitCount + 1
-			elseif string.find(unitName, 'warlock_golem') then
-				if DotaTime() < 10 * 60 then nUnitCount = nUnitCount + 3
-				elseif DotaTime() < 20 * 60 then nUnitCount = nUnitCount + 2.5
-				elseif DotaTime() < 30 * 60 then nUnitCount = nUnitCount + 2
-				else nUnitCount = nUnitCount + 1.5 end
-			elseif string.find(unitName, 'lone_druid_bear') then nUnitCount = nUnitCount + 3
-			elseif string.find(unitName, 'shadow_shaman_ward') then nUnitCount = nUnitCount + 2
-			elseif string.find(unit:GetUnitName(), "tombstone") then nUnitCount = nUnitCount + 2
-			elseif J.IsSuspiciousIllusion(unit) then
-				if unit:HasModifier('modifier_arc_warden_tempest_double')
-					or string.find(unit:GetUnitName(), 'chaos_knight')
-					or string.find(unit:GetUnitName(), 'naga_siren') then nUnitCount = nUnitCount + 2 end
-			elseif not (string.find(unitName, 'observer_wards') or string.find(unitName, 'sentry_wards')) then nUnitCount = nUnitCount + 1 end
+			end
 			if J.GetLocationToLocationDistance(ancientLoc, vLoc) < 1600 then nUnitCount = nUnitCount + 2 end
 		end
 	end
@@ -120,7 +104,7 @@ function J.GetLocationToLocationDistance( fLoc, sLoc )
 
 end
 ----------------------------------------------------------------
----
+
 function J.IsValid( nTarget )
 	return nTarget ~= nil
 			and not nTarget:IsNull()
@@ -183,5 +167,29 @@ function J.IsSuspiciousIllusion( npcTarget )
 
 	npcTarget.is_suspicious_illusion = false
 	return false
+
+end
+
+function J.CanNotUseAction( bot )
+	return not bot:IsAlive()
+			or J.HasQueuedAction( bot )
+			or (bot:IsInvulnerable() and not bot:HasModifier('modifier_fountain_invulnerability'))
+			or bot:IsCastingAbility()
+			or bot:IsUsingAbility()
+			or bot:IsChanneling()
+			or bot:IsStunned()
+			or bot:IsNightmared()
+
+end
+
+function J.GetTeamFountain()
+
+	local Team = GetTeam()
+	if Team == TEAM_DIRE
+	then
+		return DireFountain
+	else
+		return RadiantFountain
+	end
 
 end
