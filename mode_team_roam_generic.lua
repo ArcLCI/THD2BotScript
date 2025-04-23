@@ -76,7 +76,7 @@ function Think()
 			or p.ability:GetName() == "ability_thdots_ellen04"
 		)
         	then
-				if GetUnitToLocationDistance(bot, p.location) <= 600 then
+				if GetUnitToLocationDistance(bot, p.location) <= 1400 then
 					bot:Action_MoveToLocation(Utils.GetAvoidTargetLocation(bot:GetLocation(), p.location, 600) + RandomVector(200))
 					return
 				end

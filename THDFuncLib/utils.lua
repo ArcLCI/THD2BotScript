@@ -1317,10 +1317,11 @@ function ____exports.GetOffsetLocationTowardsTargetLocation(initLoc, targetLoc, 
     )
 end
 function ____exports.GetAvoidTargetLocation(initLoc, targetLoc, offsetDist)
-    local direrction = sub(targetLoc, initLoc):Normalized()
+    local direction = sub(targetLoc, initLoc):Normalized()
+    local vdirection = Vector(direction.y, direction.x, direction.z)
     return add(
         initLoc,
-        multiply(-direrction, offsetDist)
+        multiply(vdirection, offsetDist)
     )
 end
 function ____exports.TimeNeedToHealHP(bot)
