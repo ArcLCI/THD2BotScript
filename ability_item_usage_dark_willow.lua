@@ -188,10 +188,11 @@ end
 
 function ConsiderAbilityLarva01Stop()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
+	local ability01x = npcBot:GetAbilityInSlot(0)
 
 	-- Make sure it's castable
-	if ( not ability01x:IsFullyCastable() )
+	if ability01x ~= nil and ( not ability01x:IsFullyCastable() )
 	then
 		return BOT_ACTION_DESIRE_NONE;
 	end
