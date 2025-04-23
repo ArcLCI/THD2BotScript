@@ -1316,6 +1316,13 @@ function ____exports.GetOffsetLocationTowardsTargetLocation(initLoc, targetLoc, 
         multiply(direrction, offsetDist)
     )
 end
+function ____exports.GetAvoidTargetLocation(initLoc, targetLoc, offsetDist)
+    local direrction = sub(targetLoc, initLoc):Normalized()
+    return add(
+        initLoc,
+        multiply(-direrction, offsetDist)
+    )
+end
 function ____exports.TimeNeedToHealHP(bot)
     return (bot:GetMaxHealth() - bot:GetHealth()) / bot:GetHealthRegen()
 end

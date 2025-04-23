@@ -312,13 +312,7 @@ function GetCenterOfUnits( nUnits )
 
 end
 
-function GetEnemyPlayersID()
-	if GetTeam() == TEAM_RADIANT then
-		return GetTeamPlayers(TEAM_DIRE)
-		else
-		return GetTeamPlayers(TEAM_RADIANT)
-	end
-end
+function GetEnemyPlayersID() return GetTeamPlayers(GetOpposingTeam()) end
 
 function HasSpecificEnemyHero( nHeroName )
 	local tEnemyPlayers = GetEnemyPlayersID()
