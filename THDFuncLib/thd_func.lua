@@ -193,3 +193,5 @@ function J.GetTeamFountain()
 	end
 
 end
+
+return J
