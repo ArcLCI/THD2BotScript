@@ -182,6 +182,14 @@ function J.CanNotUseAction( bot )
 
 end
 
+function J.HasQueuedAction( bot )
+	if bot ~= GetBot()
+	then
+		return false
+	end
+	return bot:NumQueuedActions() > 0
+end
+
 function J.GetTeamFountain()
 
 	local Team = GetTeam()
