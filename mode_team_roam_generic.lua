@@ -49,7 +49,7 @@ function HasProjectileThatNeedToAvoid(nProjectiles)
 		or p.ability:GetName() == "ability_thdots_ellen04"
 	)
         then
-			if GetUnitToLocationDistance(bot, p.location) <= 600 then
+			if GetUnitToLocationDistance(bot, p.location) <= 2000 then
 				return true
 			end
 		end
