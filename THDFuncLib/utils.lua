@@ -1318,7 +1318,10 @@ function ____exports.GetOffsetLocationTowardsTargetLocation(initLoc, targetLoc, 
 end
 function ____exports.GetAvoidTargetLocation(initLoc, targetLoc, offsetDist)
     local direction = sub(targetLoc, initLoc):Normalized()
-    local vdirection = Vector(direction.y, direction.x, direction.z)
+    local vdirection = Vector(direction.y, -direction.x, direction.z)
+    if math.random() >= 0.5 then
+        vdirection = Vector(-direction.y, direction.x, direction.z)
+    end
     return add(
         initLoc,
         multiply(vdirection, offsetDist)
