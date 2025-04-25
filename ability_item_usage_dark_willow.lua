@@ -9,7 +9,6 @@ cast02Desire = 0;
 cast03Desire = 0;
 cast04Desire = 0;
 
-tmplocation = 0;
 
 local larva01_time = -1;
 local larva01_stop_time = 2;
@@ -74,15 +73,11 @@ function AbilityUsageThink()
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
 
 	local isfly = npcBot:HasModifier("modifier_ability_larva01_stop")
-	if not isfly then
-		ability01 = npcBot:GetAbilityByName( "ability_thdots_larva01" );
-	else
-		print("larva is flying!")
-		ability01x = npcBot:GetAbilityInSlot(0);
-	end
-	ability02 = npcBot:GetAbilityByName( "ability_thdots_larva02" );
-	ability03 = npcBot:GetAbilityByName( "ability_thdots_larva03" );
-	ability04 = npcBot:GetAbilityByName( "ability_thdots_larva04" );
+
+	ability01 = npcBot:GetAbilityByName("ability_thdots_larva01")
+	ability02 = npcBot:GetAbilityByName( "ability_thdots_larva02" )
+	ability03 = npcBot:GetAbilityByName( "ability_thdots_larva03" )
+	ability04 = npcBot:GetAbilityByName( "ability_thdots_larva04" )
 
 	-- Consider using each ability
 
@@ -91,18 +86,20 @@ function AbilityUsageThink()
 	if ( cast01Desire > 0 )
 	then
 		if not isfly then
+			print("is casting fly")
 			npcBot:Action_UseAbilityOnLocation( ability01, cast01Location );
 			larva01_time = DotaTime();
-			return;
+			return
 		else
-			npcBot:Action_UseAbility( ability01x);
-			return;
+			return
 		end
 	end
 
 	cast01StopDesire = ConsiderAbilityLarva01Stop();
-	if ( cast01StopDesire > 0 ) then
-		npcBot:Action_UseAbility( ability01x);
+	if ( cast01StopDesire > 0 and isfly ) then
+		print("is stopping")
+		npcBot:Action_UseAbility( ability01);
+		return
 	end
 
 	cast02Desire = ConsiderAbilityLarva02();
@@ -151,59 +148,53 @@ end
 
 function ConsiderAbilityLarva01()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
+	local isfly = npcBot:HasModifier("modifier_ability_larva01_stop")
+	print("flying status:")
+	print(isfly)
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() )
+	if ( not ability01:IsFullyCastable()) or isfly
 	then
-		return BOT_ACTION_DESIRE_NONE, 0;
-	end;
-
-	local isfly = npcBot:HasModifier("modifier_ability_larva01_stop")
+		return BOT_ACTION_DESIRE_NONE, 0
+	end
 
 	local nCastRange = 1200;
 	if npcBot:GetLevel() >= 15 then
 		nCastRange = 2000
 	end
-	if isfly and not tmplocation == 0 then
-		local cur_dis = GetUnitToLocationDistance( npcBot,tmplocation)
-		if cur_dis < 80 then
-			tmplocation = 0
-			return BOT_ACTION_DESIRE_HIGH, 0;
-		end
-	end
 
 	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.4) then
 		if not isfly then
+			print("calculating destination...")
 			local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 			local v_target = - npcBot:GetLocation() + v_shop
 			local dis = GetUnitToLocationDistance( npcBot,v_shop)
 			local v_final = v_target/dis * nCastRange + npcBot:GetLocation()
-			tmplocation = v_final
 			return BOT_ACTION_DESIRE_HIGH, v_final;
 		end
 	end
-	return BOT_ACTION_DESIRE_NONE, 0;
+	return BOT_ACTION_DESIRE_NONE, 0
 end
 
 function ConsiderAbilityLarva01Stop()
 
 	local npcBot = GetBot()
-	local ability01x = npcBot:GetAbilityInSlot(0)
+	local isfly = npcBot:HasModifier("modifier_ability_larva01_stop")
+	print("flying status:")
+	print(isfly)
 
 	-- Make sure it's castable
-	if ability01x ~= nil and ( not ability01x:IsFullyCastable() )
-	then
-		return BOT_ACTION_DESIRE_NONE;
-	end
+	if not isfly then return BOT_ACTION_DESIRE_NONE end
 
-	if npcBot:GetHealth() < npcBot:GetMaxHealth()*0.45 then
+	if npcBot:GetHealth() < npcBot:GetMaxHealth()*0.45 and isfly then
 		if DotaTime() > (larva01_time + (larva01_stop_time / 2))
         then
-            return BOT_ACTION_DESIRE_HIGH;
+			print("consider to stop...")
+            return BOT_ACTION_DESIRE_HIGH
         end
 	end
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 
 end
 ----------------------------------------------------------------------------------------------------
