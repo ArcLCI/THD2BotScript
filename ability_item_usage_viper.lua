@@ -231,7 +231,7 @@ function ConsiderAbilityMedicine03()
 	if HasSpecificEnemyHero("npc_dota_hero_arc_warden") then
 		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 		do
-			if (npcFriend:GetModifierStackCount(nModifier) >= 5 and npcFriend:GetModifierRemainingDuration(nModifier) <= 1.2) or
+			if (npcFriend:GetModifierStackCount(nModifier) >= 5 and npcFriend:GetModifierRemainingDuration(nModifier) <= 0.6) or
 			(npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.28 and IsUnderAttack(npcFriend))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcFriend

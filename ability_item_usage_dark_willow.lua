@@ -72,9 +72,10 @@ function AbilityUsageThink()
 	-- Check if we're already using an ability
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
 
-	local isfly = npcBot:HasModifier("modifier_ability_larva01_stop")
+	local isfly = npcBot:HasModifier("modifier_ability_larva01_dash")
 
-	ability01 = npcBot:GetAbilityByName("ability_thdots_larva01")
+	ability01 = npcBot:GetAbilityByName("ability_thdots_larva01_1")
+	ability01stop = npcBot:GetAbilityByName("ability_thdots_larva01_2")
 	ability02 = npcBot:GetAbilityByName( "ability_thdots_larva02" )
 	ability03 = npcBot:GetAbilityByName( "ability_thdots_larva03" )
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_larva04" )
@@ -98,7 +99,7 @@ function AbilityUsageThink()
 	cast01StopDesire = ConsiderAbilityLarva01Stop();
 	if ( cast01StopDesire > 0 and isfly ) then
 		print("is stopping")
-		npcBot:Action_UseAbility( ability01);
+		npcBot:Action_UseAbility( ability01stop);
 		return
 	end
 
@@ -149,9 +150,7 @@ end
 function ConsiderAbilityLarva01()
 
 	local npcBot = GetBot()
-	local isfly = npcBot:HasModifier("modifier_ability_larva01_stop")
-	print("flying status:")
-	print(isfly)
+	local isfly = npcBot:HasModifier("modifier_ability_larva01_dash")
 
 	-- Make sure it's castable
 	if ( not ability01:IsFullyCastable()) or isfly
@@ -171,7 +170,7 @@ function ConsiderAbilityLarva01()
 			local v_target = - npcBot:GetLocation() + v_shop
 			local dis = GetUnitToLocationDistance( npcBot,v_shop)
 			local v_final = v_target/dis * nCastRange + npcBot:GetLocation()
-			return BOT_ACTION_DESIRE_HIGH, v_final;
+			return BOT_ACTION_DESIRE_HIGH, v_final
 		end
 	end
 	return BOT_ACTION_DESIRE_NONE, 0
@@ -180,15 +179,13 @@ end
 function ConsiderAbilityLarva01Stop()
 
 	local npcBot = GetBot()
-	local isfly = npcBot:HasModifier("modifier_ability_larva01_stop")
-	print("flying status:")
-	print(isfly)
+	local isfly = npcBot:HasModifier("modifier_ability_larva01_dash")
 
 	-- Make sure it's castable
 	if not isfly then return BOT_ACTION_DESIRE_NONE end
 
 	if npcBot:GetHealth() < npcBot:GetMaxHealth()*0.45 and isfly then
-		if DotaTime() > (larva01_time + (larva01_stop_time / 2))
+		if DotaTime() > (larva01_time + (larva01_stop_time / 2) + 0.2)
         then
 			print("consider to stop...")
             return BOT_ACTION_DESIRE_HIGH
@@ -237,15 +234,28 @@ function ConsiderAbilityLarva03()
 	end;
 
 	local nCastRange = ability03:GetLevel()*50 + 450;
-	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE );
-	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
-	do
-		if ( CanCastLarva03OnTarget( npcFriend ) and
-			( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
-			npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
-			IsUnderAttack( npcFriend,true )))
-		then
-			return BOT_ACTION_DESIRE_HIGH, npcFriend;
+	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
+	local nModifier = npcBot:GetModifierByName("modifier_ability_thdots_ellen04_debuff")
+	
+	if HasSpecificEnemyHero("npc_dota_hero_arc_warden") then
+		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
+		do
+			if ( CanCastLarva03OnTarget( npcFriend ) and
+				( npcFriend:GetModifierStackCount(nModifier) >= 5 and npcFriend:GetModifierRemainingDuration(nModifier) <= 0.6))
+			then
+				return BOT_ACTION_DESIRE_HIGH, npcFriend;
+			end
+		end
+	else
+		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
+		do
+			if ( CanCastLarva03OnTarget( npcFriend ) and
+				( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
+				npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
+				IsUnderAttack( npcFriend,true )))
+			then
+				return BOT_ACTION_DESIRE_HIGH, npcFriend;
+			end
 		end
 	end
 	return BOT_ACTION_DESIRE_NONE, nil;
