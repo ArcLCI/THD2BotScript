@@ -10,8 +10,10 @@ cast03Desire = 0;
 cast04Desire = 0;
 
 
-local larva01_time = -1;
-local larva01_stop_time = 2;
+local larva01_time = -1
+local larva01_stop_time = 2
+local onRetreatDash = false
+local onChasingDash = false
 
 function MyItemUsageThink()
 
@@ -84,21 +86,15 @@ function AbilityUsageThink()
 
 
 	cast01Desire, cast01Location = ConsiderAbilityLarva01();
-	if ( cast01Desire > 0 )
+	if ( cast01Desire > 0 and not isfly)
 	then
-		if not isfly then
-			print("is casting fly")
-			npcBot:Action_UseAbilityOnLocation( ability01, cast01Location );
-			larva01_time = DotaTime();
-			return
-		else
-			return
-		end
+		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location );
+		larva01_time = DotaTime();
+		return
 	end
 
 	cast01StopDesire = ConsiderAbilityLarva01Stop();
 	if ( cast01StopDesire > 0 and isfly ) then
-		print("is stopping")
 		npcBot:Action_UseAbility( ability01stop);
 		return
 	end
@@ -153,8 +149,18 @@ function ConsiderAbilityLarva01()
 	local isfly = npcBot:HasModifier("modifier_ability_larva01_dash")
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable()) or isfly
-	then
+	if ( not ability01:IsFullyCastable()) then
+		return BOT_ACTION_DESIRE_NONE, 0
+	end
+
+	if isfly then
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE )
+		for _,npcEnemy in pairs(tableNearbyEnemyHeroes)
+			do
+			if ( CanCastLarva01OnTarget(npcEnemy) and not IsPossibleIllusion(npcEnemy) and npcEnemy:GetHealth() <= 135) then
+				onChasingDash = true --能杀人的情况要追人
+			end
+		end
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
 
@@ -163,13 +169,42 @@ function ConsiderAbilityLarva01()
 		nCastRange = 2000
 	end
 
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.4) then
+	if (npcBot:GetActiveMode() ~= BOT_MODE_LANING or
+		npcBot:GetActiveMode() ~= BOT_MODE_RUNE or
+		npcBot:GetActiveMode() ~= BOT_MODE_RETREAT or
+		npcBot:GetHealth() > npcBot:GetMaxHealth()*0.25) then
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange - 100, true, BOT_MODE_NONE )
+		local lowestHP = 99999
+		local lowestHPTarget = nil --优先打血少的
+		local eta = 0.5 --预判时间
+		if #tableNearbyEnemyHeroes > 0 then
+			for _,npcEnemy in pairs(tableNearbyEnemyHeroes)
+			do
+				if ( CanCastLarva01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
+				then
+					if npcEnemy:GetHealth() <= lowestHP then
+						lowestHP = npcEnemy:GetHealth()
+						lowestHPTarget = npcEnemy
+					end
+				end
+			end
+			if lowestHPTarget ~= nil then
+				if lowestHPTarget:GetHealth() <= 135 then
+					onChasingDash = true
+				end
+			return BOT_ACTION_DESIRE_HIGH, lowestHPTarget:GetExtrapolatedLocation(eta)
+			end
+		end
+		return BOT_ACTION_DESIRE_NONE, 0
+	end
+
+	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.35) then
 		if not isfly then
-			print("calculating destination...")
 			local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 			local v_target = - npcBot:GetLocation() + v_shop
 			local dis = GetUnitToLocationDistance( npcBot,v_shop)
 			local v_final = v_target/dis * nCastRange + npcBot:GetLocation()
+			onRetreatDash = true
 			return BOT_ACTION_DESIRE_HIGH, v_final
 		end
 	end
@@ -184,13 +219,19 @@ function ConsiderAbilityLarva01Stop()
 	-- Make sure it's castable
 	if not isfly then return BOT_ACTION_DESIRE_NONE end
 
-	if npcBot:GetHealth() < npcBot:GetMaxHealth()*0.45 and isfly then
+	if npcBot:GetHealth() < npcBot:GetMaxHealth()*0.4 and isfly and onRetreatDash then
 		if DotaTime() > (larva01_time + (larva01_stop_time / 2) + 0.2)
         then
-			print("consider to stop...")
+			onRetreatDash = false
             return BOT_ACTION_DESIRE_HIGH
         end
 	end
+
+	if npcBot:GetHealth() >= npcBot:GetMaxHealth()*0.25 and isfly and onChasingDash then
+		onChasingDash = false
+        return BOT_ACTION_DESIRE_HIGH
+	end
+
 	return BOT_ACTION_DESIRE_NONE
 
 end
@@ -198,24 +239,28 @@ end
 
 function ConsiderAbilityLarva02()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
+	local isfly = npcBot:HasModifier("modifier_ability_larva01_dash")
 
 	-- Make sure it's castable
 	if ( not ability02:IsFullyCastable() )
 	then
 		return BOT_ACTION_DESIRE_NONE;
-	end;
+	end
 
 	-- Get some of its values
-	local nRadius = 400;
+	local nRadius = 400
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nRadius-25 , true, BOT_MODE_NONE )
 
-	if ((npcBot:GetActiveMode() == BOT_MODE_ATTACK
-		or npcBot:GetActiveMode() == BOT_MODE_GANK
+	if (not isfly and (npcBot:GetActiveMode() == BOT_MODE_ATTACK
 		or npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 		and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_MODERATE ) then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nRadius , true, BOT_MODE_NONE );
 		if #tableNearbyEnemyHeroes > 0 then
-			return BOT_ACTION_DESIRE_HIGH;
+			return BOT_ACTION_DESIRE_HIGH
+		end
+	else
+		if #tableNearbyEnemyHeroes > 1 then
+			return BOT_ACTION_DESIRE_HIGH
 		end
 	end
 	return BOT_ACTION_DESIRE_NONE;
