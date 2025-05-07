@@ -48,7 +48,7 @@ local tableItemsToBuy = {
 					"item_recipe_sampan",
 					"item_recipe_ertianyiliu",
 
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

@@ -1384,8 +1384,8 @@ function ____exports.TrimString(str)
 end
 --- TODO: AvoidanceZone work in progress.
 -- 
--- Example: Adds a zone that expires after 10 seconds: addCustomAvoidanceZone(Vector(1000, 2000), 500, 10);
--- Example: Adds a zone lasts indefinitely: addCustomAvoidanceZone(Vector(1000, 2000), 500);
+-- Example: Adds a zone that expires after 10 seconds: addCustomAvoidanceZone(Vector(1000, 2000), 500, 10)
+-- Example: Adds a zone lasts indefinitely: addCustomAvoidanceZone(Vector(1000, 2000), 500)
 -- 
 -- @param center
 -- @param radius

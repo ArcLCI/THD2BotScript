@@ -57,7 +57,7 @@ local tableItemsToBuy = {
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
 					"item_recipe_wanbaochui2",
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

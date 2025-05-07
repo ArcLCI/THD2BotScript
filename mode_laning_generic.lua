@@ -1,5 +1,5 @@
 
-local debug_printed = false;
+local debug_printed = false
 
 function GetDesire()
 	
@@ -9,9 +9,9 @@ function GetDesire()
 	end
 	
 	local npcBot = GetBot()
-	local t = DotaTime();
-	local mod_t = t % 60;
-	local base_desire = 0;
+	local t = DotaTime()
+	local mod_t = t % 60
+	local base_desire = 0
 	
 	if mod_t > 50 or mod_t < 5 then
 		base_desire = 0.15
@@ -22,6 +22,6 @@ function GetDesire()
 		if t < 300 then base_desire = 0.55 end
 	end
 	
-	return base_desire;
+	return base_desire
 	
 end

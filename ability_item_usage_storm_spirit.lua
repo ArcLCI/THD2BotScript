@@ -3,17 +3,17 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0;
-cast02Desire = 0;
-cast03Desire = 0;
-cast04Desire = 0;
+cast01Desire = 0
+cast02Desire = 0
+cast03Desire = 0
+cast04Desire = 0
 
 function MyItemUsageThink()
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
 	local item_stand = IsItemAvailable( "item_dummy_doll1" )
 	local item_root = IsItemAvailable( "item_tentacle" )
@@ -27,8 +27,8 @@ function MyItemUsageThink()
 		if ( castItemStandDesire > 0 ) 
 		then
 			--print("stun luanch")
-			npcBot:Action_UseAbility( item_stand );
-			return;
+			npcBot:Action_UseAbility( item_stand )
+			return
 		end
 	end
 		
@@ -37,8 +37,8 @@ function MyItemUsageThink()
 		castItemRootDesire, castItemRootTarget = ConsiderItemRoot( item_root )
 		if ( castItemRootDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget )
+			return
 		end
 	end
 	
@@ -47,8 +47,8 @@ function MyItemUsageThink()
 		castItemDouPengDesire = ConsiderItemDouPeng( item_doupeng )
 		if ( castItemDouPengDesire > 0 ) 
 		then
-			npcBot:Action_UseAbility( item_doupeng );
-			return;
+			npcBot:Action_UseAbility( item_doupeng )
+			return
 		end
 	end
 	
@@ -57,8 +57,8 @@ function MyItemUsageThink()
 		castItemFeiXiangJianDesire, castItemFeiXiangJianTarget = ConsiderItemFeiXiangJian( item_feixiangjian )
 		if ( castItemFeiXiangJianDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnEntity( item_feixiangjian, castItemFeiXiangJianTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_feixiangjian, castItemFeiXiangJianTarget )
+			return
 		end
 	end
 end
@@ -69,36 +69,36 @@ function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink();
-	local npcBot = GetBot();
+	MyItemUsageThink()
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
-	ability01 = npcBot:GetAbilityByName( "ability_thdots_shikieiki01" );
-	ability02 = npcBot:GetAbilityByName( "ability_thdots_shikieiki02" );
-	ability04 = npcBot:GetAbilityByName( "ability_thdots_shikieiki04" );
+	ability01 = npcBot:GetAbilityByName( "ability_thdots_shikieiki01" )
+	ability02 = npcBot:GetAbilityByName( "ability_thdots_shikieiki02" )
+	ability04 = npcBot:GetAbilityByName( "ability_thdots_shikieiki04" )
 
 	-- Consider using each ability
-	cast01Desire, cast01Location = ConsiderAbilityShikieiki01();
+	cast01Desire, cast01Location = ConsiderAbilityShikieiki01()
 	if ( cast01Desire > 0 ) 
 	then
-		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location);
-		return;
+		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location)
+		return
 	end
 
-	cast02Desire, cast02Target = ConsiderAbilityShikieiki02();
+	cast02Desire, cast02Target = ConsiderAbilityShikieiki02()
 	if ( cast02Desire > 0 ) 
 	then
-		npcBot:Action_UseAbilityOnEntity( ability02 , cast02Target);
-		return;
+		npcBot:Action_UseAbilityOnEntity( ability02 , cast02Target)
+		return
 	end
 	
-	cast04Desire, cast04Target = ConsiderAbilityShikieiki04();
+	cast04Desire, cast04Target = ConsiderAbilityShikieiki04()
 	if ( cast04Desire > 0 ) 
 	then
-		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target);
-		return;
+		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target)
+		return
 	end
 
 end
@@ -106,61 +106,61 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastShikieiki01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 
 function CanCastShikieiki02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 
 function CanCastShikieiki04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityShikieiki01()
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability01:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE, nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE, nil
+	end
 	
-	local nCastRange = ability01:GetCastRange();
+	local nCastRange = ability01:GetCastRange()
 	local nRadius = ability01:GetSpecialValueInt( "AOE" )
 	local nTime = 0
-	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius, nTime, 0 );
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
+	local locationAoE = CachedFindAoELocation( npcBot, 1, true, true, npcBot:GetLocation(), nCastRange, nRadius, nTime, 0 )
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy and CanCastShikieiki01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and locationAoE.count >= 1 ) 
 			then
-				return BOT_ACTION_DESIRE_VERYHIGH, locationAoE.targetloc;
+				return BOT_ACTION_DESIRE_VERYHIGH, locationAoE.targetloc
 			end
 		end
 
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityShikieiki02()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability02:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE, nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE, nil
+	end
 
-	local nCastRange = ability02:GetCastRange();
+	local nCastRange = ability02:GetCastRange()
 	
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE )
 	
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
@@ -168,11 +168,11 @@ function ConsiderAbilityShikieiki02()
 			( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
 			) 
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy
 			end
 		end
 
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 end
 
 
@@ -180,20 +180,20 @@ end
 
 function ConsiderAbilityShikieiki04()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability04:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE,nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE,nil
+	end
 
 	-- Get some of its values
-	local nCastRange = ability04:GetCastRange();
+	local nCastRange = ability04:GetCastRange()
 	
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+100, true, BOT_MODE_NONE );
-		local mxcap=0;
-		local mxTarget=nil;
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+100, true, BOT_MODE_NONE )
+		local mxcap=0
+		local mxTarget=nil
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( CanCastShikieiki04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
@@ -216,11 +216,11 @@ function ConsiderAbilityShikieiki04()
 		 )
 		)
 	then
-		return BOT_ACTION_DESIRE_HIGH, mxTarget;
+		return BOT_ACTION_DESIRE_HIGH, mxTarget
 	end
 	
 
-	return BOT_ACTION_DESIRE_NONE,nil;
+	return BOT_ACTION_DESIRE_NONE,nil
 
 end
 

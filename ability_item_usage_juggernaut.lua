@@ -3,17 +3,17 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0;
-cast02Desire = 0;
-cast03Desire = 0;
-cast04Desire = 0;
+cast01Desire = 0
+cast02Desire = 0
+cast03Desire = 0
+cast04Desire = 0
 
 function MyItemUsageThink()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
 
 	local item_teeth = IsItemAvailable( "item_teeth" )
@@ -77,45 +77,45 @@ function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink();
-	local npcBot = GetBot();
+	MyItemUsageThink()
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
-	ability01 = npcBot:GetAbilityByName( "ability_thdots_youmu01" );
-	ability03 = npcBot:GetAbilityByName( "ability_thdots_youmu03" );
-	ability04 = npcBot:GetAbilityByName( "ability_thdots_youmu04" );
-	abilityEx = npcBot:GetAbilityByName( "ability_thdots_youmuEx" );
-	item_tideng = IsItemAvailable( "item_tsundere" );
+	ability01 = npcBot:GetAbilityByName( "ability_thdots_youmu01" )
+	ability03 = npcBot:GetAbilityByName( "ability_thdots_youmu03" )
+	ability04 = npcBot:GetAbilityByName( "ability_thdots_youmu04" )
+	abilityEx = npcBot:GetAbilityByName( "ability_thdots_youmuEx" )
+	item_tideng = IsItemAvailable( "item_tsundere" )
 
 	-- Consider using each ability
 	castexDesire = ConsiderAbilityYoumuEx()
 	if ( castexDesire > 0 )
 	then
-		npcBot:Action_UseAbility( abilityEx );
-		return;
+		npcBot:Action_UseAbility( abilityEx )
+		return
 	end
 
-	cast01Desire, cast01Location = ConsiderAbilityYoumu01();
+	cast01Desire, cast01Location = ConsiderAbilityYoumu01()
 	if ( cast01Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location );
-		return;
+		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location )
+		return
 	end
 
-	cast03Desire = ConsiderAbilityYoumu03();
+	cast03Desire = ConsiderAbilityYoumu03()
 	if ( cast03Desire > 0 )
 	then
-		npcBot:Action_UseAbility( ability03 );
-		return;
+		npcBot:Action_UseAbility( ability03 )
+		return
 	end
 
-	cast04Desire, cast04Target = ConsiderAbilityYoumu04();
+	cast04Desire, cast04Target = ConsiderAbilityYoumu04()
 	if ( cast04Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target);
-		return;
+		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target)
+		return
 	end
 
 end
@@ -123,62 +123,62 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastYoumu01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsInvulnerable()
 end
 
 function CanCastYoumu03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsInvulnerable()
 end
 
 function CanCastYoumu04OnTarget( npcTarget )
 	return npcTarget:CanBeSeen() and
 	not npcTarget:IsMagicImmune() and
 	not npcTarget:IsInvulnerable() and
-	npcTarget:GetArmor() < 200.0;
+	npcTarget:GetArmor() < 200.0
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityYoumuEx()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not abilityEx:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE, 0;
-	end;
+		return BOT_ACTION_DESIRE_NONE, 0
+	end
 
 	-- consider attack range
-	local nCastRange = 220;
+	local nCastRange = 220
 
 	--------------------------------------
 	-- Mode based usage
 	--------------------------------------
 
 	if IsUnderAttack(npcBot,true) then
-		return BOT_ACTION_DESIRE_HIGH;
+		return BOT_ACTION_DESIRE_HIGH
 	end
 
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityYoumu01()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability01:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE, 0;
-	end;
+		return BOT_ACTION_DESIRE_NONE, 0
+	end
 
 	-- Get some of its values
-	local nRadius = ability01:GetSpecialValueInt( "radius" );
-	local nDamage = ability01:GetAbilityDamage();
-	local nLevel = ability01:GetLevel();
+	local nRadius = ability01:GetSpecialValueInt( "radius" )
+	local nDamage = ability01:GetAbilityDamage()
+	local nLevel = ability01:GetLevel()
 	local nCastRange = (nLevel-1)*100 + 699
 
 	-- consider attack range
@@ -189,12 +189,12 @@ function ConsiderAbilityYoumu01()
 
 	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH )
 	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy and CanCastYoumu01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 			end
 
 		end
@@ -206,13 +206,13 @@ function ConsiderAbilityYoumu01()
 		 npcBot:GetActiveMode() == BOT_MODE_GANK or
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY )
 	then
-		local npcTarget = npcBot:GetTarget();
+		local npcTarget = npcBot:GetTarget()
 
 		if ( npcTarget ~= nil )
 		then
 			if ( CanCastYoumu01OnTarget( npcTarget ) )
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetLocation();
+				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetLocation()
 			end
 		end
 	end
@@ -221,35 +221,35 @@ function ConsiderAbilityYoumu01()
 		local v_home = GetAncient(npcBot:GetTeam()):GetLocation()
 		local v_target = ( v_home - npcBot:GetLocation() ) / GetUnitToLocationDistance( npcBot, v_home)
 		local v_final = npcBot:GetLocation() + v_target * nCastRange
-		return BOT_ACTION_DESIRE_HIGH, v_final;
+		return BOT_ACTION_DESIRE_HIGH, v_final
 	end
 
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityYoumu03()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability03:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE;
-	end;
+		return BOT_ACTION_DESIRE_NONE
+	end
 
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
 	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 400, true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 400, true, BOT_MODE_NONE )
 		if ( #tableNearbyEnemyHeroes > 0 ) then
-			return BOT_ACTION_DESIRE_MODERATE;
+			return BOT_ACTION_DESIRE_MODERATE
 		end
 	end
 
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 
 end
 
@@ -260,21 +260,21 @@ local a2={3.0,4.2,5.4}
 
 function ConsiderAbilityYoumu04()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability04:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE,nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE,nil
+	end
 
-	local nLevel = ability04:GetLevel();
-	local nCastRange = ability04:GetCastRange();
-	local nDamage = a1[nLevel] + npcBot:GetAttributeValue( ATTRIBUTE_AGILITY )*a2[nLevel];
-	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, 700, false, BOT_MODE_NONE );
-	local tableNearbyEnemyHeroes500 = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE );
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
-	local exDamage = (#tableNearbyFriendlyHeroes - 1) * 100;
+	local nLevel = ability04:GetLevel()
+	local nCastRange = ability04:GetCastRange()
+	local nDamage = a1[nLevel] + npcBot:GetAttributeValue( ATTRIBUTE_AGILITY )*a2[nLevel]
+	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, 700, false, BOT_MODE_NONE )
+	local tableNearbyEnemyHeroes500 = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE )
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
+	local exDamage = (#tableNearbyFriendlyHeroes - 1) * 100
 
 	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth() * 0.3 )
 	then
@@ -283,7 +283,7 @@ function ConsiderAbilityYoumu04()
 			if ( npcBot:GetTarget() == npcEnemy and CanCastYoumu04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 --				print('youmu_debug_01')
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy;
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy
 			end
 
 			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) and not IsPossibleIllusion( npcEnemy ))
@@ -291,7 +291,7 @@ function ConsiderAbilityYoumu04()
 				if ( CanCastYoumu04OnTarget( npcEnemy ) )
 				then
 --					print('youmu_debug_02')
-					return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
+					return BOT_ACTION_DESIRE_MODERATE, npcEnemy
 				end
 			end
 		end
@@ -310,7 +310,7 @@ function ConsiderAbilityYoumu04()
 --				print( exDamage )
 --				print( npcEnemy:GetHealth() )
 --				print('youmu_debug_03')
-				return BOT_ACTION_DESIRE_MODERATE,npcEnemy;
+				return BOT_ACTION_DESIRE_MODERATE,npcEnemy
 			end
 		end
 
@@ -319,16 +319,16 @@ function ConsiderAbilityYoumu04()
 		npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH
 		)
 	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			local is_tp=GetModifierTimeLeft( npcEnemy, "modifier_teleporting" );
+			local is_tp=GetModifierTimeLeft( npcEnemy, "modifier_teleporting" )
 			if ( npcBot:GetTarget() == npcEnemy and not IsPossibleIllusion( npcEnemy ) and
 			CanCastYoumu04OnTarget( npcEnemy ) and
 			is_tp < 1.0 and is_tp > 0.2 )
 			then
 --				print('youmu_debug_04')
-				return BOT_ACTION_DESIRE_MODERATE,npcEnemy;
+				return BOT_ACTION_DESIRE_MODERATE,npcEnemy
 			end
 		end
 	end
@@ -339,18 +339,18 @@ function ConsiderAbilityYoumu04()
 		 npcBot:GetActiveMode() == BOT_MODE_GANK or
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY ) 
 	then
-		local npcTarget = npcBot:GetTarget();
+		local npcTarget = npcBot:GetTarget()
 
 		if ( npcTarget ~= nil ) 
 		then
 			if ( CanCastYoumu04OnTarget( npcTarget ) )
 			then
-				return BOT_ACTION_DESIRE_HIGH,npcTarget;
+				return BOT_ACTION_DESIRE_HIGH,npcTarget
 			end
 		end
 	end
 ]]--
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 
 end
 

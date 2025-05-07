@@ -3,18 +3,18 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0;
-cast02Desire = 0;
-cast03Desire = 0;
-cast04Desire = 0;
+cast01Desire = 0
+cast02Desire = 0
+cast03Desire = 0
+cast04Desire = 0
 
 
 function MyItemUsageThink()
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 	local item_horse_red = IsItemAvailable( "item_horse_red" )
 	local item_horse_green = IsItemAvailable( "item_horse_green" )
 	local item_horse_blue = IsItemAvailable( "item_horse_blue" )
@@ -32,8 +32,8 @@ function MyItemUsageThink()
 		castItemXinYanDesire, castItemXinYanTarget = ConsiderItemXinYan( item_xinyan )
 		if ( castItemXinYanDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnEntity( item_xinyan, castItemXinYanTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_xinyan, castItemXinYanTarget )
+			return
 		end
 	end
 	
@@ -42,8 +42,8 @@ function MyItemUsageThink()
 		castItemSlowDesire, castItemSlowTarget = ConsiderItemSlow( item_slow )
 		if ( castItemSlowDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnLocation( item_slow, castItemSlowTarget);
-			return;
+			npcBot:Action_UseAbilityOnLocation( item_slow, castItemSlowTarget)
+			return
 		end
 	end
 	if ( item_morenjingjuan~=nil and item_morenjingjuan:IsFullyCastable() )
@@ -53,8 +53,8 @@ function MyItemUsageThink()
 		if ( castItemMoRenDesire > 0 ) 
 		then
 			--print("stun luanch")
-			npcBot:Action_UseAbilityOnEntity( item_morenjingjuan, castItemMoRenTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_morenjingjuan, castItemMoRenTarget )
+			return
 		end
 	end
 	if ( item_qijizhixing~=nil and item_qijizhixing:IsFullyCastable() )
@@ -62,8 +62,8 @@ function MyItemUsageThink()
 		castItemQiJjZhiXingDesire, castItemQiJjZhiXingTarget = ConsiderItemQiJiZhiXing(item_qijizhixing)
 		if ( castItemQiJjZhiXingDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnEntity( item_qijizhixing, castItemQiJjZhiXingTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_qijizhixing, castItemQiJjZhiXingTarget )
+			return
 		end
 	end
 	if ( item_speed~=nil and item_speed:IsFullyCastable() )
@@ -71,8 +71,8 @@ function MyItemUsageThink()
 		castItemSpeedDesire = ConsiderItemSpeed( item_speed )
 		if ( castItemSpeedDesire > 0 ) 
 		then
-			npcBot:Action_UseAbility( item_speed );
-			return;
+			npcBot:Action_UseAbility( item_speed )
+			return
 		end
 	end
 	if ( item_horse_green~=nil and item_horse_green:IsFullyCastable() )
@@ -80,8 +80,8 @@ function MyItemUsageThink()
 		castItemHorseGreenDesire = ConsiderItemHorseGreen(item_horse_green)
 		if ( castItemHorseGreenDesire > 0 ) 
 		then
-			npcBot:Action_UseAbility( item_horse_green );
-			return;
+			npcBot:Action_UseAbility( item_horse_green )
+			return
 		end
 	end
 
@@ -90,8 +90,8 @@ function MyItemUsageThink()
 		castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
 		if ( castItemHorseKingDesire > 0 ) 
 		then
-			npcBot:Action_UseAbility( item_horse_king );
-			return;
+			npcBot:Action_UseAbility( item_horse_king )
+			return
 		end
 	end
 end
@@ -102,37 +102,37 @@ function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink();
-	local npcBot = GetBot();
+	MyItemUsageThink()
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
-	ability01 = npcBot:GetAbilityByName( "ability_thdots_lyrica01" );
-	ability02 = npcBot:GetAbilityByName( "ability_thdots_lyrica02" );
-	ability03 = npcBot:GetAbilityByName( "ability_thdots_lyrica03" );
-	ability04 = npcBot:GetAbilityByName( "ability_thdots_lyrica04" );
+	ability01 = npcBot:GetAbilityByName( "ability_thdots_lyrica01" )
+	ability02 = npcBot:GetAbilityByName( "ability_thdots_lyrica02" )
+	ability03 = npcBot:GetAbilityByName( "ability_thdots_lyrica03" )
+	ability04 = npcBot:GetAbilityByName( "ability_thdots_lyrica04" )
 
 	-- Consider using each ability
-	cast01Desire, cast01Location = ConsiderAbilityLyrica01();
+	cast01Desire, cast01Location = ConsiderAbilityLyrica01()
 	if ( cast01Desire > 0 ) 
 	then
-		npcBot:Action_UseAbilityOnLocation( ability01 , cast01Location);
-		return;
+		npcBot:Action_UseAbilityOnLocation( ability01 , cast01Location)
+		return
 	end
 
-	cast02Desire, cast02Target = ConsiderAbilityLyrica02();
+	cast02Desire, cast02Target = ConsiderAbilityLyrica02()
 	if ( cast02Desire > 0 ) 
 	then
-		npcBot:Action_UseAbilityOnEntity( ability02, cast02Target );
-		return;
+		npcBot:Action_UseAbilityOnEntity( ability02, cast02Target )
+		return
 	end
 
-	cast04Desire, cast04Target = ConsiderAbilityLyrica04();
+	cast04Desire, cast04Target = ConsiderAbilityLyrica04()
 	if ( cast04Desire > 0 ) 
 	then
-		npcBot:Action_UseAbilityOnEntity( ability04, cast04Target );
-		return;
+		npcBot:Action_UseAbilityOnEntity( ability04, cast04Target )
+		return
 	end
 
 end
@@ -140,32 +140,32 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastLyrica01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 function CanCastLyrica02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 function CanCastLyrica04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityLyrica01()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability01:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE, 0;
-	end;
+		return BOT_ACTION_DESIRE_NONE, 0
+	end
 	
-	local nCastRange = 500;
+	local nCastRange = 500
 	local nRadius = ability01:GetSpecialValueInt( "radius" )
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+200, true, BOT_MODE_NONE );
-	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+200, true, BOT_MODE_NONE )
+	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
 	--救人
 	if #tableNearbyEnemyHeroes > 0 then
 		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
@@ -176,7 +176,7 @@ function ConsiderAbilityLyrica01()
 				or IsUnderAttack( npcFriend )
 				)
 				) then
-				return BOT_ACTION_DESIRE_HIGH, npcFriend:GetLocation();
+				return BOT_ACTION_DESIRE_HIGH, npcFriend:GetLocation()
 			end
 		end
 	end
@@ -190,34 +190,34 @@ function ConsiderAbilityLyrica01()
 			target1:GetHealth() < target1:GetMaxHealth()*0.3
 			) 
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 			end
 		end
 	end
 		--逃命
 	if npcBot:GetActiveMode() == BOT_MODE_RETREAT then
-		return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME);
+		return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 	end
-	return BOT_ACTION_DESIRE_NONE, 0;
+	return BOT_ACTION_DESIRE_NONE, 0
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityLyrica02()
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability02:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE,nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE,nil
+	end
 
 	-- Get some of its values
-	local nCastRange = ability02:GetCastRange();
+	local nCastRange = ability02:GetCastRange()
 	
-	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE );
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
+	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
 	
 	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 	do
@@ -227,11 +227,11 @@ function ConsiderAbilityLyrica02()
 				IsUnderAttack( npcFriend )
 				)
 			) then
-			return BOT_ACTION_DESIRE_HIGH, npcFriend;
+			return BOT_ACTION_DESIRE_HIGH, npcFriend
 		end
 	end
 
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 
 end
 
@@ -239,16 +239,16 @@ end
 
 function ConsiderAbilityLyrica04()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability04:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE, nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE, nil
+	end
 
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 900, true, BOT_MODE_NONE );
-	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, 550, false, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 900, true, BOT_MODE_NONE )
+	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, 550, false, BOT_MODE_NONE )
 	
 	if #tableNearbyEnemyHeroes > 0 then
 		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
@@ -259,12 +259,12 @@ function ConsiderAbilityLyrica04()
 				or IsUnderAttack( npcFriend )
 				)
 				) then
-				return BOT_ACTION_DESIRE_HIGH, npcFriend;
+				return BOT_ACTION_DESIRE_HIGH, npcFriend
 			end
 		end
 	end
 		
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 
 end
 

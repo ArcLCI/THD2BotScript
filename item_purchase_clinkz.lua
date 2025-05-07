@@ -52,7 +52,7 @@ local tableItemsToBuy = {
 				"item_recipe_cirno_claymore",
 					"item_recipe_ertianyiliu",
 
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

@@ -5,19 +5,19 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0;
-cast02Desire = 0;
-cast03Desire = 0;
-cast04Desire = 0;
+cast01Desire = 0
+cast02Desire = 0
+cast03Desire = 0
+cast04Desire = 0
 
-tmp = 0;
+tmp = 0
 
 function MyItemUsageThink()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
 	local item_root = IsItemAvailable( "item_tentacle" )
 
@@ -26,8 +26,8 @@ function MyItemUsageThink()
 		castItemRootDesire, castItemRootTarget = ConsiderItemRoot( item_root )
 		if ( castItemRootDesire > 0 )
 		then
-			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget )
+			return
 		end
 	end
 
@@ -64,21 +64,21 @@ local temp_ability_queue = {}
 local elemCounts = {0,0,0,0,0,0,0,0}
 
 function AddElem( elemId )
-	local npcBot = GetBot();
-	local ability = abilities[elemId];
+	local npcBot = GetBot()
+	local ability = abilities[elemId]
 
 	if not ability:IsFullyCastable() or npcBot:IsSilenced() then
 		return false
 	end
 
-	npcBot:Action_UseAbility(ability);
+	npcBot:Action_UseAbility(ability)
 	for i=1,5 do
 		if i==elemId then
-			elemCounts[i] = elemCounts[i]+1;
+			elemCounts[i] = elemCounts[i]+1
 		else
-			elemCounts[i] = elemCounts[i]-1;
+			elemCounts[i] = elemCounts[i]-1
 			if elemCounts[i] < 0 then
-				elemCounts[i] = 0;
+				elemCounts[i] = 0
 			end
 		end
 	end
@@ -87,26 +87,26 @@ function AddElem( elemId )
 end
 
 function ConsiderElement()
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 	if npcBot:GetActiveMode() == BOT_MODE_LANING then
 		if (npcBot:GetHealth() * 0.85) < (npcBot:GetMaxHealth() * 1.0) then
 			if elemCounts[3] < 2 then
-				AddElem(3);
+				AddElem(3)
 			end
 		elseif (npcBot:GetMana() * 0.85) < (npcBot:GetMaxMana() * 1.0) then
 			if elemCounts[2] < 2 then
-				AddElem(2);
+				AddElem(2)
 			end
 		elseif elemCounts[1] < 2 then
-			AddElem(1);
+			AddElem(1)
 		end
 	elseif (npcBot:GetHealth() * 0.85) < (npcBot:GetMaxHealth() * 1.0) then
 		if elemCounts[3] < 2 then
-			AddElem(3);
+			AddElem(3)
 		end
 	elseif (npcBot:GetMana() * 0.6) < (npcBot:GetMaxMana() * 1.0) then
 		if elemCounts[2] < 2 then
-			AddElem(2);
+			AddElem(2)
 		end
 	end
 
@@ -118,11 +118,11 @@ function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink();
-	local npcBot = GetBot();
+	MyItemUsageThink()
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
 	abilities[1] = hero:FindAbilityByName("ability_thdots_patchouli_fire")
 	abilities[2] = hero:FindAbilityByName("ability_thdots_patchouli_water")
@@ -147,109 +147,109 @@ function AbilityUsageThink()
 	abilities[55] = hero:FindAbilityByName("ability_thdots_patchouli_earth_earth")
 
 	-- Consider using each ability
-	cast01Desire, cast01Target = ConsiderAbilityPatchouli01();
-	cast02Desire, cast02Location = ConsiderAbilityPatchouli02();
-	cast03Desire, cast03Target = ConsiderAbilityPatchouli03();
-	cast04Desire, cast04Target = ConsiderAbilityPatchouli04();
+	cast01Desire, cast01Target = ConsiderAbilityPatchouli01()
+	cast02Desire, cast02Location = ConsiderAbilityPatchouli02()
+	cast03Desire, cast03Target = ConsiderAbilityPatchouli03()
+	cast04Desire, cast04Target = ConsiderAbilityPatchouli04()
 
 	if ( cast01Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnEntity( ability01 , cast01Target);
+		npcBot:Action_UseAbilityOnEntity( ability01 , cast01Target)
 	end
 
 	if ( cast02Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnLocation( ability02, cast02Location );
-		return;
+		npcBot:Action_UseAbilityOnLocation( ability02, cast02Location )
+		return
 	end
 
 	if ( cast03Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnEntity( ability03 , cast03Target);
-		return;
+		npcBot:Action_UseAbilityOnEntity( ability03 , cast03Target)
+		return
 	end
 
 	if ( cast04Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target);
-		return;
+		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target)
+		return
 	end
 
 end
 
 --fire fire
 function CanCastPatchouli01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --fire water
 function CanCastPatchouli02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --fire wood
 function CanCastPatchouli03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --fire metal
 function CanCastPatchouli04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --fire earth
 function CanCastPatchouli05OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --water water
 function CanCastPatchouli06OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --water wood
 function CanCastPatchouli07OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --water metal
 function CanCastPatchouli08OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --water earth
 function CanCastPatchouli09OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --wood wood
 function CanCastPatchouli10OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --wood metal
 function CanCastPatchouli11OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --wood earth
 function CanCastPatchouli12OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --metal metal
 function CanCastPatchouli13OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --metal earth
 function CanCastPatchouli14OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 --earth earth
 function CanCastPatchouli15OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -257,44 +257,44 @@ end
 --fire creep
 ConsiderAbilityPatchouli[11] = function( ability )
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE, nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE, nil
+	end
 
-	local nCastRange = ability:GetCastRange();
+	local nCastRange = ability:GetCastRange()
 
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if ( CanCastPatchouli01OnTarget( npcEnemy ) )
 		then
-			return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
+			return BOT_ACTION_DESIRE_MODERATE, npcEnemy
 		end
 	end
 
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityPatchouli02()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability02:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE, 0;
-	end;
+		return BOT_ACTION_DESIRE_NONE, 0
+	end
 
 	-- Get some of its values
-	local nRadius = ability02:GetSpecialValueInt( "radius" );
-	local nCastRange = ability02:GetCastRange();
-	local nDamage = ability02:GetAbilityDamage();
+	local nRadius = ability02:GetSpecialValueInt( "radius" )
+	local nCastRange = ability02:GetCastRange()
+	local nDamage = ability02:GetAbilityDamage()
 
 	--------------------------------------
 	-- Mode based usage
@@ -302,42 +302,42 @@ function ConsiderAbilityPatchouli02()
 
 	-- If we're farming and can kill 3+ creeps with LSA
 	if ( npcBot:GetActiveMode() == BOT_MODE_FARM ) then
-		local locationAoE = CachedFindAoELocation( npcBot, 1, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, nDamage );
+		local locationAoE = CachedFindAoELocation( npcBot, 1, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, nDamage )
 
 		if ( locationAoE.count >= 3 ) then
-			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
+			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc
 		end
 	end
 
 	-- If we're pushing or defending a lane and can hit 4+ creeps, go for it
 	if ( npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_TOP or
 		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_MID or
-		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_BOTTOM or
+		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_BOT or
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_TOP or
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_MID or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOTTOM )
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOT )
 	then
-		local locationAoE = CachedFindAoELocation( npcBot, 2, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
+		local locationAoE = CachedFindAoELocation( npcBot, 2, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 )
 
 		if ( locationAoE.count >= 4 )
 		then
-			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
+			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc
 		end
 	end
 
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius + 200, true, BOT_MODE_NONE );
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius + 200, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy and CanCastPatchouli02OnTarget( npcEnemy )  )
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation();
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 			end
 
 			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
 			then
 				if ( CanCastPatchouli02OnTarget( npcEnemy ) )
 				then
-					return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation();
+					return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation()
 				end
 			end
 		end
@@ -348,18 +348,18 @@ function ConsiderAbilityPatchouli02()
 		 npcBot:GetActiveMode() == BOT_MODE_GANK or
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY )
 	then
-		local npcTarget = npcBot:GetTarget();
+		local npcTarget = npcBot:GetTarget()
 
 		if ( npcTarget ~= nil )
 		then
 			if ( CanCastPatchouli02OnTarget( npcTarget ) )
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetLocation();
+				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetLocation()
 			end
 		end
 	end
 
-	return BOT_ACTION_DESIRE_NONE, 0;
+	return BOT_ACTION_DESIRE_NONE, 0
 end
 
 
@@ -367,19 +367,19 @@ end
 
 function ConsiderAbilityPatchouli03()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability03:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE,nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE,nil
+	end
 
 	-- Get some of its values
-	local nCastRange = ability03:GetCastRange();
+	local nCastRange = ability03:GetCastRange()
 
-	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE );
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE );
+	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
 
 	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 	do
@@ -389,11 +389,11 @@ function ConsiderAbilityPatchouli03()
 				IsUnderAttack( npcFriend )
 				)
 			) then
-			return BOT_ACTION_DESIRE_HIGH, npcFriend;
+			return BOT_ACTION_DESIRE_HIGH, npcFriend
 		end
 	end
 
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 
 end
 
@@ -401,20 +401,20 @@ end
 
 function ConsiderAbilityPatchouli04()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability04:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE,nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE,nil
+	end
 
 	-- Get some of its values
-	local nCastRange = ability04:GetCastRange();
+	local nCastRange = ability04:GetCastRange()
 
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+100, true, BOT_MODE_NONE );
-		local mxcap=0;
-		local mxTarget=nil;
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+100, true, BOT_MODE_NONE )
+		local mxcap=0
+		local mxTarget=nil
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( CanCastPatchouli04OnTarget( npcEnemy ) )
@@ -428,7 +428,7 @@ function ConsiderAbilityPatchouli04()
 		end
 
 	if #tableNearbyEnemyHeroes > 2 then
-		return BOT_ACTION_DESIRE_MODERATE, mxTarget;
+		return BOT_ACTION_DESIRE_MODERATE, mxTarget
 	end
 
 	if #tableNearbyEnemyHeroes > 0 and (
@@ -437,11 +437,11 @@ function ConsiderAbilityPatchouli04()
 				npcBot:GetActiveMode() == BOT_MODE_RETREAT
 			)
 		) then
-		return BOT_ACTION_DESIRE_MODERATE, mxTarget;
+		return BOT_ACTION_DESIRE_MODERATE, mxTarget
 	end
 
 
-	return BOT_ACTION_DESIRE_NONE,nil;
+	return BOT_ACTION_DESIRE_NONE,nil
 
 end
 

@@ -32,7 +32,7 @@ local tableItemsToBuy = {
 				"item_ice_block",
 				"item_ice_block",
 				"item_recipe_frozen",
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

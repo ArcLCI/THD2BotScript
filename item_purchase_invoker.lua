@@ -31,43 +31,43 @@ local tableItemsToBuy = {
 				"item_god_hand",
 				"item_recipe_loneliness",
 
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------
 
-local need_courier = true;
+local need_courier = true
 
 function ItemPurchaseThink()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	if ( #tableItemsToBuy == 0 )
 	then
-		npcBot:SetNextItemPurchaseValue( 0 );
-		return;
+		npcBot:SetNextItemPurchaseValue( 0 )
+		return
 	end
 
-	local sNextItem = nil;
+	local sNextItem = nil
 	if (npcBot:GetPlayerID() == 4 or npcBot:GetPlayerID() == 9) then
 		if need_courier then
-			sNextItem = "item_courier";
+			sNextItem = "item_courier"
 		end
 	end
 	if (sNextItem == nil ) then
-		sNextItem = tableItemsToBuy[1];
+		sNextItem = tableItemsToBuy[1]
 	end
 
-	npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) );
+	npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
 
 	if ( npcBot:GetGold() >= GetItemCost( sNextItem ) )
 	then
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchasing "..sNextItem)
-		npcBot:ActionImmediate_PurchaseItem( sNextItem );
+		npcBot:ActionImmediate_PurchaseItem( sNextItem )
 		if (sNextItem == "item_courier") then
-			need_courier = false;
+			need_courier = false
 		else
-			table.remove( tableItemsToBuy, 1 );
+			table.remove( tableItemsToBuy, 1 )
 		end
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)
 	end

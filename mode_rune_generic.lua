@@ -1,27 +1,27 @@
 
---local RUNE_LOCATIONS = {RUNE_POWERUP_1,RUNE_POWERUP_2,RUNE_BOUNTY_1,RUNE_BOUNTY_2,RUNE_BOUNTY_3,RUNE_BOUNTY_4};
-local RUNE_LOCATIONS = {RUNE_POWERUP_1,RUNE_POWERUP_2,RUNE_BOUNTY_1,RUNE_BOUNTY_2};
-local RUNE_LOCATIONS_POWERUP = {RUNE_POWERUP_1,RUNE_POWERUP_2};
-local RUNE_LOCATIONS_BOUNTY = {RUNE_BOUNTY_1,RUNE_BOUNTY_2};
-local debug_printed = false;
+--local RUNE_LOCATIONS = {RUNE_POWERUP_1,RUNE_POWERUP_2,RUNE_BOUNTY_1,RUNE_BOUNTY_2,RUNE_BOUNTY_3,RUNE_BOUNTY_4}
+local RUNE_LOCATIONS = {RUNE_POWERUP_1,RUNE_POWERUP_2,RUNE_BOUNTY_1,RUNE_BOUNTY_2}
+local RUNE_LOCATIONS_POWERUP = {RUNE_POWERUP_1,RUNE_POWERUP_2}
+local RUNE_LOCATIONS_BOUNTY = {RUNE_BOUNTY_1,RUNE_BOUNTY_2}
+local debug_printed = false
 
 --signal to exit this think phase immediately
-local stop_this_think = false;
+local stop_this_think = false
 
-targetRuneID = -1;
+targetRuneID = -1
 
 function HasRune( runeID )
 	if GetRuneStatus( runeID ) ~= RUNE_STATUS_AVAILABLE then return false end
 	if GetRuneType( runeID ) == RUNE_ILLUSION then return false end
 	if GetRuneType( runeID ) == RUNE_INVALID then return false end
-	return true;
+	return true
 end
 
 function GetNearestRuneID( runeType )
 
 	local npcBot = GetBot()
-	local dis = 7000;
-	local rune_id = -1;
+	local dis = 7000
+	local rune_id = -1
 	
 	local RUNE_LOCS = RUNE_LOCATIONS
 	
@@ -58,25 +58,25 @@ function GetDesire()
 	end
 	
 	if stop_this_think then
-		stop_this_think = false;
-		return 0;
+		stop_this_think = false
+		return 0
 	end
 	
 	local npcBot = GetBot()
-	local t = DotaTime();
-	local mod_t1 = t % 120;
-	local mod_t2 = t % 180;
-	local base_desire = 0;
+	local t = DotaTime()
+	local mod_t1 = t % 120
+	local mod_t2 = t % 180
+	local base_desire = 0
 	
 	for _,i in pairs(RUNE_LOCATIONS) do
 		if GetUnitToLocationDistance(npcBot,GetRuneSpawnLocation(i)) < 600 then
 			if HasRune(i) then
 				if GetUnitToLocationDistance(npcBot,GetRuneSpawnLocation(i)) > 120 then
 					print('should pickup')
-					return 1.0;
+					return 1.0
 				else
 					print('too close')
-					return 0; --auto pickup?
+					return 0 --auto pickup?
 				end
 			end
 		end
@@ -88,7 +88,7 @@ function GetDesire()
 		
 	elseif t > 100 then
 		
-		local runeType = 0;
+		local runeType = 0
 		
 		if mod_t1 > 105 or mod_t1 < 2 then
 			if npcBot:GetAssignedLane() == LANE_MID then
@@ -105,7 +105,7 @@ function GetDesire()
 		end
 		
 		if GetNearestRuneID(runeType) == -1 then
-			base_desire = 0;
+			base_desire = 0
 		end
 		
 	end
@@ -114,7 +114,7 @@ function GetDesire()
 		base_desire = base_desire / 5
 	end
 	
-	return base_desire;
+	return base_desire
 	
 end
 
@@ -122,10 +122,10 @@ end
 function OnStart()
 
 	local npcBot = GetBot()
-	local t = DotaTime();
-	local mod_t1 = t % 120;
-	local mod_t2 = t % 180;
-	local base_desire = 0;
+	local t = DotaTime()
+	local mod_t1 = t % 120
+	local mod_t2 = t % 180
+	local base_desire = 0
 	
 	targetRuneID = -1
 	
@@ -138,7 +138,7 @@ function OnStart()
 		end
 	end
 	
-	local runeType = 0;
+	local runeType = 0
 	
 	if targetRuneID < 0 and (mod_t1 > 105 or mod_t1 < 5 or t < 10) then
 		if npcBot:GetAssignedLane() == LANE_MID then
@@ -164,13 +164,13 @@ function OnEnd()
 	targetRuneID = -1
 end
 
-local last_move_time = -2333;
+local last_move_time = -2333
 
 function Think()
 	
 	if targetRuneID == -1 then return end
 	
-	local t = DotaTime();
+	local t = DotaTime()
 	local npcBot = GetBot()
 	local targetRuneLocation = GetRuneSpawnLocation( targetRuneID )
 	

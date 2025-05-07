@@ -69,7 +69,7 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 		end
 	end
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 		
 	--basic checking
 	if runnerSeedIDCounter[runnerSeedID] == nil then 
@@ -88,7 +88,7 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 	end
 	
 	if runnerSeedIDCounter[runnerSeedID] == false then 
-		npcBot:SetNextItemPurchaseValue( 0 );
+		npcBot:SetNextItemPurchaseValue( 0 )
 		return
 	end
 	
@@ -98,32 +98,32 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 	-- notice: old runnerSeedID will cancel when old entity erased(like medicine R)
 	-- don't use SeedID to recognize caster, create own seed instead
 	if FixMultiTriggedScript(runnerSeed) == false then 
-		npcBot:SetNextItemPurchaseValue( 0 );
+		npcBot:SetNextItemPurchaseValue( 0 )
 		return
 	end
 
 	--print(GetNowEquipment(runnerSeed))
 	if ( #tableItemsToBuy < GetNowEquipment(runnerSeed) )
 	then
-		npcBot:SetNextItemPurchaseValue( 0 );
-		return;
+		npcBot:SetNextItemPurchaseValue( 0 )
+		return
 	end
 
 	--prevent drop items from stash
 	if not ( GetSwitchableInventoryAmount(npcBot) > 0 )
 	then
-		npcBot:SetNextItemPurchaseValue( 0 );
+		npcBot:SetNextItemPurchaseValue( 0 )
 		return
 	end
 
-	local sNextItem = tableItemsToBuy[GetNowEquipment(runnerSeed)];
+	local sNextItem = tableItemsToBuy[GetNowEquipment(runnerSeed)]
 
 	if ( npcBot:GetGold() >= GetItemCost( sNextItem ) )
 	then
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchasing "..sNextItem)
-		npcBot:ActionImmediate_PurchaseItem( sNextItem );
+		npcBot:ActionImmediate_PurchaseItem( sNextItem )
 		sNextItem = tableItemsToBuy[NextEquipment(runnerSeed)]
-		npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) );
+		npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)
 
 		last_purchased[runnerSeedID] = true

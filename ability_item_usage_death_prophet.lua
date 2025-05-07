@@ -3,18 +3,18 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0;
-cast02Desire = 0;
-cast03Desire = 0;
-cast04Desire = 0;
-cast05Desire = 0;
+cast01Desire = 0
+cast02Desire = 0
+cast03Desire = 0
+cast04Desire = 0
+cast05Desire = 0
 
 function MyItemUsageThink()
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
 	local item_slow = IsItemAvailable( "item_zaiezhizhurenxing" ) or
 					IsItemAvailable( "item_jiao_shou" )
@@ -32,8 +32,8 @@ function MyItemUsageThink()
 		castItemSlowDesire, castItemSlowTarget = ConsiderItemSlow( item_slow )
 		if ( castItemSlowDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnLocation( item_slow, castItemSlowTarget);
-			return;
+			npcBot:Action_UseAbilityOnLocation( item_slow, castItemSlowTarget)
+			return
 		end
 	end
 	
@@ -42,8 +42,8 @@ function MyItemUsageThink()
 		castItemStunDesire, castItemStunTarget = ConsiderItemStun( item_rocket )
 		if ( castItemStunDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget )
+			return
 		end
 	end
 	
@@ -54,8 +54,8 @@ function MyItemUsageThink()
 		if ( castItemGhostDesire > 0 ) 
 		then
 			--print("stun luanch")
-			npcBot:Action_UseAbility( item_ghost );
-			return;
+			npcBot:Action_UseAbility( item_ghost )
+			return
 		end
 	end
 
@@ -66,8 +66,8 @@ function MyItemUsageThink()
 		if ( castItemWeijinDesire > 0 ) 
 		then
 			--print("stun luanch")
-			npcBot:Action_UseAbility( item_weijin );
-			return;
+			npcBot:Action_UseAbility( item_weijin )
+			return
 		end
 	end
 	
@@ -76,8 +76,8 @@ function MyItemUsageThink()
 		castItemJumpDesire, castItemJumpTarget = ConsiderItemJump( item_jump )
 		if ( castItemJumpDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnLocation( item_jump, castItemJumpTarget);
-			return;
+			npcBot:Action_UseAbilityOnLocation( item_jump, castItemJumpTarget)
+			return
 		end
 	end
 end
@@ -88,38 +88,38 @@ function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink();
-	local npcBot = GetBot();
+	MyItemUsageThink()
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
-	ability01 = npcBot:GetAbilityByName( "ability_thdots_shion_01" );
-	ability02 = npcBot:GetAbilityByName( "ability_thdots_shion_02" );
-	ability04 = npcBot:GetAbilityByName( "ability_thdots_shion_04" );
-	ability05 = npcBot:GetAbilityByName( "ability_thdots_shion_05" );
+	ability01 = npcBot:GetAbilityByName( "ability_thdots_shion_01" )
+	ability02 = npcBot:GetAbilityByName( "ability_thdots_shion_02" )
+	ability04 = npcBot:GetAbilityByName( "ability_thdots_shion_04" )
+	ability05 = npcBot:GetAbilityByName( "ability_thdots_shion_05" )
 
 	-- Consider using each ability
-	cast01Desire = ConsiderAbilityShion01();
+	cast01Desire = ConsiderAbilityShion01()
 	if ( cast01Desire > 0 ) 
 	then
-		npcBot:Action_UseAbility( ability01);
-		return;
+		npcBot:Action_UseAbility( ability01)
+		return
 	end
 
-	cast02Desire = ConsiderAbilityShion02();
+	cast02Desire = ConsiderAbilityShion02()
 	if ( cast02Desire > 0 ) 
 	then
-		npcBot:Action_UseAbility( ability02);
-		return;
+		npcBot:Action_UseAbility( ability02)
+		return
 	end
 
-	cast04Desire, cast04Target = ConsiderAbilityShion04();
+	cast04Desire, cast04Target = ConsiderAbilityShion04()
 	
 	if ( cast04Desire > 0 ) 
 	then
-		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target);
-		return;
+		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target)
+		return
 	end
 
 end
@@ -127,83 +127,83 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastShion04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityShion01()
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability01:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE;
-	end;
+		return BOT_ACTION_DESIRE_NONE
+	end
 	
 	-- Fighting or Retreating with hero
-	local tableNearbyEnemyHeroes = npcBot:GetNearbyHeroes( 700, true, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = npcBot:GetNearbyHeroes( 700, true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if ( npcEnemy ~= nil ) 
 		then
-			return BOT_ACTION_DESIRE_MODERATE;
+			return BOT_ACTION_DESIRE_MODERATE
 		end
 	end
 	
 	if npcBot:HasModifier("modifier_ability_thdots_shion_04_caster")
 	then
-		return BOT_ACTION_DESIRE_MODERATE;
-	end;
+		return BOT_ACTION_DESIRE_MODERATE
+	end
 	
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityShion02()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability02:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE;
-	end;
+		return BOT_ACTION_DESIRE_NONE
+	end
 	
 	if npcBot:HasModifier("modifier_ability_thdots_shion_04_caster")
 	then
-		return BOT_ACTION_DESIRE_MODERATE;
-	end;
+		return BOT_ACTION_DESIRE_MODERATE
+	end
 	
 	
-	local tableNearbyEnemyHeroes = npcBot:GetNearbyHeroes(300, true, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = npcBot:GetNearbyHeroes(300, true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if ( npcEnemy ~= nil ) 
 		then
-			return BOT_ACTION_DESIRE_MODERATE;
+			return BOT_ACTION_DESIRE_MODERATE
 		end
 	end
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityShion04()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability04:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE,nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE,nil
+	end
 --[[	
 	if npcBot:HasModifier("modifier_ability_thdots_shion_04_caster")
 	then
-		return BOT_ACTION_DESIRE_NONE,nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE,nil
+	end
 --]]	
 	-- Get some of its values
 	local nCastRange = 300
@@ -212,20 +212,20 @@ function ConsiderAbilityShion04()
 		nCastRange = 700
 	end
 	
-	local tableNearbyEnemyHeroes = npcBot:GetNearbyHeroes(nCastRange, true, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = npcBot:GetNearbyHeroes(nCastRange, true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if ( CanCastShion04OnTarget( npcEnemy ) ) 
 		then
 			if ability01:IsFullyCastable() then 
-				npcBot:Action_UseAbility( ability01);
-			end;
+				npcBot:Action_UseAbility( ability01)
+			end
 			if ability02:IsFullyCastable() then 
-				npcBot:Action_UseAbility( ability02);
-			end;
-			return BOT_ACTION_DESIRE_MODERATE, npcEnemy;
+				npcBot:Action_UseAbility( ability02)
+			end
+			return BOT_ACTION_DESIRE_MODERATE, npcEnemy
 		end
 	end	
-	return BOT_ACTION_DESIRE_NONE,nil;
+	return BOT_ACTION_DESIRE_NONE,nil
 end
 

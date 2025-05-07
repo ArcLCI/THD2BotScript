@@ -1,5 +1,5 @@
 local bot = GetBot()
-local botName = bot:GetUnitName();
+local botName = bot:GetUnitName()
 local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 

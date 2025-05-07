@@ -5,10 +5,10 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 function MyItemUsageThink()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
 	local item_travel_boots = IsItemAvailable( "item_travel_boots" )
 	local item_rocket = IsItemAvailable( "item_rocket" ) or
@@ -24,8 +24,8 @@ function MyItemUsageThink()
 		castItemStunDesire, castItemStunTarget = ConsiderItemStun( item_rocket )
 		if ( castItemStunDesire > 0 )
 		then
-			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget )
+			return
 		end
 	end
 
@@ -35,80 +35,80 @@ function MyItemUsageThink()
 		castItemYukkuriStickDesire, castItemYukkuriStickTarget = ConsiderItemYukkuriStick( item_yukkuri_stick )
 		if ( castItemYukkuriStickDesire > 0 )
 		then
-			npcBot:Action_UseAbilityOnEntity( item_yukkuri_stick, castItemYukkuriStickTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_yukkuri_stick, castItemYukkuriStickTarget )
+			return
 		end
 	end
 
 end
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0;
-cast02Desire = 0;
-cast03Desire = 0;
-cast04Desire = 0;
+cast01Desire = 0
+cast02Desire = 0
+cast03Desire = 0
+cast04Desire = 0
 
 function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink();
-	local npcBot = GetBot();
+	MyItemUsageThink()
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
-	ability01 = npcBot:GetAbilityByName( "ability_thdots_wriggle01" );
-	ability02 = npcBot:GetAbilityByName( "death_prophet_exorcism" );
-	--ability03 = npcBot:GetAbilityByName( "ability_thdots_wriggle03" );
-	--ability04 = npcBot:GetAbilityByName( "ability_thdots_wriggle04" );
+	ability01 = npcBot:GetAbilityByName( "ability_thdots_wriggle01" )
+	ability02 = npcBot:GetAbilityByName( "death_prophet_exorcism" )
+	--ability03 = npcBot:GetAbilityByName( "ability_thdots_wriggle03" )
+	--ability04 = npcBot:GetAbilityByName( "ability_thdots_wriggle04" )
 	--item_yukkuri = IsItemAvailable( "item_yukkuri_stick" )
 
 	-- Consider using each ability
-	cast01Desire = ConsiderAbilityWriggle01();
+	cast01Desire = ConsiderAbilityWriggle01()
 
 	if ( cast01Desire > 0 )
 	then
-		npcBot:Action_UseAbility( ability01 );
-		return;
+		npcBot:Action_UseAbility( ability01 )
+		return
 	end
 
-	cast02Desire = ConsiderAbilityWriggle02();
+	cast02Desire = ConsiderAbilityWriggle02()
 	if ( cast02Desire > 0 )
 	then
-		npcBot:Action_UseAbility( ability02 );
-		return;
+		npcBot:Action_UseAbility( ability02 )
+		return
 	end
 
 end
 
 ----------------------------------------------------------------------------------------------------
 function CanCastWriggle01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityWriggle01()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability01:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE;
-	end;
+		return BOT_ACTION_DESIRE_NONE
+	end
 
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800 , true, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800 , true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if ( npcEnemy ~= nil )
 		then
-			return BOT_ACTION_DESIRE_NONE;
+			return BOT_ACTION_DESIRE_NONE
 		end
 
 	end
 
-	return BOT_ACTION_DESIRE_HIGH;
+	return BOT_ACTION_DESIRE_HIGH
 
 end
 
@@ -116,24 +116,24 @@ end
 
 function ConsiderAbilityWriggle02()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability02:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE;
-	end;
+		return BOT_ACTION_DESIRE_NONE
+	end
 
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 400 , true, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 400 , true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if ( npcEnemy ~= nil )
 		then
-			return BOT_ACTION_DESIRE_HIGH;
+			return BOT_ACTION_DESIRE_HIGH
 		end
 
 	end
 
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 
 end

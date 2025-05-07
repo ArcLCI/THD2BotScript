@@ -41,7 +41,7 @@ local tableItemsToBuy = {
 				"item_paper_mask",
 				"item_cat_foot",
 					"item_recipe_ganggenier",
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

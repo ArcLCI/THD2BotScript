@@ -53,7 +53,7 @@ local tableItemsToBuy = {
 				"item_god_hand",
 				"item_god_hand",
 					"item_recipe_loneliness",
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

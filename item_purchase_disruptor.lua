@@ -60,7 +60,7 @@ local tableItemsToBuy = {
 				"item_gran_grimoire",
 					"item_recipe_pomojinlingli",
 
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

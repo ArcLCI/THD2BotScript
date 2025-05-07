@@ -61,7 +61,7 @@ local tableItemsToBuy = {
 					"item_recipe_ghost_balloon",
 				"item_swimming_suit",
 						"item_recipe_xuenvdeweijin",
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

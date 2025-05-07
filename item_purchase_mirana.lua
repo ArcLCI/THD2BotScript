@@ -42,7 +42,7 @@ local tableItemsToBuy = {
 				"item_huanyingzhifeng",
 				"item_huanyingzhifeng",
 					"item_recipe_UFO",
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

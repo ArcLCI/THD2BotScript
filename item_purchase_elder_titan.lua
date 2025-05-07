@@ -52,7 +52,7 @@ local tableItemsToBuy = {
 				"item_recipe_quant",
 				"item_wrench",
 					"item_recipe_sampan",
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------

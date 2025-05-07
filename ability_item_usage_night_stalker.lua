@@ -3,19 +3,19 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0;
-cast02Desire = 0;
-cast03Desire = 0;
-cast04Desire = 0;
-castExDesire = 0;
+cast01Desire = 0
+cast02Desire = 0
+cast03Desire = 0
+cast04Desire = 0
+castExDesire = 0
 
 
 function MyItemUsageThink()
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 	
 	local item_frock = IsItemAvailable( "item_frock" )
 	local item_root = IsItemAvailable( "item_tentacle" )
@@ -32,8 +32,8 @@ function MyItemUsageThink()
 		castItemRootDesire, castItemRootTarget = ConsiderItemRoot( item_root )
 		if ( castItemRootDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget )
+			return
 		end
 	end
 	
@@ -42,8 +42,8 @@ function MyItemUsageThink()
 		castItemFeiXiangJianDesire, castItemFeiXiangJianTarget = ConsiderItemFeiXiangJian( item_feixiangjian )
 		if ( castItemFeiXiangJianDesire > 0 ) 
 		then
-			npcBot:Action_UseAbilityOnEntity( item_feixiangjian, castItemFeiXiangJianTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_feixiangjian, castItemFeiXiangJianTarget )
+			return
 		end
 	end
 	if ( item_frock~=nil and item_frock:IsFullyCastable() )
@@ -51,8 +51,8 @@ function MyItemUsageThink()
 		castItemDuQunDesire = ConsiderItemDuQun(item_frock)
 		if ( castItemDuQunDesire > 0 ) 
 		then
-			npcBot:Action_UseAbility(item_frock);
-			return;
+			npcBot:Action_UseAbility(item_frock)
+			return
 		end
 	end
 	if ( item_speed~=nil and item_speed:IsFullyCastable() )
@@ -60,8 +60,8 @@ function MyItemUsageThink()
 		castItemSpeedDesire = ConsiderItemSpeed( item_speed )
 		if ( castItemSpeedDesire > 0 ) 
 		then
-			npcBot:Action_UseAbility( item_speed );
-			return;
+			npcBot:Action_UseAbility( item_speed )
+			return
 		end
 	end
 	if ( item_horse_green~=nil and item_horse_green:IsFullyCastable() )
@@ -69,8 +69,8 @@ function MyItemUsageThink()
 		castItemHorseGreenDesire = ConsiderItemHorseGreen(item_horse_green)
 		if ( castItemHorseGreenDesire > 0 ) 
 		then
-			npcBot:Action_UseAbility( item_horse_green );
-			return;
+			npcBot:Action_UseAbility( item_horse_green )
+			return
 		end
 	end
 
@@ -79,8 +79,8 @@ function MyItemUsageThink()
 		castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
 		if ( castItemHorseKingDesire > 0 ) 
 		then
-			npcBot:Action_UseAbility( item_horse_king );
-			return;
+			npcBot:Action_UseAbility( item_horse_king )
+			return
 		end
 	end	
 end
@@ -91,45 +91,45 @@ function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink();
-	local npcBot = GetBot();
+	MyItemUsageThink()
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
-	ability01 = npcBot:GetAbilityByName( "ability_thdots_mystia01" );
-	ability02 = npcBot:GetAbilityByName( "ability_thdots_mystia02" );
-	ability04 = npcBot:GetAbilityByName( "ability_thdots_mystia04" );
-	abilityEx = npcBot:GetAbilityByName( "ability_thdots_mystiaEx" );
+	ability01 = npcBot:GetAbilityByName( "ability_thdots_mystia01" )
+	ability02 = npcBot:GetAbilityByName( "ability_thdots_mystia02" )
+	ability04 = npcBot:GetAbilityByName( "ability_thdots_mystia04" )
+	abilityEx = npcBot:GetAbilityByName( "ability_thdots_mystiaEx" )
 
 	-- Consider using each ability
-	cast01Desire = ConsiderAbilityMystia01();
+	cast01Desire = ConsiderAbilityMystia01()
 	if ( cast01Desire > 0 ) 
 	then
-		npcBot:Action_UseAbility( ability01);
-		return;
+		npcBot:Action_UseAbility( ability01)
+		return
 	end
 
-	cast02Desire = ConsiderAbilityMystia02();
+	cast02Desire = ConsiderAbilityMystia02()
 	if ( cast02Desire > 0 ) 
 	then
-		npcBot:Action_UseAbility( ability02);
-		return;
+		npcBot:Action_UseAbility( ability02)
+		return
 	end
 
-	cast04Desire = ConsiderAbilityMystia04();
+	cast04Desire = ConsiderAbilityMystia04()
 	if ( cast04Desire > 0 ) 
 	then
-		npcBot:Action_UseAbility( ability04);
-		return;
+		npcBot:Action_UseAbility( ability04)
+		return
 	end
 
-	castExDesire = ConsiderAbilityMystiaEx();
+	castExDesire = ConsiderAbilityMystiaEx()
 	
 	if ( castExDesire > 0 ) 
 	then
-		npcBot:Action_UseAbility( abilityEx);
-		return;
+		npcBot:Action_UseAbility( abilityEx)
+		return
 	end
 
 end
@@ -137,65 +137,65 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastMystia01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 function CanCastMystia02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsInvulnerable()
 end
 
 function CanCastMystia04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 function CanCastMystiaExOnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityMystia01()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability01:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE;
-	end;
+		return BOT_ACTION_DESIRE_NONE
+	end
 	
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 550, true, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 550, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( CanCastMystia01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
-				return BOT_ACTION_DESIRE_HIGH;
+				return BOT_ACTION_DESIRE_HIGH
 			end
 		end
 		
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityMystia02()
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability02:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE;
-	end;
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1000, true, BOT_MODE_NONE );
+		return BOT_ACTION_DESIRE_NONE
+	end
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1000, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( CanCastMystia02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
 			then
-				return BOT_ACTION_DESIRE_HIGH;
+				return BOT_ACTION_DESIRE_HIGH
 			end
 		end
 
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 end
 
 
@@ -203,47 +203,47 @@ end
 
 function ConsiderAbilityMystia04()
 	
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability04:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE;
-	end;
+		return BOT_ACTION_DESIRE_NONE
+	end
 	
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 750, true, BOT_MODE_NONE );
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 750, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( CanCastMystia04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and
 				(npcBot:GetActiveMode() == BOT_MODE_RETREAT or 
 				(npcBot:GetActiveMode() == BOT_MODE_ATTACK and #tableNearbyEnemyHeroes>1))) 
 			then
-				return BOT_ACTION_DESIRE_HIGH;
+				return BOT_ACTION_DESIRE_HIGH
 			end
 		end
 		
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityMystiaEx()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not abilityEx:IsFullyCastable() ) 
 	then 
-		return BOT_ACTION_DESIRE_NONE;
-	end;
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE );
+		return BOT_ACTION_DESIRE_NONE
+	end
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
 			then
-				return BOT_ACTION_DESIRE_HIGH;
+				return BOT_ACTION_DESIRE_HIGH
 			end
 		end
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 end
 

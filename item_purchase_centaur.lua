@@ -55,7 +55,7 @@ if RandomInt(1,100) == 1 then
 		"item_huanyingzhifeng",
 			"item_recipe_UFO",
 
-	};
+	}
 else
 	tableItemsToBuy ={
 		"item_broom",
@@ -108,7 +108,7 @@ else
 		"item_huanyingzhifeng",
 			"item_recipe_UFO",
 
-	};
+	}
 
 end
 

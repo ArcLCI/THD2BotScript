@@ -3,11 +3,11 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0;
-cast01StopDesire = 0;
-cast02Desire = 0;
-cast03Desire = 0;
-cast04Desire = 0;
+cast01Desire = 0
+cast01StopDesire = 0
+cast02Desire = 0
+cast03Desire = 0
+cast04Desire = 0
 
 
 local larva01_time = -1
@@ -17,10 +17,10 @@ local onChasingDash = false
 
 function MyItemUsageThink()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
 	local item_jump = IsItemAvailable( "item_wanmeitiaoyuezhuangzhi" )
 	local item_rocket = IsItemAvailable( "item_rocket" ) or
@@ -35,8 +35,8 @@ function MyItemUsageThink()
 		castItemJumpDesire, castItemJumpTarget = ConsiderItemJump( item_jump )
 		if ( castItemJumpDesire > 0 )
 		then
-			npcBot:Action_UseAbilityOnLocation( item_jump, castItemJumpTarget);
-			return;
+			npcBot:Action_UseAbilityOnLocation( item_jump, castItemJumpTarget)
+			return
 		end
 	end
 	if ( item_rocket~=nil and item_rocket:IsFullyCastable() )
@@ -44,8 +44,8 @@ function MyItemUsageThink()
 		castItemStunDesire, castItemStunTarget = ConsiderItemStun( item_rocket )
 		if ( castItemStunDesire > 0 )
 		then
-			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget )
+			return
 		end
 	end
 
@@ -56,8 +56,8 @@ function MyItemUsageThink()
 		if ( castItemMoRenDesire > 0 )
 		then
 			--print("stun luanch")
-			npcBot:Action_UseAbilityOnEntity( item_morenjingjuan, castItemMoRenTarget );
-			return;
+			npcBot:Action_UseAbilityOnEntity( item_morenjingjuan, castItemMoRenTarget )
+			return
 		end
 	end
 end
@@ -68,11 +68,11 @@ function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink();
-	local npcBot = GetBot();
+	MyItemUsageThink()
+	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end;
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
 	local isfly = npcBot:HasModifier("modifier_ability_larva01_dash")
 
@@ -85,39 +85,39 @@ function AbilityUsageThink()
 	-- Consider using each ability
 
 
-	cast01Desire, cast01Location = ConsiderAbilityLarva01();
+	cast01Desire, cast01Location = ConsiderAbilityLarva01()
 	if ( cast01Desire > 0 and not isfly)
 	then
-		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location );
-		larva01_time = DotaTime();
+		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location )
+		larva01_time = DotaTime()
 		return
 	end
 
-	cast01StopDesire = ConsiderAbilityLarva01Stop();
+	cast01StopDesire = ConsiderAbilityLarva01Stop()
 	if ( cast01StopDesire > 0 and isfly ) then
-		npcBot:Action_UseAbility( ability01stop);
+		npcBot:Action_UseAbility( ability01stop)
 		return
 	end
 
-	cast02Desire = ConsiderAbilityLarva02();
+	cast02Desire = ConsiderAbilityLarva02()
 	if ( cast02Desire > 0 )
 	then
-		npcBot:Action_UseAbility( ability02);
-		return;
+		npcBot:Action_UseAbility( ability02)
+		return
 	end
 
-	cast03Desire, cast03Target = ConsiderAbilityLarva03();
+	cast03Desire, cast03Target = ConsiderAbilityLarva03()
 	if ( cast03Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnEntity( ability03 , cast03Target);
-		return;
+		npcBot:Action_UseAbilityOnEntity( ability03 , cast03Target)
+		return
 	end
 
-	cast04Desire, cast04Location = ConsiderAbilityLarva04();
+	cast04Desire, cast04Location = ConsiderAbilityLarva04()
 	if ( cast04Desire > 0 )
 	then
-		npcBot:Action_UseAbilityOnLocation( ability04, cast04Location );
-		return;
+		npcBot:Action_UseAbilityOnLocation( ability04, cast04Location )
+		return
 	end
 
 end
@@ -125,21 +125,21 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastLarva01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 
 function CanCastLarva02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 
 function CanCastLarva03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 function CanCastLarva04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable();
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 ----------------------------------------------------------------------------------------------------
 
@@ -164,7 +164,7 @@ function ConsiderAbilityLarva01()
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
 
-	local nCastRange = 1200;
+	local nCastRange = 1200
 	if npcBot:GetLevel() >= 15 then
 		nCastRange = 2000
 	end
@@ -245,7 +245,7 @@ function ConsiderAbilityLarva02()
 	-- Make sure it's castable
 	if ( not ability02:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE;
+		return BOT_ACTION_DESIRE_NONE
 	end
 
 	-- Get some of its values
@@ -263,22 +263,22 @@ function ConsiderAbilityLarva02()
 			return BOT_ACTION_DESIRE_HIGH
 		end
 	end
-	return BOT_ACTION_DESIRE_NONE;
+	return BOT_ACTION_DESIRE_NONE
 end
 
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityLarva03()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability03:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE,nil;
-	end;
+		return BOT_ACTION_DESIRE_NONE,nil
+	end
 
-	local nCastRange = ability03:GetLevel()*50 + 450;
+	local nCastRange = ability03:GetLevel()*50 + 450
 	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
 	local nModifier = npcBot:GetModifierByName("modifier_ability_thdots_ellen04_debuff")
 	
@@ -288,7 +288,7 @@ function ConsiderAbilityLarva03()
 			if ( CanCastLarva03OnTarget( npcFriend ) and
 				( npcFriend:GetModifierStackCount(nModifier) >= 5 and npcFriend:GetModifierRemainingDuration(nModifier) <= 0.6))
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcFriend;
+				return BOT_ACTION_DESIRE_HIGH, npcFriend
 			end
 		end
 	else
@@ -299,11 +299,11 @@ function ConsiderAbilityLarva03()
 				npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
 				IsUnderAttack( npcFriend,true )))
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcFriend;
+				return BOT_ACTION_DESIRE_HIGH, npcFriend
 			end
 		end
 	end
-	return BOT_ACTION_DESIRE_NONE, nil;
+	return BOT_ACTION_DESIRE_NONE, nil
 
 end
 
@@ -311,27 +311,27 @@ end
 
 function ConsiderAbilityLarva04()
 
-	local npcBot = GetBot();
+	local npcBot = GetBot()
 
 	-- Make sure it's castable
 	if ( not ability04:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE,0;
-	end;
+		return BOT_ACTION_DESIRE_NONE,0
+	end
 
-	local nCastRange = 400;
-	local nRadius = 525;
+	local nCastRange = 400
+	local nRadius = 525
 
 	if ((npcBot:GetActiveMode() == BOT_MODE_ATTACK
 		or npcBot:GetActiveMode() == BOT_MODE_GANK
 		or npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 		and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) then
-		local locationAoE = CachedFindAoELocation( npcBot, 60001, true, true, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 );
+		local locationAoE = CachedFindAoELocation( npcBot, 60001, true, true, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 )
 		if locationAoE.count > 1 then
-			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc;
+			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc
 		end
 	end
-	return BOT_ACTION_DESIRE_NONE,0;
+	return BOT_ACTION_DESIRE_NONE,0
 
 end
 

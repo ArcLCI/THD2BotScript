@@ -47,7 +47,7 @@ local tableItemsToBuy = {
 				"item_tengu_fan",
 				"item_ice_block",
 					"item_recipe_laevateinn",
-			};
+			}
 
 
 ----------------------------------------------------------------------------------------------------
