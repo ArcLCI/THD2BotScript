@@ -10,7 +10,6 @@ function MyItemUsageThink()
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
-	local item_travel_boots = IsItemAvailable( "item_travel_boots" )
 	local item_rocket = IsItemAvailable( "item_rocket" ) or
 					IsItemAvailable( "item_rocket_2" ) or
 					IsItemAvailable( "item_rocket_3" ) or
@@ -62,7 +61,6 @@ function AbilityUsageThink()
 	ability02 = npcBot:GetAbilityByName( "death_prophet_exorcism" )
 	--ability03 = npcBot:GetAbilityByName( "ability_thdots_wriggle03" )
 	--ability04 = npcBot:GetAbilityByName( "ability_thdots_wriggle04" )
-	--item_yukkuri = IsItemAvailable( "item_yukkuri_stick" )
 
 	-- Consider using each ability
 	cast01Desire = ConsiderAbilityWriggle01()

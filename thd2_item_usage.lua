@@ -494,6 +494,7 @@ function ConsiderItemStun( item_stun )
 		if GetModifiersTimeLeft( npcEnemy, ModifierNamesStun ) < j_time then
 			if ( npcBot:GetTarget() == npcEnemy
 			and CanCastStunOnTarget( npcEnemy )
+			and not IsPossibleIllusion( npcEnemy )
 			and not (npcEnemy:IsStunned() or npcEnemy:IsRooted()))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy

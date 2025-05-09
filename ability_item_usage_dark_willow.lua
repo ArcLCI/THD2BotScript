@@ -30,6 +30,8 @@ function MyItemUsageThink()
 					IsItemAvailable( "item_rocket_5" )
 	local item_morenjingjuan = IsItemAvailable( "item_morenjingjuan" )
 
+	local isfly = npcBot:HasModifier("modifier_ability_larva01_dash")
+
 	if ( item_jump~=nil and item_jump:IsFullyCastable() )
 	then
 		castItemJumpDesire, castItemJumpTarget = ConsiderItemJump( item_jump )
@@ -49,7 +51,7 @@ function MyItemUsageThink()
 		end
 	end
 
-	if ( item_morenjingjuan~=nil and item_morenjingjuan:IsFullyCastable() )
+	if ( item_morenjingjuan~=nil and item_morenjingjuan:IsFullyCastable() and not isfly )
 	then
 		--print("stun item exist")
 		castItemMoRenDesire, castItemMoRenTarget = ConsiderItemRoot( item_morenjingjuan )
@@ -169,10 +171,16 @@ function ConsiderAbilityLarva01()
 		nCastRange = 2000
 	end
 
-	if (npcBot:GetActiveMode() ~= BOT_MODE_LANING or
-		npcBot:GetActiveMode() ~= BOT_MODE_RUNE or
-		npcBot:GetActiveMode() ~= BOT_MODE_RETREAT or
-		npcBot:GetHealth() > npcBot:GetMaxHealth()*0.25) then
+	if ((npcBot:GetActiveMode() == BOT_MODE_ATTACK or
+		npcBot:GetActiveMode() == BOT_MODE_GANK or
+		npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_TOP or
+		npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_MID or
+		npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_BOT or
+		npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_TOP or
+		npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_MID or
+		npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOT)
+		and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_MODERATE
+		and npcBot:GetHealth() > npcBot:GetMaxHealth()*0.25) then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange - 100, true, BOT_MODE_NONE )
 		local lowestHP = 99999
 		local lowestHPTarget = nil --优先打血少的
@@ -253,7 +261,8 @@ function ConsiderAbilityLarva02()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nRadius-25 , true, BOT_MODE_NONE )
 
 	if (not isfly and (npcBot:GetActiveMode() == BOT_MODE_ATTACK
-		or npcBot:GetActiveMode() == BOT_MODE_RETREAT )
+		or npcBot:GetActiveMode() == BOT_MODE_RETREAT
+		or npcBot:GetActiveMode() == BOT_MODE_GANK)
 		and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_MODERATE ) then
 		if #tableNearbyEnemyHeroes > 0 then
 			return BOT_ACTION_DESIRE_HIGH
@@ -281,7 +290,7 @@ function ConsiderAbilityLarva03()
 	local nCastRange = ability03:GetLevel()*50 + 450
 	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
 	local nModifier = npcBot:GetModifierByName("modifier_ability_thdots_ellen04_debuff")
-	
+
 	if HasSpecificEnemyHero("npc_dota_hero_arc_warden") then
 		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 		do
