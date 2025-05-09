@@ -81,6 +81,7 @@
         "GetUnitToLocationDistanceSqr",
         "GetSelectedHeroName",
         "TEAM_RADIANT",
-        "TEAM_DIRE"
+        "TEAM_DIRE",
+        "RandomInt"
     ]
 }
