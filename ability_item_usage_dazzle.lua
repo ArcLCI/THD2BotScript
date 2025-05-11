@@ -22,6 +22,8 @@ function MyItemUsageThink()
 					IsItemAvailable( "item_rocket_4" ) or
 					IsItemAvailable( "item_rocket_5" )
 
+	local item_moon_bow  = IsItemAvailable( "item_moon_bow" )
+
 	local item_horse_red = IsItemAvailable( "item_horse_red" )
 	local item_horse_king = IsItemAvailable( "item_horse_king")
 
@@ -33,6 +35,15 @@ function MyItemUsageThink()
 		if ( castItemStunDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget )
+			return
+		end
+	end
+	if ( item_moon_bow~=nil and item_moon_bow:IsFullyCastable() )
+	then 
+		castItemMoonBowDesire, castItemMoonBowTarget = ConsiderItemMoonBow( item_moon_bow )
+		if ( castItemMoonBowDesire > 0 )
+		then
+			npcBot:Action_UseAbilityOnLocation( item_moon_bow, castItemMoonBowTarget)
 			return
 		end
 	end
