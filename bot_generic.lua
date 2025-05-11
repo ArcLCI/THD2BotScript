@@ -50,8 +50,6 @@ function THD2MinionThink( hMinionUnit )
         end
         nNextMoveTime = DotaTime() + 0.2
     end
-
-
 end
 ----------------------------------------------------------------------------------------------------
 -- 幻象基础方法
