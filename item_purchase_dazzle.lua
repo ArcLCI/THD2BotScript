@@ -15,12 +15,24 @@ local tableItemsToBuy = {
 					"item_recipe_rocket",
 					"item_recipe_rocket",
 
+				"item_wind_amulet",
+				"item_magic_guide_book",
+					"item_recipe_doctor_doll",
+				"item_wind_amulet",
+				"item_wind_amulet",
+					"item_recipe_luna_chip",
+				"item_knife",
+				"item_rocket_diagram",
+					"item_recipe_moon_bow",
+
+				--[[
 				"item_violin",
 				"item_rocket_diagram",
 				"item_juice",
 				"item_recipe_grudge_bow",
 				"item_gran_grimoire",
 				"item_recipe_nuetrident",
+				--]]
 
 				"item_horse_king_compressor",
 				"item_recipe_horse_king",
