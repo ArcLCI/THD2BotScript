@@ -1329,7 +1329,7 @@ function ConsiderItemYukkuriStick( item_yukkuri_stick )
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200 , true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if npcEnemy:HasModifier("modifier_thdots_shikieiki04_debuff") or npcEnemy:IsMuted()
+		if npcEnemy:HasModifier("modifier_thdots_shikieiki04_debuff") or npcEnemy:IsHexed()
 		then
 			return BOT_ACTION_DESIRE_NONE, nil
 		end
