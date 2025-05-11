@@ -58,6 +58,7 @@ function AbilityUsageThink()
 	if not IsBotAwake() then return end
 
 	MyItemUsageThink()
+	SpecificAttackTargetThink()
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability

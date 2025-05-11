@@ -451,6 +451,31 @@ function IsUnderAttack( Target , HeroOnly )
 
 end
 
+function SpecificAttackTargetThink()
+	local npcBot = GetBot()
+	local specialUnits = {
+		['npc_dota_phoenix_sun'] = 1,
+		['npc_thdots_unit_minoriko02_box'] = 0.75,
+		['npc_dota_rattletrap_cog'] = 0.5,
+	}
+	for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMIES))
+    do
+        if IsValid(enemy)
+        then
+            local enemyName = enemy:GetUnitName()
+
+            if specialUnits[enemyName]
+            and enemy:GetTeam() ~= npcBot:GetTeam()
+            and GetUnitToUnitDistance(npcBot, enemy) <= specialUnits[enemyName] * 1200
+            and RandomInt(0, 100) <= specialUnits[enemyName] * 100
+            then
+                npcBot:Action_AttackUnit(enemy, false)
+            	return
+            end
+        end
+    end
+end
+
 ----------------------------------------------------------------------------------------------------
 
 function CanCastStunOnTarget( npcTarget )

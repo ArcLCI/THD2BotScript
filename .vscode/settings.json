@@ -82,6 +82,18 @@
         "GetSelectedHeroName",
         "TEAM_RADIANT",
         "TEAM_DIRE",
-        "RandomInt"
+        "RandomInt",
+        "LANE_TOP",
+        "LANE_BOT",
+        "GetLaneFrontLocation",
+        "UNIT_LIST_ALLIES",
+        "UNIT_LIST_ENEMIES",
+        "Vector",
+        "RandomVector",
+        "ACTIVITY_RUN",
+        "UNIT_LIST_NEUTRAL_CREEPS",
+        "UNIT_LIST_ENEMY_CREEPS",
+        "UNIT_LIST_ENEMY_BUILDINGS",
+        "DAMAGE_TYPE_PHYSICAL"
     ]
 }
