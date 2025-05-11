@@ -32,6 +32,7 @@ ModifierNamesHighDebuff = {
 ----------------------------------------------------------------------------------------------------
 
 local RandomTimes = 10
+local nNextAttackTime = 0
 
 local function RandomChoose( tTargets, vBaseLocation, nMaxDistanceFromBase, nRadius, nMaxHealth )
 
@@ -456,7 +457,6 @@ function SpecificAttackTargetThink()
 	local specialUnits = {
 		['npc_dota_phoenix_sun'] = 1,
 		['npc_thdots_unit_minoriko02_box'] = 0.75,
-		['npc_dota_rattletrap_cog'] = 0.5,
 	}
 	for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMIES))
     do
@@ -466,11 +466,14 @@ function SpecificAttackTargetThink()
 
             if specialUnits[enemyName]
             and enemy:GetTeam() ~= npcBot:GetTeam()
-            and GetUnitToUnitDistance(npcBot, enemy) <= specialUnits[enemyName] * 1200
+            and GetUnitToUnitDistance(npcBot, enemy) <= specialUnits[enemyName] * 1400
             and RandomInt(0, 100) <= specialUnits[enemyName] * 100
             then
-                npcBot:Action_AttackUnit(enemy, false)
-            	return
+				if DotaTime() >= nNextAttackTime then
+                	npcBot:ActionPush_AttackUnit(enemy, false)
+					nNextAttackTime = DotaTime() + 0.15
+            		return
+				end
             end
         end
     end

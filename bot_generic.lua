@@ -1,5 +1,5 @@
 
-local last_time = -5000
+local nNextMoveTime = 0
 
 local nEnemyAncient = GetAncient(GetOpposingTeam())
 local RadiantFountain = Vector( -6619, -6336, 384 )
@@ -13,20 +13,44 @@ local SpecialUnits = {
 
 function THD2MinionThink( hMinionUnit )
 
-	local npcBot = GetBot()
+	local ownerBot = GetBot()
 	if not hMinionUnit:IsIllusion() then return end
 
-	if hMinionUnit:NumQueuedActions() > 0 then
-		return
-	end
+	if hMinionUnit.isIllusion then
+        if ConfuseEnemyWithIllusions(ownerBot, hMinionUnit) > 0 then
+			print("Confusing Enemy...")
+            return
+        end
+    end
 
-	if GetUnitToUnitDistanceSqr(npcBot,hMinionUnit) > 800 * 800 then
-		local vec = hMinionUnit:GetLocation()
-		hMinionUnit:ActionQueue_AttackMove( vec + 0.5 * ( npcBot:GetLocation() - vec) )
-		return
-	end
+	hMinionUnit.attack_desire, hMinionUnit.attack_target = ConsiderAttack(hMinionUnit)
+    if ConsiderRetreat(hMinionUnit, hMinionUnit.attack_target) then return end
 
-	hMinionUnit:ActionQueue_AttackMove( hMinionUnit:GetLocation() )
+    if hMinionUnit.attack_desire > 0 then
+        if IsValidUnit(hMinionUnit.attack_target) then
+            hMinionUnit:Action_AttackUnit(hMinionUnit.attack_target, false)
+            return
+        end
+    end
+
+    if DotaTime() >= nNextMoveTime then
+        hMinionUnit.move_desire, hMinionUnit.move_location = ConsiderMove(hMinionUnit)
+        if hMinionUnit.move_desire > 0 then
+            hMinionUnit:Action_MoveToLocation(hMinionUnit.move_location)
+            nNextMoveTime = DotaTime() + 0.2
+            return
+        end
+
+        -- Default
+        if ownerBot:IsAlive()
+        then
+            hMinionUnit:Action_MoveToLocation(GetRandomLocationWithinDist(ownerBot:GetLocation(), 400, 800))
+        else
+            hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
+        end
+        nNextMoveTime = DotaTime() + 0.2
+    end
+
 
 end
 ----------------------------------------------------------------------------------------------------
@@ -395,14 +419,7 @@ end
 
 function GetAttackTarget(hMinionUnit)
 	local target = nil
-    local hMinionUnitName = hMinionUnit:GetUnitName()
 	local bot = GetBot()
-
-	if not bot:IsInvulnerable()
-    and GetUnitToUnitDistance(bot, hMinionUnit) < 2000
-    then
-        target = bot
-    end
 
     for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMIES))
     do
