@@ -8,7 +8,6 @@ function MinionThink( hMinionUnit )
 
 	if hMinionUnit:IsIllusion() then
         THD2MinionThink( hMinionUnit )
-        return
     end
 
 	if hMinionUnit:GetUnitName() == "npc_thdots_unit_minoriko02_box" then
@@ -17,8 +16,8 @@ function MinionThink( hMinionUnit )
         local nRadius = 500
         local locationBox = CachedFindAoELocation( ownerBot, 1, false, true, hMinionUnit:GetLocation(), nMoveRange, nRadius, 0, 0 )
         if DotaTime() >= nNextMoveTime then
-            hMinionUnit:Action_MoveToLocation(locationBox)
-            nNextMoveTime = DotaTime() + 0.15
+            hMinionUnit:Action_MoveToLocation(locationBox.targetloc)
+            nNextMoveTime = DotaTime() + 0.2
         end
     end
 

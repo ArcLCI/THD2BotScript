@@ -6,13 +6,15 @@ local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local IsAvoidingAbilityZone = false
 local IsAvoidingAbilityProjectile = false
 local IsAttackingSpecialUnit = false
+local IsYugi04 = false
 
 local specialUnits = {
 	['npc_dota_phoenix_sun'] = 1,
-	['npc_thdots_unit_minoriko02_box'] = 0.75,
+	['npc_thdots_unit_minoriko02_box'] = 0.35,
 }
 
 local specialTarget
+local yugi04Target
 
 function GetDesire()
     IsAvoidingAbilityZone = false
@@ -21,12 +23,17 @@ function GetDesire()
     local botMode = bot:GetActiveMode()
 	local nProjectiles = GetLinearProjectiles()
 
-	if HasSpecialUnitThatNeedToAttack() then
+	if HasSpecialUnitThatNeedToAttack() and botMode ~= BOT_MODE_RETREAT then
 		IsAttackingSpecialUnit = true
 		print("bot to attack some special unit: " .. botName)
 		return BOT_ACTION_DESIRE_VERYHIGH + 0.1
 	end
 
+	if SpecialYugi04() and botMode ~= BOT_MODE_RETREAT then
+		IsYugi04 = true
+		return BOT_ACTION_DESIRE_VERYHIGH + 0.1
+	end
+	
     if HasModifierThatNeedToAvoidEffects() then
 		IsAvoidingAbilityZone = true
 		print("bot to avoid some abilities: " .. botName)
@@ -86,6 +93,22 @@ function HasSpecialUnitThatNeedToAttack()
 	return false
 end
 
+function SpecialYugi04()
+	if bot:GetUnitName() == "npc_dota_hero_centaur" then
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( bot, 500, true, BOT_MODE_NONE )
+		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+		do
+			if ( npcEnemy ~= nil
+			and npcEnemy:HasModifier( "modifier_thdots_yugi04_think_interval" ))
+			then
+				yugi04Target = npcEnemy
+				return true
+			end
+		end
+	end
+	return false
+end
+
 function OnStart() end
 function OnEnd() end
 
@@ -94,6 +117,10 @@ function Think()
 
 	if IsAttackingSpecialUnit then
 		bot:Action_AttackUnit(specialTarget, false)
+	end
+
+	if IsYugi04 then
+		bot:Action_AttackUnit(yugi04Target, false)
 	end
 
     if IsAvoidingAbilityZone then

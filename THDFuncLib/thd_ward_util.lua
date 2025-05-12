@@ -1,6 +1,6 @@
 local X = {}
 
-local J = require(GetScriptDirectory()..'/FunLib/jmz_func')
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 local nVisionRadius = 1600
 

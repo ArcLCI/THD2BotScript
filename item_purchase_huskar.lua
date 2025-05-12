@@ -24,8 +24,8 @@ local tableItemsToBuy = {
 					"item_recipe_jiao_shou",
 				"item_wing",
 					"item_recipe_zaiezhizhurenxing",
-				
-				"item_recipe_wanbaochui2",
+
+				"item_aghanims_shard",
 				
 				"item_baozi",
 				"item_sake",
@@ -46,6 +46,8 @@ local tableItemsToBuy = {
 					"item_recipe_mystia_wings",
 				"item_ice_block",
 					"item_recipe_bone_flute",
+
+				"item_recipe_wanbaochui2",
 				
 				"item_gran_grimoire",
 				"item_gran_grimoire",
