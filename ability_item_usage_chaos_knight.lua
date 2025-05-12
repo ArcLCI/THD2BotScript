@@ -41,7 +41,7 @@ function AbilityUsageThink()
 	if not IsBotAwake() then return end
 	
 	MyItemUsageThink()
-	SpecificAttackTargetThink()
+	
 	local npcBot = GetBot()
 	
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1200, true, BOT_MODE_NONE )
