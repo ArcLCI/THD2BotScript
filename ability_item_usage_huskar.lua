@@ -196,13 +196,13 @@ function ConsiderAbilityMinoriko02()
 	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
 	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 	do
-		if (npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.5 or npcFriend:GetMana() < npcFriend:GetMaxMana()*0.5 or ability02:GetLevel() == 4)
+		if (npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.5 or npcFriend:GetMana() < npcFriend:GetMaxMana()*0.5 or ability02:GetLevel() >= 3)
 		and not npcFriend:HasModifier("modifier_fountain_aura_buff") then
 			return BOT_ACTION_DESIRE_HIGH, npcFriend:GetLocation()
 		end
 	end
 	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT)
-		and (npcBot:GetHealth() < npcBot:GetMaxHealth()*0.5 or npcBot:GetMana() < npcBot:GetMaxMana()*0.5 or ability02:GetLevel() == 4)
+		and (npcBot:GetHealth() < npcBot:GetMaxHealth()*0.5 or npcBot:GetMana() < npcBot:GetMaxMana()*0.5 or ability02:GetLevel() >= 3)
 		and not npcBot:HasModifier("modifier_fountain_aura_buff") then
 		return BOT_ACTION_DESIRE_HIGH, npcBot:GetLocation()
 	end
