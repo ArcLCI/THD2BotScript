@@ -95,6 +95,7 @@
         "UNIT_LIST_ENEMY_CREEPS",
         "UNIT_LIST_ENEMY_BUILDINGS",
         "DAMAGE_TYPE_PHYSICAL",
-        "GetItemCost"
+        "GetItemCost",
+        "UNIT_LIST_ALL"
     ]
 }

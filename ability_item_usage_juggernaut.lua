@@ -218,7 +218,8 @@ function ConsiderAbilityYoumu01()
 		end
 	end
 	-- 我军败了！快撤！
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and not npcBot:HasModifier("modifier_fountain_aura_buff")) then
+	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH and
+		not npcBot:HasModifier("modifier_fountain_aura_buff")) then
 		local v_home = GetAncient(npcBot:GetTeam()):GetLocation()
 		local v_target = ( v_home - npcBot:GetLocation() ) / GetUnitToLocationDistance( npcBot, v_home)
 		local v_final = npcBot:GetLocation() + v_target * nCastRange

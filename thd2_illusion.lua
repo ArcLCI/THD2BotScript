@@ -18,7 +18,7 @@ function X.IllusionThink(owner, hMinionUnit)
 	if not hMinionUnit:IsIllusion() then return end
 
 	if hMinionUnit:IsIllusion() then
-        if ConfuseEnemyWithIllusions(ownerBot, hMinionUnit) > 0 then
+        if ConfuseEnemyWithIllusions(owner, hMinionUnit) > 0 then
 			print("Confusing Enemy...")
             return
         end
