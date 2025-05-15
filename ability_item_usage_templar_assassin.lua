@@ -17,6 +17,10 @@ local theWorldWDesire,theWorldWTargetloc,theWorldQDesire,theWorldQTargetloc
 
 local theWorldRadius
 local theWorldStatus = false
+local theWorldLocation
+local theWorldTime = 0
+
+local nNextActionTime= 0
 
 function MyItemUsageThink()
     local npcBot = GetBot()
@@ -24,6 +28,7 @@ function MyItemUsageThink()
     if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
     local item_yukkuri_stick = IsItemAvailable("item_yukkuri_stick")
+    local item_xinyan = IsItemAvailable( "item_third_eyes" )
     local item_blue = IsItemAvailable("item_yatagarasu") or IsItemAvailable("item_yueyaomishi")
     local item_horse_red = IsItemAvailable("item_horse_red")
 	local item_horse_king = IsItemAvailable("item_horse_king")
@@ -44,6 +49,16 @@ function MyItemUsageThink()
 		if ( castItemYukkuriStickDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity(item_yukkuri_stick, castItemYukkuriStickTarget)
+			return
+		end
+	end
+
+    if ( item_xinyan~=nil and item_xinyan:IsFullyCastable() )
+	then
+		local castItemXinYanDesire, castItemXinYanTarget = ConsiderItemXinYan( item_xinyan )
+		if ( castItemXinYanDesire > 0 )
+		then
+			npcBot:Action_UseAbilityOnEntity( item_xinyan, castItemXinYanTarget )
 			return
 		end
 	end
@@ -85,19 +100,18 @@ function AbilityUsageThink()
 	abilityEx = npcBot:GetAbilityByName( "ability_thdots_sakuyaEx" )
 
     theWorldRadius = 250 + (150 * ability04:GetLevel())
+    local theWorldBuffTime = 3 + ability04:GetLevel()
 
     if ability04:GetLevel() > 0 and npcBot:HasModifier("modifier_item_wanbaochui") then
         theWorldRadius = 99999
     end
 
-    for _, dummy in pairs(GetUnitList(UNIT_LIST_ALLIES))
-    do
-        if dummy:GetUnitName() == "npc_dummy_unit" and dummy:GetOwner() ~= nil and dummy:GetOwner() == npcBot
-        and GetUnitToUnitDistance(npcBot,dummy) <= theWorldRadius then
-            theWorldStatus = true
-        else
-            theWorldStatus = false
-        end
+    if theWorldTime > 0 and theWorldTime >= DotaTime() - theWorldBuffTime and
+    not ability04:IsCooldownReady() and
+    GetUnitToLocationDistance(npcBot,theWorldLocation) < theWorldRadius then
+        theWorldStatus = true
+    else
+        theWorldStatus = false
     end
 
     DQERDesire,QERDesire,ERDesire,theWorldtarget = ConsiderTHEWORLD()
@@ -110,10 +124,12 @@ function AbilityUsageThink()
         npcBot:ActionQueue_UseAbilityOnLocation(ability03,theWorldtarget:GetLocation())
         if ability02:IsFullyCastable() then
             npcBot:ActionQueue_Delay(0.1)
-            npcBot:ActionQueue_UseAbilityOnLocation(ability02, cast02Location)
+            npcBot:ActionQueue_UseAbilityOnLocation(ability02, theWorldtarget:GetLocation())
         end
         npcBot:ActionQueue_Delay(0.1)
         npcBot:ActionQueue_UseAbility(ability04)
+        theWorldTime = DotaTime()
+        theWorldLocation = npcBot:GetLocation()
         return
     end
     if QERDesire > 0 and theWorldtarget ~= nil then
@@ -127,6 +143,8 @@ function AbilityUsageThink()
         end
         npcBot:ActionQueue_Delay(0.1)
         npcBot:ActionQueue_UseAbility(ability04)
+        theWorldTime = DotaTime()
+        theWorldLocation = npcBot:GetLocation()
         return
     end
     if ERDesire > 0 and theWorldtarget ~= nil then
@@ -138,27 +156,37 @@ function AbilityUsageThink()
         end
         npcBot:ActionQueue_Delay(0.1)
         npcBot:ActionQueue_UseAbility(ability04)
+        theWorldTime = DotaTime()
+        theWorldLocation = npcBot:GetLocation()
         return
     end
 
     theWorldWDesire, theWorldWTargetloc  = ConsidertheWorldW()
-    if theWorldWDesire > 0 and theWorldWTargetloc ~= nil then
+    if theWorldWDesire > 0 and theWorldWTargetloc ~= nil and DotaTime() > nNextActionTime then
         npcBot:Action_ClearActions(true)
         npcBot:ActionQueue_UseAbilityOnLocation(ability02, theWorldWTargetloc)
-        npcBot:ActionQueue_Delay(0.2)
+        nNextActionTime = DotaTime() + 0.2
 		return
     end
 
     theWorldQDesire, theWorldQTargetloc = ConsidertheWorldQ()
-    if theWorldQDesire > 0 and theWorldQTargetloc ~= nil then
+    if theWorldQDesire > 0 and theWorldQTargetloc ~= nil and DotaTime() > nNextActionTime then
+        if abilityEx:IsFullyCastable() then
+            npcBot:Action_ClearActions(true)
+            npcBot:ActionQueue_UseAbility(abilityEx)
+            npcBot:ActionQueue_Delay(0.1)
+            npcBot:ActionQueue_UseAbilityOnLocation(ability01, theWorldQTargetloc)
+            nNextActionTime = DotaTime() + 0.3
+            return
+        end
         npcBot:Action_ClearActions(true)
         npcBot:ActionQueue_UseAbilityOnLocation(ability01, theWorldQTargetloc)
-        npcBot:ActionQueue_Delay(0.2)
+        nNextActionTime = DotaTime() + 0.2
 		return
     end
 
     castExDesire = ConsiderAbilitySakuyaEx()
-	if ( castExDesire > 0 )
+	if ( castExDesire > 0 and not theWorldStatus)
 	then
         npcBot:Action_ClearActions(false)
 		npcBot:ActionQueue_UseAbility( abilityEx )
@@ -166,7 +194,7 @@ function AbilityUsageThink()
 	end
 
     cast01Desire, cast01Location = ConsiderAbilitySakuya01()
-	if ( cast01Desire > 0 )
+	if ( cast01Desire > 0 and cast01Location ~= nil and not theWorldStatus)
 	then
         npcBot:Action_ClearActions(false)
 		npcBot:ActionQueue_UseAbilityOnLocation( ability01, cast01Location )
@@ -174,7 +202,7 @@ function AbilityUsageThink()
 	end
 
     cast02Desire, cast02Location = ConsiderAbilitySakuya02()
-	if ( cast02Desire > 0 )
+	if ( cast02Desire > 0 and cast02Location ~= nil and not theWorldStatus)
 	then
         npcBot:Action_ClearActions(false)
 		npcBot:ActionQueue_UseAbilityOnLocation( ability02, cast02Location )
@@ -182,7 +210,7 @@ function AbilityUsageThink()
 	end
 
     cast03Desire, cast03Location = ConsiderAbilitySakuya03()
-	if ( cast03Desire > 0 )
+	if ( cast03Desire > 0 and cast03Location ~= nil)
 	then
         npcBot:Action_ClearActions(false)
 		npcBot:ActionQueue_UseAbilityOnLocation( ability03, cast03Location )
@@ -193,7 +221,9 @@ function AbilityUsageThink()
 	if ( cast04Desire > 0 )
 	then
         npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnLocation( ability04 )
+		npcBot:ActionQueue_UseAbility( ability04 )
+        theWorldTime = DotaTime()
+        theWorldLocation = npcBot:GetLocation()
 		return
 	end
 end
@@ -245,7 +275,7 @@ function ConsidertheWorldW()
         return BOT_ACTION_DESIRE_NONE, 0
     end
 
-    local tableNearbyEnemyHeroes = CachedGetNearbyHeroes(npcBot, nCastRange-50, true, BOT_MODE_NONE)
+    local tableNearbyEnemyHeroes = CachedGetNearbyHeroes(npcBot, nCastRange, true, BOT_MODE_NONE)
     if #tableNearbyEnemyHeroes > 1 then
         local lowestHP = 99999
         local lowestHPTarget
@@ -441,7 +471,8 @@ function ConsiderAbilitySakuya03()
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if (npcBot:GetTarget() == npcEnemy and CanCastSakuya03OnTarget(npcEnemy))
+			if (npcBot:GetTarget() == npcEnemy and CanCastSakuya03OnTarget(npcEnemy)
+            and (npcEnemy:GetHealth() < 320 or GetHP(npcEnemy) < 0.15 ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 			end
@@ -449,8 +480,7 @@ function ConsiderAbilitySakuya03()
 		end
 	end
     -- 撤退
-    if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH and
-        not npcBot:HasModifier("modifier_fountain_aura_buff")) then
+    if IsSeriouslyRetreating(npcBot) then
 		local v_home = GetAncient(npcBot:GetTeam()):GetLocation()
 		local v_target = ( v_home - npcBot:GetLocation() ) / GetUnitToLocationDistance( npcBot, v_home)
 		local v_final = npcBot:GetLocation() + v_target * nCastRange
@@ -460,6 +490,8 @@ function ConsiderAbilitySakuya03()
     return BOT_ACTION_DESIRE_NONE, 0
 end
 
+----------------------------------------------------------------------------------------------------
+
 function ConsiderAbilitySakuya04()
     local npcBot = GetBot()
 
@@ -467,8 +499,8 @@ function ConsiderAbilitySakuya04()
 		return BOT_ACTION_DESIRE_NONE
 	end
 
-    local tableNearbyEnemyHeroes = CachedGetNearbyHeroes(npcBot, 600, true, BOT_MODE_NONE)
-    if #tableNearbyEnemyHeroes > 2 and npcBot:GetActiveMode() == BOT_MODE_ATTACK then
+    local tableNearbyEnemyHeroes = CachedGetNearbyHeroes(npcBot, 400, true, BOT_MODE_NONE)
+    if #tableNearbyEnemyHeroes > 0 and npcBot:GetActiveMode() == BOT_MODE_ATTACK then
         return BOT_ACTION_DESIRE_HIGH
     end
 

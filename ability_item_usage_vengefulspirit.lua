@@ -109,7 +109,7 @@ function ConsiderAbilityHatate01()
 		end
 	end
 	
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and 
+	if (IsSeriouslyRetreating(npcBot) and 
 	npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
 	print('hatate 1 3')
 		return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
@@ -232,7 +232,7 @@ function ConsiderAbilityHatateEx()
 	end
 	
 	-- Fighting or Retreating with hero
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.2 ) 
+	if (IsSeriouslyRetreating(npcBot) and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.2 ) 
 	then
 		return BOT_ACTION_DESIRE_HIGH
 	end

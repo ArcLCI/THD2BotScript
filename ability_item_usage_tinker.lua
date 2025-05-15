@@ -193,7 +193,7 @@ function ConsiderAbilityYumemi02()
 		end
 	end
 	--end
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and not npcBot:HasModifier("modifier_fountain_aura_buff")) then
+	if IsSeriouslyRetreating(npcBot) then
 		return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 	end
 	return BOT_ACTION_DESIRE_NONE, 0

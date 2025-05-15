@@ -151,7 +151,7 @@ function ConsiderAbilityMiko01()
 			end
 		end
 	end
-	if npcBot:GetActiveMode() == BOT_MODE_RETREAT then
+	if IsSeriouslyRetreating(npcBot) then
 		local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 50, false, BOT_MODE_NONE )
 		if not (#tableNearbyFriendlyHeroes > 0) and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3 then
 			local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)

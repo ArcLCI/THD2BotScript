@@ -218,7 +218,7 @@ function ConsiderAbilityYoumu01()
 		end
 	end
 	-- 我军败了！快撤！
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH and
+	if (IsSeriouslyRetreating(npcBot) and not ability04:IsFullyCastable() and
 		not npcBot:HasModifier("modifier_fountain_aura_buff")) then
 		local v_home = GetAncient(npcBot:GetTeam()):GetLocation()
 		local v_target = ( v_home - npcBot:GetLocation() ) / GetUnitToLocationDistance( npcBot, v_home)
@@ -278,7 +278,7 @@ function ConsiderAbilityYoumu04()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
 	local exDamage = (#tableNearbyFriendlyHeroes - 1) * 100
 
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth() * 0.3 )
+	if ( IsSeriouslyRetreating(npcBot) and npcBot:GetHealth() < npcBot:GetMaxHealth() * 0.3 )
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes500 )
 		do

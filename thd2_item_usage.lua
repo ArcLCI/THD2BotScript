@@ -312,6 +312,13 @@ function GetCenterOfUnits( nUnits )
 
 end
 
+function GetHP( unit )
+	local nCurHealth = unit:GetHealth()
+    local nMaxHealth = unit:GetMaxHealth()
+	if nCurHealth <= 0 then return 0 end
+	return nCurHealth / nMaxHealth
+end
+
 function GetEnemyPlayersID() return GetTeamPlayers(GetOpposingTeam()) end
 
 function HasSpecificEnemyHero( nHeroName )
@@ -449,6 +456,13 @@ function IsUnderAttack( Target , HeroOnly )
 
 	return false
 
+end
+
+function IsSeriouslyRetreating( npcBot )
+	return (npcBot:GetActiveMode() == BOT_MODE_RETREAT
+	and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH
+	and not npcBot:HasModifier("modifier_fountain_aura_buff"))
+	or npcBot:GetHealth()/npcBot:GetMaxHealth() < 0.1
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -1061,7 +1075,7 @@ function ConsiderItemJump( item_jump, delta_min, delta_max)
 			end
 		end
 	end
-	if npcBot:GetActiveMode() == BOT_MODE_RETREAT then
+	if IsSeriouslyRetreating(npcBot) then
 		local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 		local v_target = - npcBot:GetLocation() + v_shop
 		local dis = GetUnitToLocationDistance( npcBot,v_shop)

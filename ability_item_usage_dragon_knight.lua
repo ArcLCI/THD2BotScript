@@ -168,7 +168,7 @@ function ConsiderAbilityMeirin01()
 			end
 		end
 	end
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and 
+	if (IsSeriouslyRetreating(npcBot) and 
 	npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
 		return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 	end

@@ -23,13 +23,13 @@ function GetDesire()
     local botMode = bot:GetActiveMode()
 	local nProjectiles = GetLinearProjectiles()
 
-	if HasSpecialUnitThatNeedToAttack() and botMode ~= BOT_MODE_RETREAT then
+	if HasSpecialUnitThatNeedToAttack() and not IsSeriouslyRetreating(bot) then
 		IsAttackingSpecialUnit = true
 		print("bot to attack some special unit: " .. botName)
-		return BOT_ACTION_DESIRE_VERYHIGH + 0.1
+		return BOT_ACTION_DESIRE_VERYHIGH
 	end
 
-	if SpecialYugi04() and botMode ~= BOT_MODE_RETREAT then
+	if SpecialYugi04() and not IsSeriouslyRetreating(bot) then
 		IsYugi04 = true
 		return BOT_ACTION_DESIRE_VERYHIGH + 0.1
 	end
