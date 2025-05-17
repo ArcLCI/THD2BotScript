@@ -98,7 +98,7 @@ function AbilityUsageThink()
 	if not IsBotAwake() then return end
 
 	MyItemUsageThink()
-	
+
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
@@ -384,10 +384,20 @@ function ConsiderAbilityEllen05()
 			then
 				if npcEnemy:IsChanneling()
 				then
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+					return BOT_ACTION_DESIRE_HIGH, ConsiderPointVectorAbilityLocation(npcEnemy:GetLocation())
 				end
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(nActivationDelay)
+				return BOT_ACTION_DESIRE_HIGH, ConsiderPointVectorAbilityLocation(npcEnemy:GetExtrapolatedLocation(nActivationDelay))
 			end
 		end
 	return BOT_ACTION_DESIRE_NONE, 0
+end
+
+function ConsiderPointVectorAbilityLocation(nLocation)
+	local centerPoint = Vector(0,0)
+	local nLength = 275
+
+	local dist = math.sqrt(nLocation.x * nLocation.x + nLocation.y * nLocation.y + nLocation.z * nLocation.z)
+	local unitVector = nLocation/dist
+
+	return nLocation + (unitVector*nLength)
 end

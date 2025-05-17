@@ -1,8 +1,59 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
+local tableItemsToBuy = {}
+if RandomInt(1,100) > 50 then
+	tableItemsToBuy = {
+				"item_broom",
+				"item_wind_amulet",
+					"item_recipe_horse_red",
 
-local tableItemsToBuy = {
+				"item_juice",
+				"item_bird",
+				"item_aunt_clothes",
+				"item_sake",
+				"item_sake",
+					"item_recipe_yueyaomishi",
+
+				"item_mushroom",
+				"item_cookbook",
+					"item_recipe_mushroom_soup",
+				"item_mushroom",
+				"item_cookbook",
+					"item_recipe_mushroom_soup",
+				"item_baozi",
+				"item_sake",
+				"item_zun_hat",
+					"item_recipe_nuclear_stick",
+
+				"item_horse_king_compressor",
+				"item_recipe_horse_king",
+
+				"item_ice_block",
+				"item_knife",
+					"item_recipe_dragon_star",
+
+                "item_gran_grimoire",
+                "item_gran_grimoire",
+                "item_recipe_bagua",
+
+				"item_horse_king_compressor",
+				"item_recipe_horse_king",
+
+                "item_cat_foot",
+				"item_paper_mask",
+				"item_rocket_diagram",
+				"item_zun_hat",
+					"item_recipe_wanbaochui",
+
+                "item_recipe_wanbaochui2",
+
+				"item_god_hand",
+				"item_god_hand",
+					"item_recipe_loneliness",
+	}
+else
+	tableItemsToBuy = {
 				"item_broom",
 				"item_wind_amulet",
 					"item_recipe_horse_red",
@@ -47,10 +98,9 @@ local tableItemsToBuy = {
 
 				"item_god_hand",
 				"item_god_hand",
-					"item_recipe_loneliness",
-			}
-
-
+				"item_recipe_loneliness",
+	}
+end
 ----------------------------------------------------------------------------------------------------
 
 local seed_id = nil

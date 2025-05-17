@@ -365,7 +365,7 @@ end
 
 -- 幻象迷惑对手
 function ConfuseEnemyWithIllusions(bot, hMinionUnit)
-    if GetHP(bot) < 0.4 and bot:GetActiveMode() == BOT_MODE_RETREAT then
+    if IsValidUnit(bot) and GetHP(bot) < 0.4 and bot:GetActiveMode() == BOT_MODE_RETREAT then
         local retreatDirection = bot:GetFacing()
         local oppositeDirection = (retreatDirection + 180) % 360
         local confuseDistance = 800 -- distance illusions will move

@@ -28,7 +28,7 @@ function MyItemUsageThink()
     if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
     local item_yukkuri_stick = IsItemAvailable("item_yukkuri_stick")
-    local item_xinyan = IsItemAvailable( "item_third_eyes" )
+    local item_dragon_star = IsItemAvailable( "item_dragon_star" )
     local item_blue = IsItemAvailable("item_yatagarasu") or IsItemAvailable("item_yueyaomishi")
     local item_horse_red = IsItemAvailable("item_horse_red")
 	local item_horse_king = IsItemAvailable("item_horse_king")
@@ -43,22 +43,19 @@ function MyItemUsageThink()
 		end
 	end
 
+    if (item_dragon_star~=nil and item_dragon_star:IsFullyCastable()) then
+        if IsSeriouslyRetreating(npcBot) then
+            npcBot:Action_UseAbility(item_dragon_star)
+            return
+        end
+	end
+
     if ( item_yukkuri_stick~=nil and item_yukkuri_stick:IsFullyCastable() )
 	then
 		local castItemYukkuriStickDesire, castItemYukkuriStickTarget = ConsiderItemYukkuriStick(item_yukkuri_stick)
 		if ( castItemYukkuriStickDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity(item_yukkuri_stick, castItemYukkuriStickTarget)
-			return
-		end
-	end
-
-    if ( item_xinyan~=nil and item_xinyan:IsFullyCastable() )
-	then
-		local castItemXinYanDesire, castItemXinYanTarget = ConsiderItemXinYan( item_xinyan )
-		if ( castItemXinYanDesire > 0 )
-		then
-			npcBot:Action_UseAbilityOnEntity( item_xinyan, castItemXinYanTarget )
 			return
 		end
 	end
@@ -90,6 +87,7 @@ function AbilityUsageThink()
 	MyItemUsageThink()
 
     local npcBot = GetBot()
+    local item_dragon_star = IsItemAvailable( "item_dragon_star" )
 
     if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
@@ -121,6 +119,10 @@ function AbilityUsageThink()
         npcBot:ActionQueue_Delay(0.1)
         npcBot:ActionQueue_UseAbilityOnLocation(ability01,theWorldtarget:GetLocation())
         npcBot:ActionQueue_Delay(0.1)
+        if (item_dragon_star~=nil and item_dragon_star:IsFullyCastable()) then
+            npcBot:ActionQueue_UseAbility(item_dragon_star)
+            npcBot:ActionQueue_Delay(0.1)
+        end
         npcBot:ActionQueue_UseAbilityOnLocation(ability03,theWorldtarget:GetLocation())
         if ability02:IsFullyCastable() then
             npcBot:ActionQueue_Delay(0.1)
@@ -136,6 +138,10 @@ function AbilityUsageThink()
         npcBot:Action_ClearActions(false)
         npcBot:ActionQueue_UseAbilityOnLocation(ability01,theWorldtarget:GetLocation())
         npcBot:ActionQueue_Delay(0.1)
+        if (item_dragon_star~=nil and item_dragon_star:IsFullyCastable()) then
+            npcBot:ActionQueue_UseAbility(item_dragon_star)
+            npcBot:ActionQueue_Delay(0.1)
+        end
         npcBot:ActionQueue_UseAbilityOnLocation(ability03,theWorldtarget:GetLocation())
         if ability02:IsFullyCastable() then
             npcBot:ActionQueue_Delay(0.1)
@@ -149,6 +155,10 @@ function AbilityUsageThink()
     end
     if ERDesire > 0 and theWorldtarget ~= nil then
         npcBot:Action_ClearActions(false)
+        if (item_dragon_star~=nil and item_dragon_star:IsFullyCastable()) then
+            npcBot:ActionQueue_UseAbility(item_dragon_star)
+            npcBot:ActionQueue_Delay(0.1)
+        end
         npcBot:ActionQueue_UseAbilityOnLocation(ability03,theWorldtarget:GetLocation())
         if ability02:IsFullyCastable() then
             npcBot:ActionQueue_Delay(0.1)
@@ -162,25 +172,21 @@ function AbilityUsageThink()
     end
 
     theWorldWDesire, theWorldWTargetloc  = ConsidertheWorldW()
-    if theWorldWDesire > 0 and theWorldWTargetloc ~= nil and DotaTime() > nNextActionTime then
-        npcBot:Action_ClearActions(true)
-        npcBot:ActionQueue_UseAbilityOnLocation(ability02, theWorldWTargetloc)
+    if theWorldWDesire > 0 and theWorldWTargetloc ~= nil and DotaTime() >= nNextActionTime then
+        npcBot:Action_UseAbilityOnLocation(ability02, theWorldWTargetloc)
         nNextActionTime = DotaTime() + 0.2
 		return
     end
 
     theWorldQDesire, theWorldQTargetloc = ConsidertheWorldQ()
-    if theWorldQDesire > 0 and theWorldQTargetloc ~= nil and DotaTime() > nNextActionTime then
-        if abilityEx:IsFullyCastable() then
-            npcBot:Action_ClearActions(true)
+    if theWorldQDesire > 0 and theWorldQTargetloc ~= nil and DotaTime() >= nNextActionTime then
+        if abilityEx:IsFullyCastable() and not npcBot:HasModifier("modifier_thdots_sakuyaEx_flag") then
             npcBot:ActionQueue_UseAbility(abilityEx)
-            npcBot:ActionQueue_Delay(0.1)
             npcBot:ActionQueue_UseAbilityOnLocation(ability01, theWorldQTargetloc)
-            nNextActionTime = DotaTime() + 0.3
+            nNextActionTime = DotaTime() + 0.2
             return
         end
-        npcBot:Action_ClearActions(true)
-        npcBot:ActionQueue_UseAbilityOnLocation(ability01, theWorldQTargetloc)
+        npcBot:Action_UseAbilityOnLocation(ability01, theWorldQTargetloc)
         nNextActionTime = DotaTime() + 0.2
 		return
     end
