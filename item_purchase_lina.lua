@@ -25,6 +25,8 @@ local tableItemsToBuy = {
 				"item_ice_block",
 					"item_recipe_hakurei_amulet",
 
+				"item_aghanims_shard",
+
 				"item_cat_foot",
 				"item_paper_mask",
 				"item_rocket_diagram",
@@ -34,7 +36,7 @@ local tableItemsToBuy = {
 
 				"item_gran_grimoire",
 				"item_gran_grimoire",
-				"item_recipe_bagua",
+					"item_recipe_bagua",
 
 				"item_wind_amulet",
 				"item_magic_guide_book",

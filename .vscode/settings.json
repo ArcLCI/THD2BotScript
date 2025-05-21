@@ -96,6 +96,8 @@
         "UNIT_LIST_ENEMY_BUILDINGS",
         "DAMAGE_TYPE_PHYSICAL",
         "GetItemCost",
-        "UNIT_LIST_ALL"
+        "UNIT_LIST_ALL",
+        "CreateItem",
+        "AddItem"
     ]
 }

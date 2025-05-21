@@ -191,11 +191,21 @@ function AbilityUsageThink()
 		return
     end
 
+    cast04Desire = ConsiderAbilitySakuya04()
+	if ( cast04Desire > 0 )
+	then
+        npcBot:Action_ClearActions(false)
+		npcBot:Action_UseAbility( ability04 )
+        theWorldTime = DotaTime()
+        theWorldLocation = npcBot:GetLocation()
+		return
+	end
+
     castExDesire = ConsiderAbilitySakuyaEx()
 	if ( castExDesire > 0 and not theWorldStatus)
 	then
         npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbility( abilityEx )
+		npcBot:Action_UseAbility( abilityEx )
 		return
 	end
 
@@ -203,15 +213,7 @@ function AbilityUsageThink()
 	if ( cast01Desire > 0 and cast01Location ~= nil and not theWorldStatus)
 	then
         npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnLocation( ability01, cast01Location )
-		return
-	end
-
-    cast02Desire, cast02Location = ConsiderAbilitySakuya02()
-	if ( cast02Desire > 0 and cast02Location ~= nil and not theWorldStatus)
-	then
-        npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnLocation( ability02, cast02Location )
+		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location )
 		return
 	end
 
@@ -219,17 +221,15 @@ function AbilityUsageThink()
 	if ( cast03Desire > 0 and cast03Location ~= nil)
 	then
         npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnLocation( ability03, cast03Location )
+		npcBot:Action_UseAbilityOnLocation( ability03, cast03Location )
 		return
 	end
 
-    cast04Desire = ConsiderAbilitySakuya04()
-	if ( cast04Desire > 0 )
+    cast02Desire, cast02Location = ConsiderAbilitySakuya02()
+	if ( cast02Desire > 0 and cast02Location ~= nil and not theWorldStatus)
 	then
         npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbility( ability04 )
-        theWorldTime = DotaTime()
-        theWorldLocation = npcBot:GetLocation()
+		npcBot:Action_UseAbilityOnLocation( ability02, cast02Location )
 		return
 	end
 end
@@ -257,7 +257,7 @@ function ConsiderTHEWORLD()
         local tempTarget
         for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if (npcBot:GetTarget() == npcEnemy) then
+			if (npcBot:GetTarget() == npcEnemy and CanCastSakuya01OnTarget(npcEnemy)) then
                 tempTarget = npcEnemy
             end
         end
@@ -310,6 +310,7 @@ end
 function ConsidertheWorldQ()
     local npcBot = GetBot()
     local nCastRange = 1000 + (150 * ability01:GetLevel())
+    local nProjectileSpeed = 2000
 
     if not theWorldStatus or not ability01:IsFullyCastable() then
         return BOT_ACTION_DESIRE_NONE, 0
@@ -324,15 +325,23 @@ function ConsidertheWorldQ()
             if CanCastSakuya01OnTarget(npcEnemy) then
                 if npcEnemy:GetHealth() <= lowestHP then
                     lowestHP = npcEnemy:GetHealth()
-                    lowestHPTarget = npcEnemy:GetLocation()
+                    lowestHPTarget = npcEnemy
                 end
             end
         end
-        return BOT_ACTION_DESIRE_HIGH, lowestHPTarget
+        if lowestHPTarget:GetMovementDirectionStability() >= 0.75 then
+            local eta = 0.2 + (GetUnitToUnitDistance(npcBot,lowestHPTarget)/nProjectileSpeed)
+            return BOT_ACTION_DESIRE_HIGH, lowestHPTarget:GetExtrapolatedLocation(eta)
+        end
+        return BOT_ACTION_DESIRE_HIGH, lowestHPTarget:GetLocation()
     else
     	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	    do
 	    	if CanCastSakuya01OnTarget(npcEnemy) then
+                if npcEnemy:GetMovementDirectionStability() >= 0.75 then
+                local eta = 0.2 + (GetUnitToUnitDistance(npcBot,npcEnemy)/nProjectileSpeed)
+                    return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+                end
 	    		return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 	    	end
     	end
@@ -364,6 +373,7 @@ function ConsiderAbilitySakuya01()
     local npcBot = GetBot()
 
     local nCastRange = 1000 + (150 * ability01:GetLevel())
+    local nProjectileSpeed = 2000
 
     if (not ability01:IsFullyCastable()) then
 		return BOT_ACTION_DESIRE_NONE, 0
@@ -392,15 +402,23 @@ function ConsiderAbilitySakuya01()
             if CanCastSakuya01OnTarget(npcEnemy) then
                 if npcEnemy:GetHealth() <= lowestHP then
                     lowestHP = npcEnemy:GetHealth()
-                    lowestHPTarget = npcEnemy:GetLocation()
+                    lowestHPTarget = npcEnemy
                 end
             end
         end
-        return BOT_ACTION_DESIRE_HIGH, lowestHPTarget
+        if lowestHPTarget:GetMovementDirectionStability() >= 0.75 then
+            local eta = 0.2 + (GetUnitToUnitDistance(npcBot,lowestHPTarget)/nProjectileSpeed)
+            return BOT_ACTION_DESIRE_HIGH, lowestHPTarget:GetExtrapolatedLocation(eta)
+        end
+        return BOT_ACTION_DESIRE_HIGH, lowestHPTarget:GetLocation()
     else
     	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	    do
 	    	if CanCastSakuya01OnTarget(npcEnemy) then
+                if npcEnemy:GetMovementDirectionStability() >= 0.75 then
+                local eta = 0.2 + (GetUnitToUnitDistance(npcBot,npcEnemy)/nProjectileSpeed)
+                    return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+                end
 	    		return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 	    	end
     	end
@@ -434,7 +452,7 @@ function ConsiderAbilitySakuya02()
         end
 	end
 
-    local tableNearbyEnemyHeroes = CachedGetNearbyHeroes(npcBot, nCastRange, true, BOT_MODE_NONE)
+    local tableNearbyEnemyHeroes = CachedGetNearbyHeroes(npcBot, nCastRange-50, true, BOT_MODE_NONE)
     if #tableNearbyEnemyHeroes > 1 then
         local lowestHP = 99999
         local lowestHPTarget
@@ -506,8 +524,14 @@ function ConsiderAbilitySakuya04()
 	end
 
     local tableNearbyEnemyHeroes = CachedGetNearbyHeroes(npcBot, 400, true, BOT_MODE_NONE)
+    
     if #tableNearbyEnemyHeroes > 0 and npcBot:GetActiveMode() == BOT_MODE_ATTACK then
-        return BOT_ACTION_DESIRE_HIGH
+        for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+	    do
+	    	if CanCastSakuya02OnTarget(npcEnemy) then
+	    		return BOT_ACTION_DESIRE_HIGH
+	    	end
+    	end
     end
 
     return BOT_ACTION_DESIRE_NONE

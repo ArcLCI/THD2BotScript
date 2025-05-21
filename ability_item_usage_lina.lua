@@ -3,13 +3,16 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0
-cast02Desire = 0
-cast03Desire = 0
-cast04Desire = 0
+local cast01Desire = 0
+local cast02Desire = 0
+local cast03Desire = 0
+local cast04Desire = 0
+
+local ability01,ability02,ability03,ability04,
+	cast01Location,cast03Target,cast03TargetLocation
 
 function MyItemUsageThink()
-	
+
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
@@ -20,43 +23,43 @@ function MyItemUsageThink()
 					IsItemAvailable( "item_rocket_3" ) or
 					IsItemAvailable( "item_rocket_4" ) or
 					IsItemAvailable( "item_rocket_5" )
-	
+
 	local item_root = IsItemAvailable( "item_tentacle" )
 	local item_slow = IsItemAvailable( "item_zaiezhizhurenxing" ) or
 						IsItemAvailable( "item_jiao_shou" )
-	
+
 	if ( item_rocket~=nil and item_rocket:IsFullyCastable() )
-	then 
-		castItemStunDesire, castItemStunTarget = ConsiderItemStun( item_rocket )
-		if ( castItemStunDesire > 0 ) 
+	then
+		local castItemStunDesire, castItemStunTarget = ConsiderItemStun( item_rocket )
+		if ( castItemStunDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget )
 			return
 		end
 	end
-	
-	
+
+
 	if ( item_root~=nil and item_root:IsFullyCastable() )
-	then 
-		castItemRootDesire, castItemRootTarget = ConsiderItemRoot( item_root )
-		if ( castItemRootDesire > 0 ) 
+	then
+		local castItemRootDesire, castItemRootTarget = ConsiderItemRoot( item_root )
+		if ( castItemRootDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget )
 			return
 		end
 	end
-	
+
 	if ( item_slow~=nil and item_slow:IsFullyCastable() )
-	then 
-		castItemSlowDesire, castItemSlowTarget = ConsiderItemSlow( item_slow )
-		if ( castItemSlowDesire > 0 ) 
+	then
+		local castItemSlowDesire, castItemSlowTarget = ConsiderItemSlow( item_slow )
+		if ( castItemSlowDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnLocation( item_slow, castItemSlowTarget )
 			return
 		end
 	end
-	
-	
+
+
 
 end
 
@@ -67,7 +70,7 @@ function AbilityUsageThink()
 	if not IsBotAwake() then return end
 
 	MyItemUsageThink()
-	
+
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
@@ -80,29 +83,39 @@ function AbilityUsageThink()
 
 	-- Consider using each ability
 	cast01Desire, cast01Location = ConsiderAbilityReimu01()
-	if ( cast01Desire > 0 ) 
+	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location )
 		return
 	end
 
 	cast02Desire = ConsiderAbilityReimu02()
-	if ( cast02Desire > 0 ) 
+	if ( cast02Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability02 )
 		return
 	end
 
-	cast03Desire, cast03Target = ConsiderAbilityReimu03()
-	if ( cast03Desire > 0 ) 
-	then
-		npcBot:Action_UseAbilityOnEntity( ability03 , cast03Target)
-		return
+	if not npcBot:HasModifier("modifier_item_wanbaochui") then
+		cast03Desire, cast03Target = ConsiderAbilityReimu03()
+		if ( cast03Desire > 0 )
+		then
+			npcBot:Action_UseAbilityOnEntity( ability03 , cast03Target)
+			return
+		end
+	else
+		cast03Desire, cast03TargetLocation = ConsiderAbilityReimu03()
+		if ( cast03Desire > 0 )
+		then
+			npcBot:Action_UseAbilityOnLocation( ability03 , cast03TargetLocation)
+			return
+		end
 	end
+
 
 	cast04Desire = ConsiderAbilityReimu04()
 
-	if ( cast04Desire > 0 ) 
+	if ( cast04Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability04 )
 		return
@@ -113,12 +126,12 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastReimu01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
 end
 
 
 function CanCastReimu02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
 end
 
 
@@ -136,77 +149,56 @@ function ConsiderAbilityReimu01()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() ) 
-	then 
+	if ( not ability01:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
 
 	-- Get some of its values
-	local nRadius = ability01:GetSpecialValueInt( "radius" )
+	local nRadius = 200
 	local nCastRange = ability01:GetCastRange()
-	local nDamage = ability01:GetAbilityDamage()
+	local eta = 0.66
 
-	--------------------------------------
-	-- Mode based usage
-	--------------------------------------
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange +100 , true, BOT_MODE_NONE )
+	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+	do
+		if ( npcBot:GetTarget() == npcEnemy and CanCastReimu01OnTarget( npcEnemy ))
+		then
+			local locationAoE = CachedFindAoELocation( npcBot, 1, true, false, npcEnemy:GetLocation(), 2*nRadius, nRadius, eta, 0 )
 
-	-- If we're farming and can kill 3+ creeps with LSA
-	if ( npcBot:GetActiveMode() == BOT_MODE_FARM ) then
-		local locationAoE = CachedFindAoELocation( npcBot, 1, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, nDamage )
-
-		if ( locationAoE.count >= 3 ) then
-			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc
+			if ( locationAoE.count >= 2 ) then
+				return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc
+			end
+			if npcEnemy:GetMovementDirectionStability() >= 0.75 then
+				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+			end
+			return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 		end
 	end
 
-	-- If we're pushing or defending a lane and can hit 4+ creeps, go for it
+	if (IsSeriouslyRetreating(npcBot)) then
+		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+		do
+			if (CanCastReimu01OnTarget(npcEnemy)) then
+				if npcEnemy:GetMovementDirectionStability() >= 0.75 then
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+				end
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+			end
+		end
+	end
 	if ( npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_TOP or
 		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_MID or
 		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_BOT or
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_TOP or
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_MID or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOT ) 
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOT )
 	then
-		local locationAoE = CachedFindAoELocation( npcBot, 2, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 )
-
-		if ( locationAoE.count >= 4 ) 
-		then
-			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc
-		end
-	end
-
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius + 200, true, BOT_MODE_NONE )
-		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastReimu01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
-			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
-			end
-				
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
-			then
-				if ( CanCastReimu01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
-				then
-					return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation()
-				end
-			end
-		end
-
-	-- If we're going after someone
-	if ( npcBot:GetActiveMode() == BOT_MODE_ROAM or
-		 npcBot:GetActiveMode() == BOT_MODE_TEAM_ROAM or
-		 npcBot:GetActiveMode() == BOT_MODE_GANK or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY ) 
-	then
-		local npcTarget = npcBot:GetTarget()
-
-		if ( npcTarget ~= nil ) 
-		then
-			if ( CanCastReimu01OnTarget( npcTarget ) and not IsPossibleIllusion( npcTarget ))
-			then
-				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetLocation()
-			end
-		end
+		local tableNearbylanecreeps = npcBot:GetNearbyLaneCreeps(750,true)
+		if tableNearbylanecreeps ~= nil and #tableNearbylanecreeps >= 3
+        then
+            return BOT_ACTION_DESIRE_HIGH, GetCenterOfUnits(tableNearbylanecreeps)
+        end
 	end
 
 	return BOT_ACTION_DESIRE_NONE, 0
@@ -219,59 +211,38 @@ function ConsiderAbilityReimu02()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability02:IsFullyCastable() ) 
-	then 
+	if ( not ability02:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE
 	end
 
 	-- Get some of its values
-	local nRadius = 400
-	local nCastRange = 0
-	local nDamage = ability02:GetAbilityDamage()*4
-	
-	local t300 = CachedGetNearbyHeroes( npcBot, 300, true, BOT_MODE_NONE )
-	if #t300 > 0 then return BOT_ACTION_DESIRE_HIGH end
+	local nRadius = 650
 
-	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) 
-	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius + 200, true, BOT_MODE_NONE )
-		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastReimu01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
-			then
+	local tableNearbyEnemyHeroes = npcBot:GetNearbyHeroes(nRadius, true, BOT_MODE_NONE)
+	local tableNearbylanecreeps = npcBot:GetNearbyLaneCreeps(nRadius,true)
+	local t300 = CachedGetNearbyHeroes( npcBot, 300 , true, BOT_MODE_NONE )
+
+	if tableNearbyEnemyHeroes~=nil and #tableNearbyEnemyHeroes > 0 and npcBot:GetActiveMode() == BOT_MODE_ATTACK then
+		for _,npcEnemy in pairs(tableNearbyEnemyHeroes)
+        do
+			if (tableNearbylanecreeps == nil
+			or GetUnitToUnitDistance(npcBot,tableNearbylanecreeps[1]) > GetUnitToUnitDistance(npcBot,npcEnemy))
+			and npcBot:GetTarget() == npcEnemy
+			and CanCastReimu02OnTarget(npcEnemy) then
 				return BOT_ACTION_DESIRE_HIGH
-			end
-				
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
-			then
-				if ( CanCastReimu02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
-				then
-					return BOT_ACTION_DESIRE_MODERATE
-				end
 			end
 		end
 	end
-
-	-- If we're going after someone
-	if ( npcBot:GetActiveMode() == BOT_MODE_ROAM or
-		 npcBot:GetActiveMode() == BOT_MODE_TEAM_ROAM or
-		 npcBot:GetActiveMode() == BOT_MODE_GANK or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY ) 
-	then
-		local npcTarget = npcBot:GetTarget()
-
-		if ( npcTarget ~= nil ) 
-		then
-			if ( CanCastReimu02OnTarget( npcTarget ) )
-			then
-				return BOT_ACTION_DESIRE_HIGH
-			end
-		end
+	if #t300 > 0 then
+		return BOT_ACTION_DESIRE_HIGH
+	end
+	if (tableNearbyEnemyHeroes~=nil and #tableNearbyEnemyHeroes > 0
+	and npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) then
+		return BOT_ACTION_DESIRE_HIGH
 	end
 
 	return BOT_ACTION_DESIRE_NONE
-
 end
 
 
@@ -282,40 +253,43 @@ function ConsiderAbilityReimu03()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability03:IsFullyCastable() ) 
-	then 
+	if ( not ability03:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE,nil
 	end
 
 	-- Get some of its values
 	local nCastRange = ability03:GetCastRange()
-	
+
 	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
-	
+
 	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 	do
-		if ( CanCastReimu03OnTarget( npcFriend ) and 
+		if ( CanCastReimu03OnTarget( npcFriend ) and
 				( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
 				npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
 				IsUnderAttack( npcFriend )
 				)
 			) then
+				if npcBot:HasModifier("modifier_item_wanbaochui") then
+					return BOT_ACTION_DESIRE_HIGH, npcFriend:GetLocation()
+				end
 			return BOT_ACTION_DESIRE_HIGH, npcFriend
 		end
 	end
-		
-	
 
-	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) 
+	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH )
 	then
-		for _,npcEnemy in pairs( tableNearbyEnemyHeroes ) 
+		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy ) 
+			if ( npcBot:GetTarget() == npcEnemy )
 			then
-				if ( CanCastReimu03OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
+				if ( CanCastReimu03OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 				then
+					if npcBot:HasModifier("modifier_item_wanbaochui") then
+						return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+					end
 					return BOT_ACTION_DESIRE_MODERATE, npcEnemy
 				end
 			end
@@ -323,33 +297,16 @@ function ConsiderAbilityReimu03()
 	end
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) 
+	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH )
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
+			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
 			then
-				if ( CanCastReimu03OnTarget( npcBot ) ) 
-				then
-					return BOT_ACTION_DESIRE_MODERATE, npcBot
+				if npcBot:HasModifier("modifier_item_wanbaochui") then
+					return BOT_ACTION_DESIRE_HIGH, npcBot:GetLocation()
 				end
-			end
-		end
-	end
-
-	-- If we're going after someone
-	if ( npcBot:GetActiveMode() == BOT_MODE_ROAM or
-		 npcBot:GetActiveMode() == BOT_MODE_TEAM_ROAM or
-		 npcBot:GetActiveMode() == BOT_MODE_GANK or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY ) 
-	then
-		local npcTarget = npcBot:GetTarget()
-
-		if ( npcTarget ~= nil ) 
-		then
-			if ( CanCastReimu03OnTarget( npcTarget ) )
-			then
-				return BOT_ACTION_DESIRE_HIGH,npcTarget
+				return BOT_ACTION_DESIRE_MODERATE, npcBot
 			end
 		end
 	end
@@ -365,36 +322,36 @@ function ConsiderAbilityReimu04()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability04:IsFullyCastable() ) 
-	then 
+	if ( not ability04:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE
 	end
 
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE )
-	
+
 	if #tableNearbyEnemyHeroes > 2 then
 		return BOT_ACTION_DESIRE_MODERATE
 	end
-	
+
 	if #tableNearbyEnemyHeroes > 0 and
 		tableNearbyEnemyHeroes[1]:GetHealth() < 150.0 + 100 * ability04:GetLevel() then
 		return BOT_ACTION_DESIRE_MODERATE
 	end
-	
+
 	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK and
 		npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH and
 		#tableNearbyEnemyHeroes > 0) then
 		return BOT_ACTION_DESIRE_MODERATE
 	end
-	
+
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) 
+	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH )
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) and not IsPossibleIllusion( npcEnemy )) 
+			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) and not IsPossibleIllusion( npcEnemy ))
 			then
-				if ( CanCastReimu04OnTarget( npcBot ) ) 
+				if ( CanCastReimu04OnTarget( npcBot ) )
 				then
 					return BOT_ACTION_DESIRE_MODERATE
 				end

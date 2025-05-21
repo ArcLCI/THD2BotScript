@@ -8,6 +8,8 @@ local IsAvoidingAbilityProjectile = false
 local IsAttackingSpecialUnit = false
 local IsYugi04 = false
 
+local nNextActionTime= 0
+
 local specialUnits = {
 	['npc_dota_phoenix_sun'] = 1,
 	['npc_thdots_unit_minoriko02_box'] = 0.35,
@@ -40,11 +42,11 @@ function GetDesire()
 		return BOT_ACTION_DESIRE_VERYHIGH + 0.1
 	end
 
-	if HasProjectileThatNeedToAvoid(nProjectiles) then
+	--[[if HasProjectileThatNeedToAvoid(nProjectiles) then
 		IsAvoidingAbilityProjectile = true
 		print("bot to avoid some projectiles: " .. botName)
 		return BOT_ACTION_DESIRE_VERYHIGH + 0.1
-	end
+	end]]
 end
 
 function HasModifierThatNeedToAvoidEffects()
@@ -115,12 +117,14 @@ function OnEnd() end
 function Think()
     if J.CanNotUseAction(bot) then return end
 
-	if IsAttackingSpecialUnit then
+	if IsAttackingSpecialUnit and DotaTime() > nNextActionTime then
 		bot:Action_AttackUnit(specialTarget, false)
+		nNextActionTime = DotaTime() + 0.7
 	end
 
-	if IsYugi04 then
+	if IsYugi04 and DotaTime() > nNextActionTime then
 		bot:Action_AttackUnit(yugi04Target, false)
+		nNextActionTime = DotaTime() + 0.7
 	end
 
     if IsAvoidingAbilityZone then

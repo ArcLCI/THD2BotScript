@@ -18,9 +18,16 @@ local tableItemsToBuy = {
 				"item_candle",
 					"item_recipe_phoenix_wing",
 
-				"item_god_hand",
-				"item_god_hand",
-					"item_recipe_loneliness",
+				"item_bra",
+				"item_baozi",
+				"item_glue",
+					"item_recipe_pad",
+				"item_sailor_suit",
+				"item_juice",
+				"item_aunt_clothes",
+					"item_recipe_ghost_balloon",
+				"item_swimming_suit",
+						"item_recipe_xuenvdeweijin",
 
 				"item_gran_grimoire",
 				"item_gran_grimoire",
@@ -33,16 +40,9 @@ local tableItemsToBuy = {
 					"item_recipe_wanbaochui",
 					"item_recipe_wanbaochui2",
 
-				"item_bra",
-				"item_baozi",
-				"item_glue",
-					"item_recipe_pad",
-				"item_sailor_suit",
-				"item_juice",
-				"item_aunt_clothes",
-					"item_recipe_ghost_balloon",
-				"item_swimming_suit",
-						"item_recipe_xuenvdeweijin",
+				"item_god_hand",
+				"item_god_hand",
+					"item_recipe_loneliness",
 			}
 
 
