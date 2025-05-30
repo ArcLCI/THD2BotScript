@@ -1,5 +1,8 @@
 
+local heroName = string.gsub(GetBot():GetUnitName(),"npc_dota_hero_","")
+
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+require(GetScriptDirectory() ..  "/item_purchase_" .. heroName)
 
 ----------------------------------------------------------------------------------------------------
 

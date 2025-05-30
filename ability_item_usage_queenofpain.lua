@@ -11,34 +11,34 @@ ability02LocationCache = 0
 
 
 function MyItemUsageThink()
-	
+
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
-	
+
 	local item_morenjingjuan = IsItemAvailable( "item_morenjingjuan" )
 	local item_horse_red = IsItemAvailable( "item_horse_red" )
 	local item_horse_green = IsItemAvailable( "item_horse_green" )
 	local item_horse_blue = IsItemAvailable( "item_horse_blue" )
 	local item_horse_king = IsItemAvailable( "item_horse_king")
-	
+
 	if ( item_morenjingjuan~=nil and item_morenjingjuan:IsFullyCastable() )
-	then 
+	then
 		--print("stun item exist")
 		castItemMoRenDesire, castItemMoRenTarget = ConsiderItemRoot( item_morenjingjuan )
-		if ( castItemMoRenDesire > 0 ) 
+		if ( castItemMoRenDesire > 0 )
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbilityOnEntity( item_morenjingjuan, castItemMoRenTarget )
 			return
 		end
 	end
-	
+
 	if ( item_horse_green~=nil and item_horse_green:IsFullyCastable() )
-	then 
+	then
 		castItemHorseGreenDesire = ConsiderItemHorseGreen(item_horse_green)
-		if ( castItemHorseGreenDesire > 0 ) 
+		if ( castItemHorseGreenDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_horse_green )
 			return
@@ -46,25 +46,25 @@ function MyItemUsageThink()
 	end
 
 	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
-	then 
+	then
 		castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
-		if ( castItemHorseKingDesire > 0 ) 
+		if ( castItemHorseKingDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_horse_king )
 			return
 		end
 	end
 end
-	
+
 
 function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
 	MyItemUsageThink()
-	
+
 	local npcBot = GetBot()
-	
+
 	-- Check if we're already using an ability
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
@@ -76,14 +76,14 @@ function AbilityUsageThink()
 	-- Consider using each ability
 
 	cast01Desire, cast01Target = ConsiderAbilitySagume01()
-	if ( cast01Desire > 0 ) 
+	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability01 , cast01Target)
 		return
 	end
-	
+
 	cast02Desire, cast02Location = ConsiderAbilitySagume02()
-	if ( cast02Desire > 0 ) 
+	if ( cast02Desire > 0 )
 	then
 		if npcBot:GetLevel() >=25 and npcBot:HasModifier("modifier_ability_sagume_telent7_check") then
 			npcBot:Action_UseAbility( ability02 )
@@ -92,16 +92,16 @@ function AbilityUsageThink()
 		end
 		return
 	end
-	
+
 	cast03Desire, cast03Target = ConsiderAbilitySagume03()
-	if ( cast03Desire > 0 ) 
+	if ( cast03Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability03 , cast03Target)
 		return
 	end
-	
+
 	cast04Desire, cast04Target = ConsiderAbilitySagume04()
-	if ( cast04Desire > 0 ) 
+	if ( cast04Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target)
 		return
@@ -130,22 +130,22 @@ function ConsiderAbilitySagume01()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() ) 
-	then 
+	if ( not ability01:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
-	
+
 	local nCastRange = 700
 
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastSagume01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy )) 
+			if ( CanCastSagume01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy
 			end
 		end
-		
+
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 ----------------------------------------------------------------------------------------------------
@@ -155,8 +155,8 @@ function ConsiderAbilitySagume02()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability02:IsFullyCastable() ) 
-	then 
+	if ( not ability02:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
 
@@ -168,15 +168,15 @@ function ConsiderAbilitySagume02()
 	--------------------------------------
 	-- Mode based usage
 	--------------------------------------
-	if not npcBot:HasModifier("modifier_ability_sagume_telent7_check") then 
+	if not npcBot:HasModifier("modifier_ability_sagume_telent7_check") then
 		if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK or
 			 npcBot:GetActiveMode() == BOT_MODE_ROAM or
 			 npcBot:GetActiveMode() == BOT_MODE_TEAM_ROAM or
 			 npcBot:GetActiveMode() == BOT_MODE_GANK or
-			 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY ) 
+			 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY )
 		then
 			local npcTarget = npcBot:GetTarget()
-			
+
 			if npcBot:GetTarget() ~= nil then
 				local disT = GetUnitToUnitDistance( npcBot, npcBot:GetTarget())
 				local dimin = 200
@@ -186,16 +186,16 @@ function ConsiderAbilitySagume02()
 				end
 			end
 		end
-		
-		if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and 
+
+		if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and
 		npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
 			return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 		end
 	else
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
-		if #tableNearbyEnemyHeroes>1 and 
-		(npcBot:GetActiveMode() == BOT_MODE_ATTACK or 
-		npcBot:GetActiveMode() == BOT_MODE_RETREAT or 
+		if #tableNearbyEnemyHeroes>1 and
+		(npcBot:GetActiveMode() == BOT_MODE_ATTACK or
+		npcBot:GetActiveMode() == BOT_MODE_RETREAT or
 		npcBot:GetActiveMode() == BOT_MODE_GANK )
 		then
 			return BOT_ACTION_DESIRE_HIGH, 0
@@ -206,19 +206,19 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilitySagume03()
-	
+
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability03:IsFullyCastable() ) 
-	then 
+	if ( not ability03:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE
 	end
 	-- Get some of its values
 	local nCastRange = ability02:GetCastRange()
 
 	-- If we're seriously attacking
-	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -233,11 +233,11 @@ function ConsiderAbilitySagume03()
 	if ( npcBot:GetActiveMode() == BOT_MODE_ROAM or
 		 npcBot:GetActiveMode() == BOT_MODE_TEAM_ROAM or
 		 npcBot:GetActiveMode() == BOT_MODE_GANK or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY ) 
+		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY )
 	then
 		local npcTarget = npcBot:GetTarget()
 
-		if ( npcTarget ~= nil ) 
+		if ( npcTarget ~= nil )
 		then
 			if ( CanCastSagume03OnTarget( npcTarget ) )
 			then
@@ -255,11 +255,11 @@ function ConsiderAbilitySagume04()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability04:IsFullyCastable() ) 
-	then 
+	if ( not ability04:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
-	
+
 	--简易版
 	if ( not ability01:IsFullyCastable() ) and ( not ability02:IsFullyCastable() )
 	then

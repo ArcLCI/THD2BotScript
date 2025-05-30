@@ -330,6 +330,16 @@ function HasSpecificEnemyHero( nHeroName )
 	end
 	return false
 end
+
+function IsKeyWordUnit( keyWord, uUnit )
+
+	if string.find( uUnit:GetUnitName(), keyWord ) ~= nil
+	then
+		return true
+	end
+
+	return false
+end
 ----------------------------------------------------------------------------------------------------
 
 local function IsRocket(item_name)
@@ -352,6 +362,19 @@ function IsItemAvailable(item_name)
         end
     end
     return nil
+end
+
+function SwapItemInBackpack(item_name)
+	local npcBot = GetBot()
+    for i = 6, 8 do
+        local item = npcBot:GetItemInSlot(i)
+        if (item ~= nil) then
+            if (item:GetName() == item_name) then
+				npcBot:ActionImmediate_SwapItems(i,5)
+				return
+            end
+        end
+    end
 end
 
 --战斗力估算(不包含主动技能)

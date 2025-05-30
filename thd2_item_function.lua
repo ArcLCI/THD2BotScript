@@ -7,6 +7,9 @@ Item['sCanNotSwitchItems'] = {
     --'item_bloodstone',
     'item_gem',
 	'item_kusanagi',
+	'item_mushroom_kebab_immediate',
+	'item_mushroom_pie_immediate',
+	'item_mushroom_soup_immediate',
 }
 
 local tCanNotSwitchItemList = {}

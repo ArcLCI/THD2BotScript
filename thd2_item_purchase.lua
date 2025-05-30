@@ -65,11 +65,12 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 			print(runnerSeedID .. ' still thinking.')
 			last_purchase[runnerSeedID] = RealTime()
 		else
-			return
+			return -1
 		end
 	end
 	
 	local npcBot = GetBot()
+	local nextPurchase
 		
 	--basic checking
 	if runnerSeedIDCounter[runnerSeedID] == nil then 
@@ -89,7 +90,7 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 	
 	if runnerSeedIDCounter[runnerSeedID] == false then 
 		npcBot:SetNextItemPurchaseValue( 0 )
-		return
+		return -1
 	end
 	
 	--basic checking end
@@ -99,21 +100,21 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 	-- don't use SeedID to recognize caster, create own seed instead
 	if FixMultiTriggedScript(runnerSeed) == false then 
 		npcBot:SetNextItemPurchaseValue( 0 )
-		return
+		return -1
 	end
 
 	--print(GetNowEquipment(runnerSeed))
 	if ( #tableItemsToBuy < GetNowEquipment(runnerSeed) )
 	then
 		npcBot:SetNextItemPurchaseValue( 0 )
-		return
+		return -1
 	end
 
 	--prevent drop items from stash
 	if not ( GetSwitchableInventoryAmount(npcBot) > 0 )
 	then
 		npcBot:SetNextItemPurchaseValue( 0 )
-		return
+		return -1
 	end
 
 	local sNextItem = tableItemsToBuy[GetNowEquipment(runnerSeed)]
@@ -122,13 +123,19 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 	then
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchasing "..sNextItem)
 		npcBot:ActionImmediate_PurchaseItem( sNextItem )
-		sNextItem = tableItemsToBuy[NextEquipment(runnerSeed)]
-		npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
-		print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)
+		nextPurchase = NextEquipment(runnerSeed)
+		sNextItem = tableItemsToBuy[nextPurchase]
+		if sNextItem ~= nil then
+			npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
+			print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)
+		end
 
 		last_purchased[runnerSeedID] = true
 	else
 		last_purchased[runnerSeedID] = false
 	end
-
+	if nextPurchase ~= nil then
+		return nextPurchase
+	end
+	return -1
 end

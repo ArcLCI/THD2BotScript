@@ -39,7 +39,11 @@ function MinionThink( hMinionUnit )
     if DotaTime() >= nNextMoveTime then
         hMinionUnit.move_desire, hMinionUnit.move_location = ConsiderMove(hMinionUnit)
         if hMinionUnit.move_desire > 0 then
-            hMinionUnit:Action_MoveToLocation(hMinionUnit.move_location)
+            if GetUnitToLocationDistance(hMinionUnit, hMinionUnit.move_location) > 400 then
+                hMinionUnit:Action_MoveToLocation(hMinionUnit.move_location)
+            else
+                hMinionUnit:Action_AttackMove(GetRandomLocationWithinDist(hMinionUnit.move_location, 0, 300))
+            end
             nNextMoveTime = DotaTime() + 0.2
             return
         end

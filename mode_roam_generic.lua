@@ -12,11 +12,18 @@ local droppedCheck = -90
 local pickedItem = nil
 local debug_printed = false
 
+local edibleCheck = 900
+local edibleItem = nil
+local edibleItemSlot = -1
+
+local item_edible_name = {"item_mushroom_kebab_immediate","item_mushroom_pie_immediate","item_mushroom_soup_immediate"}
+
 function GetDesire()
 	botName = bot:GetUnitName()
 
 	if not debug_printed then
 		print('roam_generic_ok')
+		print(_VERSION)
 		debug_printed = true
 	end
 
@@ -36,6 +43,34 @@ function GetDesire()
 
 	if not bot:IsAlive() or bot:GetCurrentActionType() == BOT_ACTION_TYPE_DELAY then
 		return BOT_MODE_DESIRE_NONE
+	end
+
+	if DotaTime() >= edibleCheck + 0.3 then
+		local item = nil
+		local npcBot = GetBot()
+		local breakLoop = false
+    	for i = 6, 8 do
+        	item = npcBot:GetItemInSlot(i)
+        	if item ~= nil then
+				for _, itemName in pairs(item_edible_name) do
+					if item:GetName() == itemName then
+						breakLoop = true
+						break
+					end
+				end
+				if breakLoop then
+					edibleItemSlot = i
+					break
+				end
+        	end
+    	end
+		edibleItem = item
+		edibleCheck = DotaTime()
+		return BOT_MODE_DESIRE_VERYHIGH
+	end
+
+	if edibleItem ~= nil and bot:HasModifier("modifier_fountain_aura_buff") then
+		return BOT_MODE_DESIRE_VERYHIGH + 0.1
 	end
 
 	if DotaTime() >= droppedCheck + 2.0 then
@@ -70,6 +105,12 @@ function OnEnd()
 end
 
 function Think()
+	if edibleItem ~= nil then
+		local lessValItem = GetMainInvLessValItemSlot(bot)
+		if lessValItem ~= -1 and edibleItemSlot ~= -1 and bot:HasModifier("modifier_fountain_aura_buff") then
+			bot:ActionImmediate_SwapItems( lessValItem, edibleItemSlot )
+		end
+	end
 
 	if pickedItem ~= nil then
 		--if not pickedItem.item:IsNull() then  print(botName.." picking up item "..pickedItem.item:GetName()) end
@@ -107,4 +148,17 @@ end
 
 ConsiderHeroSpecificRoaming['npc_dota_hero_mirana'] = function ()
 	return CheckHighPriorityChannelAbility("ability_thdots_reisenOld03")
+end
+
+function IsItemAvailable(item_name)
+    local npcBot = GetBot()
+    for i = 0, 5 do
+        local item = npcBot:GetItemInSlot(i)
+        if (item ~= nil) then
+            if (item:GetName() == item_name) then
+				return item
+            end
+        end
+    end
+    return nil
 end
