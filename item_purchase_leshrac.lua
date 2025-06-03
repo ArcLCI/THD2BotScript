@@ -47,32 +47,23 @@ local tableItemsToBuy = {
 
 			}
 
-local tableEatSTR = {"item_mushroom","item_cherry_branch","item_recipe_mushroom_kebab"}
-
-
 ----------------------------------------------------------------------------------------------------
 
 local seed_id = nil
 local next_purchase = -1
-local first_buy = false
-local last_buy = false
+
 
 function ItemPurchaseThink()
 	if seed_id == nil then
 		seed_id = RandomInt(1,999999999)
 	end
-	if first_buy and #tableItemsToBuy < NextEquipment(seed_id) then
-		last_buy = true
-		for _,item in pairs(tableEatSTR)
-		do
-			table.insert(tableItemsToBuy,item)
-		end
+	local npcBot = GetBot()
+	local randIndex = RandomInt(2,3)
+	local tableEdible = {"item_mushroom_pie_immediate","item_mushroom_kebab_immediate","item_mushroom_soup_immediate"}
+	if DotaTime() > 0 and next_purchase > 0 and #tableItemsToBuy < next_purchase then
+		table.insert(tableItemsToBuy,tableEdible[randIndex])
 	end
-	ConsiderItemPurchase(tableItemsToBuy,seed_id)
-	first_buy = true
+	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)
 end
 
-function GetLastBuyStatus()
-	return last_buy
-end
 ----------------------------------------------------------------------------------------------------

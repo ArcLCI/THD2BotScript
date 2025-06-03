@@ -64,7 +64,7 @@ function ItemPurchaseThink()
 	local npcBot = GetBot()
 	local randIndex = RandomInt(1,3)
 	local tableEdible = {"item_mushroom_pie_immediate","item_mushroom_kebab_immediate","item_mushroom_soup_immediate"}
-	if DotaTime() > 0 and next_purchase > 0 and #tableItemsToBuy < next_purchase and npcBot:GetGold() > npcBot:GetBuybackCost() + 540 then
+	if DotaTime() > 0 and next_purchase > 0 and #tableItemsToBuy < next_purchase then
 		table.insert(tableItemsToBuy,tableEdible[2])
 	end
 	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)

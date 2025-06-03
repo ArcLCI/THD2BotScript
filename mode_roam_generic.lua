@@ -45,7 +45,7 @@ function GetDesire()
 		return BOT_MODE_DESIRE_NONE
 	end
 
-	if DotaTime() >= edibleCheck + 0.3 then
+	if DotaTime() >= edibleCheck + 2.0 then
 		local item = nil
 		local npcBot = GetBot()
 		local breakLoop = false
@@ -66,7 +66,7 @@ function GetDesire()
     	end
 		edibleItem = item
 		edibleCheck = DotaTime()
-		return BOT_MODE_DESIRE_VERYHIGH
+		return 0
 	end
 
 	if edibleItem ~= nil and bot:HasModifier("modifier_fountain_aura_buff") then
