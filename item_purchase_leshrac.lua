@@ -12,6 +12,11 @@ local tableItemsToBuy = {
 				"item_cherry_branch",
                 "item_gran_grimoire",
 
+				"item_baozi",
+				"item_zun_hat",
+				"item_pant",
+					"item_recipe_qijizhixing",
+
 				"item_mushroom",
 				"item_cookbook",
 					"item_recipe_mushroom_soup",
@@ -36,14 +41,15 @@ local tableItemsToBuy = {
 				"item_wing",
 					"item_recipe_zaiezhizhurenxing",
 
+				"item_cherry_leaf",
+				"item_pant",
+				"item_hunting_cap",
+					"item_recipe_zun_glasses",
+					"item_recipe_tuzhushen",
+
 				"item_gran_grimoire",
 				"item_gran_grimoire",
 					"item_recipe_bagua",
-
-				"item_baozi",
-				"item_sake",
-				"item_ice_block",
-					"item_recipe_hakurei_amulet",
 
 			}
 

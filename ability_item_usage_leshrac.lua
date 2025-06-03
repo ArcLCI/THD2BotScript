@@ -30,6 +30,7 @@ function MyItemUsageThink()
 	local item_horse_king = IsItemAvailable("item_horse_king")
     local item_slow = IsItemAvailable( "item_zaiezhizhurenxing" ) or
 						IsItemAvailable( "item_jiao_shou" )
+    local item_qijizhixing = IsItemAvailable( "item_qijizhixing" ) or IsItemAvailable( "item_tuzhushen" )
 
     if ( item_fan~=nil and item_fan:IsFullyCastable() )
 	then
@@ -47,6 +48,17 @@ function MyItemUsageThink()
 		if ( castItemSlowDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnLocation( item_slow, castItemSlowTarget)
+			return
+		end
+	end
+
+
+    if ( item_qijizhixing~=nil and item_qijizhixing:IsFullyCastable() )
+	then
+		local castItemQiJjZhiXingDesire, castItemQiJjZhiXingTarget = ConsiderItemQiJiZhiXing(item_qijizhixing)
+		if ( castItemQiJjZhiXingDesire > 0 )
+		then
+			npcBot:Action_UseAbilityOnEntity( item_qijizhixing, castItemQiJjZhiXingTarget )
 			return
 		end
 	end
