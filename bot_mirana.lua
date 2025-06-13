@@ -58,4 +58,5 @@ function MinionThink( hMinionUnit )
         nNextMoveTime = DotaTime() + 0.2
     end
 
+    THD2DemonThink(hMinionUnit)
 end

@@ -79,6 +79,8 @@ function AbilityUsageThink()
 	if not IsBotAwake() then return end
 	
 	MyItemUsageThink()
+	ConsiderNeutralItems()
+
 	
 	local npcBot = GetBot()
 	local item_jump = IsItemAvailable( "item_wanmeitiaoyuezhuangzhi" )

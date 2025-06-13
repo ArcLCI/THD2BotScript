@@ -99,6 +99,7 @@
         "UNIT_LIST_ALL",
         "CreateItem",
         "AddItem",
-        "RandomFloat"
+        "RandomFloat",
+        "DAMAGE_TYPE_MAGICAL"
     ]
 }

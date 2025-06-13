@@ -100,6 +100,8 @@ function AbilityUsageThink()
 	if not IsBotAwake() then return end
 
 	MyItemUsageThink()
+	ConsiderNeutralItems()
+
 	
 	local npcBot = GetBot()
 

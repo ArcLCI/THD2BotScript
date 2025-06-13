@@ -1414,3 +1414,176 @@ function ConsiderItemBook( item_three_dimension )
 	return BOT_ACTION_DESIRE_NONE, nil
 
 end
+
+function ConsiderNeutralItems(tBlacklist)
+
+	local npcBot = GetBot()
+	local DOTA_ITEM_NEUTRAL_SLOT = 16
+
+	local item = npcBot:GetItemInSlot(DOTA_ITEM_NEUTRAL_SLOT)
+	if item == nil or not item:IsFullyCastable() then
+		return
+	end
+
+	local itemName = item:GetName()
+	local nCastRange = item:GetCastRange()
+
+	if tBlacklist ~= nil and #tBlacklist > 0 then
+		for _, blacklistedItem in pairs(tBlacklist) do
+			if itemName == blacklistedItem then
+				print("Skipping neutral item " .. itemName .. " as it is in the blacklist.")
+				return
+			end
+		end
+	end
+
+	if itemName == "item_unstable_wand" then
+		if IsSeriouslyRetreating(npcBot) then
+			npcBot:Action_UseAbility(item)
+			return
+		end
+		return
+	elseif itemName == "item_polliwog_charm" then
+		local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200, false, BOT_MODE_NONE )
+		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
+		do
+			if npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.8 then
+				npcBot:Action_UseAbilityOnEntity(item,npcFriend)
+				return
+			end
+		end
+		return
+	elseif itemName == "item_kobold_cup" then
+		if ConsiderItemSpeedMulti(item) > 0 then
+			npcBot:Action_UseAbility(item)
+			return
+		end
+	elseif itemName == "item_essence_ring" then
+		if IsSeriouslyRetreating(npcBot) or npcBot:GetHealth() < npcBot:GetMaxHealth()*0.25 then
+			npcBot:Action_UseAbility(item)
+			return
+		end
+	elseif itemName == "item_pogo_stick" then
+		if IsSeriouslyRetreating(npcBot) then
+			npcBot:Action_UseAbility(item)
+			return
+		end
+		return
+	elseif itemName == "item_pogo_stick" then
+		if IsSeriouslyRetreating(npcBot) then
+			npcBot:Action_UseAbility(item)
+			return
+		end
+		return
+	elseif itemName == "item_mana_draught" then
+		npcBot:Action_UseAbility(item)
+		return
+	elseif itemName == "item_gale_guard" then
+		if ConsiderItemDouPeng(item) > 0 then
+			npcBot:Action_UseAbility(item)
+			return
+		end
+		return
+	elseif itemName == "item_jidi_pollen_bag" then
+		if ConsiderItemWeiJin(item) > 0 then
+			npcBot:Action_UseAbility(item)
+			return
+		end
+		return
+	elseif itemName == "item_psychic_headband" then
+		if IsSeriouslyRetreating(npcBot) then
+			local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
+			if #tableNearbyEnemyHeroes > 0 then
+				if CanCastNeutralItemOnTarget(tableNearbyEnemyHeroes[1]) then
+					npcBot:Action_UseAbilityOnEntity(item,tableNearbyEnemyHeroes[1])
+				end
+			return
+			end
+		end
+		return
+	elseif itemName == "item_crippling_crossbow" then
+		if npcBot:GetActiveMode() == BOT_MODE_ATTACK then
+			local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
+			if #tableNearbyEnemyHeroes > 0 then
+				for _, npcEnemy in pairs(tableNearbyEnemyHeroes) do
+					if npcBot:GetTarget() == npcEnemy and CanCastNeutralItemOnTarget(npcEnemy) then
+						npcBot:Action_UseAbilityOnEntity(item,npcEnemy)
+						return
+					end
+				end
+			end
+		end
+		return
+	elseif itemName == "item_outworld_staff" then
+		return
+	elseif itemName == "item_psychic_headband" then
+		return
+	elseif itemName == "item_pyrrhic_cloak" then
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+50, true, BOT_MODE_NONE )
+		local mxcap=0
+		local mxTarget=nil
+		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+		do
+			if CanCastNeutralItemOnTarget(npcEnemy) then
+				local capability = GetCapability(npcEnemy)
+				if capability > mxcap then
+					mxcap=capability
+					mxTarget=npcEnemy
+				end
+			end
+		end
+		if #tableNearbyEnemyHeroes > 2 then
+			if mxTarget ~= nil then
+				npcBot:Action_UseAbilityOnEntity(item,mxTarget)
+				return
+			end
+		end
+	
+		if #tableNearbyEnemyHeroes > 0 and (npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
+		and((npcBot:GetActiveMode() == BOT_MODE_ATTACK and #tableNearbyEnemyHeroes > 1)
+		or npcBot:GetActiveMode() == BOT_MODE_RETREAT)) then
+			if mxTarget ~= nil then
+				npcBot:Action_UseAbilityOnEntity(item,mxTarget)
+				return
+			end
+		end
+		return
+	elseif itemName == "item_fallen_sky" then
+		local nRadius = 315
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
+		if #tableNearbyEnemyHeroes > 0 then
+			for _, npcEnemy in pairs(tableNearbyEnemyHeroes) do
+				if CanCastNeutralItemOnTarget(npcEnemy) then
+					local locationAoE = CachedFindAoELocation( npcBot, 60005, true, true, npcEnemy:GetLocation(), nCastRange, nRadius, 0, 0 )
+					if locationAoE.count > 2 then
+						npcBot:Action_UseAbilityOnLocation(item,locationAoE.targetloc)
+						return
+					end
+				end
+			end
+			npcBot:Action_UseAbilityOnLocation(item,tableNearbyEnemyHeroes[1]:GetLocation())
+			return
+		end
+		return
+	elseif itemName == "item_minotaur_horn" then
+		if IsSeriouslyRetreating(npcBot) then
+			npcBot:Action_UseAbility(item)
+			return
+		end
+		return
+	elseif itemName == "item_spider_legs" then
+		if ConsiderItemSpeed(item) > 0 then
+			npcBot:Action_UseAbility(item)
+			return
+		end
+		return
+	elseif itemName == "item_demonicon" then
+		if npcBot:GetActiveMode() == BOT_MODE_ATTACK then
+			npcBot:Action_UseAbility(item)
+		end
+	end
+end
+
+function CanCastNeutralItemOnTarget(npcTarget)
+	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion( npcTarget )
+end

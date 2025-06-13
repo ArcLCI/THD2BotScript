@@ -1,6 +1,7 @@
 local X = {}
 local ownerBot
 local nNextMoveTime = 0
+local nNextMoveTimeD = 0
 
 local nEnemyAncient = GetAncient(GetOpposingTeam())
 local RadiantFountain = Vector( -6619, -6336, 384 )
@@ -47,13 +48,76 @@ function X.IllusionThink(owner, hMinionUnit)
         end
 
         -- Default
-        if ownerBot:IsAlive()
-        then
-            hMinionUnit:Action_MoveToLocation(GetRandomLocationWithinDist(ownerBot:GetLocation(), 400, 800))
-        else
-            hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
-        end
+        local success = pcall(function()
+                if ownerBot:IsAlive() then
+                    hMinionUnit:Action_MoveToLocation(GetRandomLocationWithinDist(ownerBot:GetLocation(), 400, 800))
+                else
+                    hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
+                end
+            end)
+            if not success then
+                hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
+            end
         nNextMoveTime = DotaTime() + 0.2
+    end
+end
+
+function X.DemonThink(owner, hMinionUnit)
+
+    ownerBot = owner
+    if IsKeyWordUnit("necronomicon",hMinionUnit) then
+
+         if IsKeyWordUnit("necronomicon_archer",hMinionUnit) then
+            local abilityPurge = hMinionUnit:FindAbilityByName("necronomicon_archer_purge")
+            local nCastRange = abilityPurge:GetCastRange()
+            local tableNearbyEnemyHeroes = CachedGetNearbyHeroes(hMinionUnit, nCastRange, true, BOT_MODE_NONE)
+
+            if abilityPurge:IsFullyCastable() and #tableNearbyEnemyHeroes > 0 then
+                for _, enemy in pairs(tableNearbyEnemyHeroes) do
+                    if ownerBot:GetActiveMode() == BOT_MODE_ATTACK and ownerBot:GetTarget() == enemy then
+                        hMinionUnit:Action_UseAbilityOnEntity(abilityPurge,enemy)
+                        return
+                    end
+                end
+                hMinionUnit:Action_UseAbilityOnEntity(abilityPurge,tableNearbyEnemyHeroes[1])
+                return
+            end
+        end
+        hMinionUnit.attack_desire, hMinionUnit.attack_target = ConsiderAttack(hMinionUnit)
+        if ConsiderRetreat(hMinionUnit, hMinionUnit.attack_target) then return end
+
+        if hMinionUnit.attack_desire > 0 then
+            if IsValidUnit(hMinionUnit.attack_target) then
+                hMinionUnit:Action_AttackUnit(hMinionUnit.attack_target, false)
+                return
+            end
+        end
+
+        if DotaTime() >= nNextMoveTimeD then
+            hMinionUnit.move_desire, hMinionUnit.move_location = ConsiderMove(hMinionUnit)
+            if hMinionUnit.move_desire > 0 then
+                if GetUnitToLocationDistance(hMinionUnit, hMinionUnit.move_location) > 400 then
+                    hMinionUnit:Action_MoveToLocation(hMinionUnit.move_location)
+                else
+                    hMinionUnit:Action_AttackMove(GetRandomLocationWithinDist(hMinionUnit.move_location, 0, 300))
+                end
+                nNextMoveTimeD = DotaTime() + 0.2
+                return
+            end
+
+            -- Default
+            local success = pcall(function()
+                if ownerBot:IsAlive() then
+                    hMinionUnit:Action_MoveToLocation(GetRandomLocationWithinDist(ownerBot:GetLocation(), 400, 800))
+                else
+                    hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
+                end
+            end)
+            if not success then
+                hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
+            end
+            nNextMoveTimeD = DotaTime() + 0.2
+        end
     end
 end
 ----------------------------------------------------------------------------------------------------

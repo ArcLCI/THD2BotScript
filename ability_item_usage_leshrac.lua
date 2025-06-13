@@ -100,6 +100,8 @@ function AbilityUsageThink()
     lilyStatus = npcBot:HasModifier("modifier_lily_black")
 
 	MyItemUsageThink()
+	ConsiderNeutralItems()
+
 
     if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 

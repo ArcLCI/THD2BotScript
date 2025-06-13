@@ -29,4 +29,6 @@ function MinionThink( hMinionUnit )
     if hMinionUnit:IsIllusion() then
 	    THD2MinionThink( hMinionUnit )
     end
+
+    THD2DemonThink(hMinionUnit)
 end

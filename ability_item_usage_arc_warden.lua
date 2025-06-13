@@ -98,6 +98,8 @@ function AbilityUsageThink()
 	if not IsBotAwake() then return end
 
 	MyItemUsageThink()
+	ConsiderNeutralItems()
+
 
 	local npcBot = GetBot()
 
@@ -159,7 +161,7 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastEllen01OnTarget( npcTarget )
-	return npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
 end
 
 
@@ -173,7 +175,7 @@ function CanCastEllen03OnTarget( npcTarget )
 end
 
 function CanCastEllen04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
 end
 
 function CanCastEllen05OnTarget( npcTarget )
@@ -262,10 +264,13 @@ function ConsiderAbilityEllen03()
 	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT then
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy )
-			then
-				local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+			if ( npcBot:GetTarget() == npcEnemy ) then
+				if npcEnemy:GetMovementDirectionStability() >= 0.75 then
+					local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+				else
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+				end
 			end
 		end
 	end
@@ -287,10 +292,13 @@ function ConsiderAbilityEllen03()
 	if nMP > 0.58 and #tableNearbyEnemyHeroes > 0 then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy )
-			then
-				local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+			if ( npcBot:GetTarget() == npcEnemy ) then
+				if npcEnemy:GetMovementDirectionStability() >= 0.75 then
+					local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+				else
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+				end
 			end
 		end
 	end
@@ -319,10 +327,13 @@ function ConsiderAbilityEllen04()
 	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or  npcBot:GetActiveMode() == BOT_MODE_RETREAT then
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy )
-			then
-				local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
-				return BOT_ACTION_DESIRE_VERYHIGH, npcEnemy:GetExtrapolatedLocation(eta)
+			if ( npcBot:GetTarget() == npcEnemy and CanCastEllen04OnTarget(npcEnemy)) then
+				if npcEnemy:GetMovementDirectionStability() >= 0.75 then
+					local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
+					return BOT_ACTION_DESIRE_VERYHIGH, npcEnemy:GetExtrapolatedLocation(eta)
+				else
+					return BOT_ACTION_DESIRE_VERYHIGH, npcEnemy:GetLocation()
+				end
 			end
 		end
 	end
@@ -330,10 +341,13 @@ function ConsiderAbilityEllen04()
 	if nMP > 0.32 and #tableNearbyEnemyHeroes > 0 then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy )
-			then
-				local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+			if CanCastEllen04OnTarget(npcEnemy) then
+				if npcEnemy:GetMovementDirectionStability() >= 0.75 then
+					local eta = (GetUnitToUnitDistance(npcBot, npcEnemy) / nSpeed) + nCastPoint
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(eta)
+				else
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+				end
 			end
 		end
 	end

@@ -85,6 +85,8 @@ function AbilityUsageThink()
     if not IsBotAwake() then return end
 
 	MyItemUsageThink()
+	ConsiderNeutralItems()
+
 
     local npcBot = GetBot()
     local item_dragon_star = IsItemAvailable( "item_dragon_star" )
