@@ -67,6 +67,13 @@ else
 			"item_recipe_tentacle",
 
 		"item_wind_amulet",
+		"item_magic_guide_book",
+			"item_recipe_doctor_doll",
+		"item_cat_foot",
+		"item_frog",
+			"item_recipe_dummy_doll1",
+
+		"item_wind_amulet",
 		"item_wind_amulet",
 			"item_recipe_luna_chip",
 		"item_bird",
@@ -97,16 +104,11 @@ else
 		"item_rocket_diagram",
 		"item_zun_hat",
 			"item_recipe_wanbaochui",
+			"item_recipe_wanbaochui2",
 
 		"item_god_hand",
 		"item_god_hand",
 		"item_recipe_loneliness",
-
-			"item_recipe_wanbaochui2",
-
-		"item_huanyingzhifeng",
-		"item_huanyingzhifeng",
-			"item_recipe_UFO",
 
 	}
 

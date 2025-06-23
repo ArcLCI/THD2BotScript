@@ -3,53 +3,71 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0
-cast02Desire = 0
-cast03Desire = 0
-cast04Desire = 0
+local cast01Desire = 0
+local cast02Desire = 0
+local cast03Desire = 0
+local cast04Desire = 0
+
+local ability01,ability02,ability04,cast01Target
 
 function MyItemUsageThink()
-	
+
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
-	
-	local item_feixiangjian = IsItemAvailable( "item_feixiangjian" )
+
 	local item_horse_red = IsItemAvailable( "item_horse_red" )
-	local item_horse_green = IsItemAvailable( "item_horse_green" )
-	local item_horse_blue = IsItemAvailable( "item_horse_blue" )
 	local item_horse_king = IsItemAvailable( "item_horse_king")
-	
-	item_stun = IsItemAvailable( "item_yuetufensuijvren" )
+	local item_dragon_star = IsItemAvailable( "item_dragon_star" )
+	local item_speed = IsItemAvailable( "item_mystia_wings" ) or IsItemAvailable( "item_brother_sharp" )
+	local item_teeth = IsItemAvailable( "item_teeth" )
+
+	local item_stun = IsItemAvailable( "item_yuetufensuijvren" )
 	if item_stun == nil then
 		item_stun = IsItemAvailable( "item_pocket_watch" )
 	end
-	
-	if ( item_feixiangjian~=nil and item_feixiangjian:IsFullyCastable() )
+
+	if (item_dragon_star~=nil and item_dragon_star:IsFullyCastable()) then
+        if (npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) or IsSeriouslyRetreating(npcBot) then
+            npcBot:Action_UseAbility(item_dragon_star)
+            return
+        end
+	end
+
+	if ( item_speed~=nil and item_speed:IsFullyCastable() )
 	then 
-		castItemFeiXiangJianDesire, castItemFeiXiangJianTarget = ConsiderItemFeiXiangJian( item_feixiangjian )
-		if ( castItemFeiXiangJianDesire > 0 ) 
+		local castItemSpeedDesire = ConsiderItemSpeed( item_speed )
+		if ( castItemSpeedDesire > 0 )
 		then
-			npcBot:Action_UseAbilityOnEntity( item_feixiangjian, castItemFeiXiangJianTarget )
+			npcBot:Action_UseAbility( item_speed )
 			return
 		end
 	end
-	
-	if ( item_horse_green~=nil and item_horse_green:IsFullyCastable() )
-	then 
-		castItemHorseGreenDesire = ConsiderItemHorseGreen(item_horse_green)
-		if ( castItemHorseGreenDesire > 0 ) 
+
+	if (item_teeth~=nil and item_teeth:IsFullyCastable()) then
+		if not ability01:IsFullyCastable()
+		and not ability04:IsFullyCastable()
+		and (npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH) then
+			npcBot:Action_UseAbility( item_teeth )
+			return
+		end
+	end
+
+	if ( item_horse_red~=nil and item_horse_red:IsFullyCastable() )
+	then
+		local castItemHorseGreenDesire = ConsiderItemHorseRed(item_horse_red)
+		if ( castItemHorseGreenDesire > 0 )
 		then
-			npcBot:Action_UseAbility( item_horse_green )
+			npcBot:Action_UseAbility(item_horse_red)
 			return
 		end
 	end
 
 	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
-	then 
-		castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
-		if ( castItemHorseKingDesire > 0 ) 
+	then
+		local castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
+		if ( castItemHorseKingDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_horse_king )
 			return
@@ -57,10 +75,10 @@ function MyItemUsageThink()
 	end
 
 	if ( item_stun~=nil and item_stun:IsFullyCastable() )
-	then 
+	then
 		--print("stun item exist")
-		castItemStunDesire, castItemStunTarget = ConsiderItemStun(item_stun)
-		if ( castItemStunDesire > 0 ) 
+		local castItemStunDesire, castItemStunTarget = ConsiderItemStun(item_stun)
+		if ( castItemStunDesire > 0 )
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbilityOnEntity( item_stun, castItemStunTarget )
@@ -76,9 +94,9 @@ function AbilityUsageThink()
 	MyItemUsageThink()
 	ConsiderNeutralItems()
 
-	
+
 	local npcBot = GetBot()
-	
+
 	-- Check if we're already using an ability
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
@@ -90,21 +108,21 @@ function AbilityUsageThink()
 	-- Consider using each ability
 
 	cast01Desire, cast01Target = ConsiderAbilityReisen_2_01()
-	if ( cast01Desire > 0 ) 
+	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability01 , cast01Target)
 		return
 	end
 
 	cast02Desire = ConsiderAbilityReisen_2_02()
-	if ( cast02Desire > 0 ) 
+	if ( cast02Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability02 )
 		return
 	end
 
 	cast04Desire = ConsiderAbilityReisen_2_04()
-	if ( cast04Desire > 0 ) 
+	if ( cast04Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability04 )
 		return
@@ -115,7 +133,7 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastReisen_2_01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -125,24 +143,24 @@ function ConsiderAbilityReisen_2_01()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() ) 
-	then 
+	if ( not ability01:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
-	
-	local nCastRange = 800
-	
-	if ( (npcBot:GetActiveMode() == BOT_MODE_ATTACK or 
+
+	local nCastRange = ability01:GetCastRange() + 50
+
+	if ( (npcBot:GetActiveMode() == BOT_MODE_ATTACK or
 			npcBot:GetActiveMode() == BOT_MODE_RETREAT )
 			and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) then
 		return BOT_ACTION_DESIRE_HIGH, npcBot
 	end
-	
+
 	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
 	if #tableNearbyFriendlyHeroes > 0 then
 		for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 		do
-			if ( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 
+			if ( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5
 				or npcFriend:WasRecentlyDamagedByAnyHero( 1.0 )
 				or IsUnderAttack( npcFriend,true)
 				) then
@@ -150,34 +168,28 @@ function ConsiderAbilityReisen_2_01()
 			end
 		end
 	end
-	
+
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( npcBot:GetTarget() == npcEnemy and not IsPossibleIllusion( npcEnemy )) 
+		if ( npcBot:GetTarget() == npcEnemy and not IsPossibleIllusion( npcEnemy ))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcBot
 		end
-		
-		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) ) 
-		then
-			return BOT_ACTION_DESIRE_MODERATE, npcBot
-		end
-		
 	end
-	
 	return BOT_ACTION_DESIRE_NONE, nil
-	
 end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityReisen_2_02()
 
 	local npcBot = GetBot()
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800 , true, BOT_MODE_NONE )
+	local tableNearby600EnemyHeroes = CachedGetNearbyHeroes( npcBot, 600 , true, BOT_MODE_NONE )
 
 	-- Make sure it's castable
-	if ( not ability02:IsFullyCastable() ) 
-	then 
+	if ( not ability02:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE
 	end
 	-- 没盾
@@ -188,16 +200,19 @@ function ConsiderAbilityReisen_2_02()
 		end
 		-- 50%血以下 或 被眩晕 且周围有人
 		if npcBot:GetHealth() < npcBot:GetMaxHealth()*0.5 or GetModifiersTimeLeft(npcBot, ModifierNamesStun) > 0.5 then
-			local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800 , true, BOT_MODE_NONE )
 			if #tableNearbyEnemyHeroes > 0 then
 				return BOT_ACTION_DESIRE_HIGH
 			end
+		end
+
+		if #tableNearby600EnemyHeroes > 2
+		and npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH then
+			return BOT_ACTION_DESIRE_HIGH
 		end
 	else
 	-- 有盾
 		-- 50%血以下 且 被眩晕 且 周围有人
 		if npcBot:GetHealth() < npcBot:GetMaxHealth()*0.5 and GetModifiersTimeLeft(npcBot, ModifierNamesStun) > 0.5 then
-			local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800 , true, BOT_MODE_NONE )
 			if #tableNearbyEnemyHeroes > 0 then
 				return BOT_ACTION_DESIRE_HIGH
 			end
@@ -212,25 +227,24 @@ function ConsiderAbilityReisen_2_04()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability04:IsFullyCastable() ) 
-	then 
+	if ( not ability04:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE
 	end
-	
-	local nCastRange = 200
-	if (( npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_GANK) and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_MODERATE ) 
-	then	
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
+
+	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH )
+	then
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 400 , true, BOT_MODE_NONE )
 		if #tableNearbyEnemyHeroes > 1 then
 			return BOT_ACTION_DESIRE_HIGH
 		else
 			for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 			do
-				if (GetCapability(npcEnemy) > GetCapability(npcBot) or npcBot:GetHealth() < npcEnemy:GetHealth()) and not npcEnemy:IsAttackImmune() then
+				if (GetCapability(npcEnemy) > GetCapability(npcBot) or npcBot:GetHealth() < npcEnemy:GetHealth()) and CanCastReisen_2_01OnTarget(npcEnemy) then
 					return BOT_ACTION_DESIRE_HIGH
 				end
 			end
-		end 
+		end
 	end
 	return BOT_ACTION_DESIRE_NONE
 end

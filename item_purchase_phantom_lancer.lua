@@ -4,12 +4,21 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 local tableItemsToBuy = {
 				"item_broom",
+				"item_wind_amulet",
+					"item_recipe_horse_red",
 
-				"item_tengu_fan",
-				"item_tengu_fan",
-					"item_recipe_camera",
+				"item_wind_amulet",
+				"item_wind_amulet",
+					"item_recipe_luna_chip",
+				"item_silver_knife",
+					"item_recipe_teeth",
 
-				"item_recipe_gap_creator",
+				"item_mushroom",
+				"item_cherry_branch",
+					"item_recipe_mushroom_kebab",
+				"item_wind_lace",
+				"item_sailor_suit",
+					"item_recipe_mystia_wings",
 
 				"item_hammer",
 				"item_throwing_knive",
@@ -21,30 +30,29 @@ local tableItemsToBuy = {
 					"item_recipe_pad",
 					"item_recipe_yuetufensuijvren",
 
+				"item_horse_king_compressor",
+				"item_recipe_horse_king",
+
+				"item_ice_block",
+				"item_knife",
+					"item_recipe_dragon_star",
+
+				"item_mushroom",
+				"item_mushroom",
+					"item_recipe_touhou_banana",
+				"item_cat_foot",
+					"item_recipe_brother_sharp",
+
 				"item_cat_foot",
 				"item_paper_mask",
 				"item_rocket_diagram",
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
-
-				"item_bloodthirstiest",
-
 					"item_recipe_wanbaochui2",
 
-				"item_silver_knife",
-				"item_paper_mask",
-				"item_cat_foot",
-					"item_recipe_ganggenier",
-
-				"item_frog",
-				"item_ice_block",
-				"item_ice_block",
-					"item_recipe_frozen",
-
 				"item_tengu_fan",
-				"item_ice_block",
-					"item_recipe_laevateinn",
-
+				"item_tengu_fan",
+				"item_recipe_camera",
 			}
 
 

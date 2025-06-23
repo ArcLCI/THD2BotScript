@@ -62,7 +62,7 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 		end
 		
 		if last_purchase[runnerSeedID] + 5 < RealTime() then
-			print(runnerSeedID .. ' still thinking.')
+			-- print(runnerSeedID .. ' still thinking.')
 			last_purchase[runnerSeedID] = RealTime()
 		else
 			return -1

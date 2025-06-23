@@ -24,6 +24,19 @@ function MyItemUsageThink()
 	if item_root == nil then
 		item_root = IsItemAvailable( "item_tentacle" )
 	end
+	local item_stand = IsItemAvailable( "item_dummy_doll1" )
+
+	if ( item_stand~=nil and item_stand:IsFullyCastable() )
+	then
+		--print("stun item exist")
+		castItemStandDesire = ConsiderItemStand( item_stand )
+		if ( castItemStandDesire > 0 )
+		then
+			--print("stun luanch")
+			npcBot:Action_UseAbility( item_stand )
+			return
+		end
+	end
 
 	if ( item_jump~=nil and item_jump:IsFullyCastable() )
 	then

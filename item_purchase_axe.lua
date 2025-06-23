@@ -2,9 +2,9 @@
 require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
-local tableItemsToBuy = { 
+local tableItemsToBuy = {
 				"item_broom",
-				
+
 				"item_mushroom",
 				"item_cherry_branch",
 					"item_recipe_mushroom_kebab",
@@ -15,24 +15,31 @@ local tableItemsToBuy = {
 				"item_mushroom",
 				"item_mushroom",
 					"item_recipe_touhou_banana",
-				
+
 				"item_knife",
 				"item_scissors",
 					"item_recipe_quant",
 					"item_recipe_anchor",
-					
+
 				"item_ice_block",
 					"item_recipe_wanmeitiaoyuezhuangzhi",
-					
-				"item_scissors",
+
+				"item_bra",
+				"item_baozi",
+				"item_glue",
+					"item_recipe_pad",
 				"item_sailor_suit",
-					"item_recipe_frock",
-				
-				"item_god_hand",	
+				"item_juice",
+				"item_aunt_clothes",
+					"item_recipe_ghost_balloon",
+				"item_swimming_suit",
+						"item_recipe_xuenvdeweijin",
+
+				"item_god_hand",
 				"item_god_hand",
 					"item_recipe_loneliness",
-					
-				"item_mushroom",	
+
+				"item_mushroom",
 				"item_mushroom",
 					"item_recipe_touhou_banana",
 				"item_cat_foot",
@@ -44,17 +51,10 @@ local tableItemsToBuy = {
 				"item_zun_hat",
 					"item_recipe_wanbaochui",
 					"item_recipe_wanbaochui2",
-					
-				"item_bra",
-				"item_baozi",
-				"item_glue",
-					"item_recipe_pad",
+
+				"item_scissors",
 				"item_sailor_suit",
-				"item_juice",
-				"item_aunt_clothes",
-					"item_recipe_ghost_balloon",
-				"item_swimming_suit",
-						"item_recipe_xuenvdeweijin",
+					"item_recipe_frock",
 			}
 
 

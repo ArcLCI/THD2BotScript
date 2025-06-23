@@ -746,6 +746,7 @@ end
 function ConsiderItemStand( item_stand )
 
 	local npcBot = GetBot()
+	local nRange = math.max(npcBot:GetAttackRange(),650)
 
 	-- Make sure it's castable
 	if ( not item_stand:IsFullyCastable() )
@@ -753,31 +754,26 @@ function ConsiderItemStand( item_stand )
 		return BOT_ACTION_DESIRE_NONE
 	end
 
-	local tableNearbyEnemyHeroes1500 = CachedGetNearbyHeroes( npcBot, 1500 , true, BOT_MODE_NONE )
+	local tableNearbyEnemyHeroes1200 = CachedGetNearbyHeroes( npcBot, 1200 , true, BOT_MODE_NONE )
 
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT
-			and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
-			and #tableNearbyEnemyHeroes1500 > 0
-			) then
+	if IsSeriouslyRetreating(npcBot) and #tableNearbyEnemyHeroes1200 > 0 then
 		return BOT_ACTION_DESIRE_HIGH
 	end
 
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500 , true, BOT_MODE_NONE )
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nRange , true, BOT_MODE_NONE )
 
-	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-	do
-		if ( npcBot:GetTarget() == npcEnemy )
-		then
+	if npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH then
+		if #tableNearbyEnemyHeroes > 2 then
 			return BOT_ACTION_DESIRE_HIGH
 		end
 
-		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
-		then
-			return BOT_ACTION_DESIRE_MODERATE
+		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
+		do
+			if npcBot:GetTarget() == npcEnemy then
+				return BOT_ACTION_DESIRE_HIGH
+			end
 		end
-
 	end
-
 	return BOT_ACTION_DESIRE_NONE
 
 end
@@ -1280,6 +1276,8 @@ end
 function ConsiderItemHorseKing( item_horse_king )
 
 	local npcBot = GetBot()
+	local nRange = math.max(npcBot:GetAttackRange(),650)
+	local manaPercent = npcBot:GetMana()/npcBot:GetMaxMana()
 
 	-- Make sure it's castable
 	if (not item_horse_king:IsFullyCastable() )
@@ -1288,9 +1286,8 @@ function ConsiderItemHorseKing( item_horse_king )
 	end
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK )
-	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, npcBot:GetAttackRange(), true, BOT_MODE_NONE )
+	if npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH and manaPercent > 0.2 then
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nRange, true, BOT_MODE_NONE )
 		if ( #tableNearbyEnemyHeroes > 0 ) then
 			if npcBot:HasModifier("modifier_item_horse_king_open") then
 				return BOT_ACTION_DESIRE_NONE
@@ -1299,7 +1296,7 @@ function ConsiderItemHorseKing( item_horse_king )
 		end
 	end
 
-	if npcBot:GetActiveMode() == BOT_MODE_RETREAT then
+	if IsSeriouslyRetreating(npcBot) then
 		if npcBot:HasModifier("modifier_item_horse_king_open") then
 			return BOT_ACTION_DESIRE_NONE
 		end
@@ -1308,7 +1305,7 @@ function ConsiderItemHorseKing( item_horse_king )
 
 	-- 想办法主动关掉
 	if npcBot:HasModifier("modifier_item_horse_king_open") then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, npcBot:GetAttackRange(), true, BOT_MODE_NONE )
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nRange, true, BOT_MODE_NONE )
 		if not ( #tableNearbyEnemyHeroes > 0 ) then
 			return BOT_ACTION_DESIRE_MODERATE
 		end
@@ -1415,10 +1412,31 @@ function ConsiderItemBook( item_three_dimension )
 
 end
 
+----------------------------------------------------------------------------------------------------
+
+
+function ConsiderItemDoctorDoll(item_doctor_doll)
+	local npcBot = GetBot()
+
+	if ( not item_doctor_doll:IsFullyCastable() )
+	then
+		return BOT_ACTION_DESIRE_NONE
+	end
+
+	if IsSeriouslyRetreating(npcBot) or npcBot:GetHealth() < npcBot:GetMaxHealth()*0.25 then
+		return BOT_ACTION_DESIRE_HIGH
+	end
+	return BOT_ACTION_DESIRE_NONE
+end
+
+----------------------------------------------------------------------------------------------------
+
+
 function ConsiderNeutralItems(tBlacklist)
 
 	local npcBot = GetBot()
 	local DOTA_ITEM_NEUTRAL_SLOT = 16
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 650 , true, BOT_MODE_NONE )
 
 	local item = npcBot:GetItemInSlot(DOTA_ITEM_NEUTRAL_SLOT)
 	if item == nil or not item:IsFullyCastable() then
@@ -1431,7 +1449,6 @@ function ConsiderNeutralItems(tBlacklist)
 	if tBlacklist ~= nil and #tBlacklist > 0 then
 		for _, blacklistedItem in pairs(tBlacklist) do
 			if itemName == blacklistedItem then
-				print("Skipping neutral item " .. itemName .. " as it is in the blacklist.")
 				return
 			end
 		end
@@ -1463,9 +1480,20 @@ function ConsiderNeutralItems(tBlacklist)
 			npcBot:Action_UseAbility(item)
 			return
 		end
-	elseif itemName == "item_pogo_stick" then
-		if IsSeriouslyRetreating(npcBot) then
-			npcBot:Action_UseAbility(item)
+	elseif itemName == "item_rippers_lash" then
+		local nRadius = 200
+		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
+		if #tableNearbyEnemyHeroes > 0 then
+			for _, npcEnemy in pairs(tableNearbyEnemyHeroes) do
+				if CanCastNeutralItemOnTarget(npcEnemy) then
+					local locationAoE = CachedFindAoELocation( npcBot, 60005, true, true, npcEnemy:GetLocation(), nCastRange, nRadius, 0, 0 )
+					if locationAoE.count > 1 then
+						npcBot:Action_UseAbilityOnLocation(item,locationAoE.targetloc)
+						return
+					end
+				end
+			end
+			npcBot:Action_UseAbilityOnLocation(item,tableNearbyEnemyHeroes[1]:GetLocation())
 			return
 		end
 		return
@@ -1492,7 +1520,7 @@ function ConsiderNeutralItems(tBlacklist)
 		return
 	elseif itemName == "item_psychic_headband" then
 		if IsSeriouslyRetreating(npcBot) then
-			local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
+			tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
 			if #tableNearbyEnemyHeroes > 0 then
 				if CanCastNeutralItemOnTarget(tableNearbyEnemyHeroes[1]) then
 					npcBot:Action_UseAbilityOnEntity(item,tableNearbyEnemyHeroes[1])
@@ -1503,7 +1531,7 @@ function ConsiderNeutralItems(tBlacklist)
 		return
 	elseif itemName == "item_crippling_crossbow" then
 		if npcBot:GetActiveMode() == BOT_MODE_ATTACK then
-			local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
+			tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
 			if #tableNearbyEnemyHeroes > 0 then
 				for _, npcEnemy in pairs(tableNearbyEnemyHeroes) do
 					if npcBot:GetTarget() == npcEnemy and CanCastNeutralItemOnTarget(npcEnemy) then
@@ -1515,11 +1543,19 @@ function ConsiderNeutralItems(tBlacklist)
 		end
 		return
 	elseif itemName == "item_outworld_staff" then
-		return
-	elseif itemName == "item_psychic_headband" then
+		local tableIncomingProjectiles = npcBot:GetIncomingTrackingProjectiles()
+		for _,p in pairs( tableIncomingProjectiles )
+		do
+			if p.ability ~= nil and p.caster ~=nil and p.caster:IsHero() then
+				local stunTime = p.ability:GetSpecialValueFloat("stun_duration") or p.ability:GetSpecialValueFloat("rocket_stun_duration") or 0
+				if stunTime > 0 then
+					npcBot:Action_UseAbility(item)
+				end
+			end
+		end
 		return
 	elseif itemName == "item_pyrrhic_cloak" then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+50, true, BOT_MODE_NONE )
+		tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+50, true, BOT_MODE_NONE )
 		local mxcap=0
 		local mxTarget=nil
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -1538,7 +1574,7 @@ function ConsiderNeutralItems(tBlacklist)
 				return
 			end
 		end
-	
+
 		if #tableNearbyEnemyHeroes > 0 and (npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
 		and((npcBot:GetActiveMode() == BOT_MODE_ATTACK and #tableNearbyEnemyHeroes > 1)
 		or npcBot:GetActiveMode() == BOT_MODE_RETREAT)) then
@@ -1550,11 +1586,11 @@ function ConsiderNeutralItems(tBlacklist)
 		return
 	elseif itemName == "item_fallen_sky" then
 		local nRadius = 315
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
+		tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
 		if #tableNearbyEnemyHeroes > 0 then
 			for _, npcEnemy in pairs(tableNearbyEnemyHeroes) do
 				if CanCastNeutralItemOnTarget(npcEnemy) then
-					local locationAoE = CachedFindAoELocation( npcBot, 60005, true, true, npcEnemy:GetLocation(), nCastRange, nRadius, 0, 0 )
+					local locationAoE = CachedFindAoELocation( npcBot, 60006, true, true, npcEnemy:GetLocation(), nCastRange, nRadius, 0, 0 )
 					if locationAoE.count > 2 then
 						npcBot:Action_UseAbilityOnLocation(item,locationAoE.targetloc)
 						return
@@ -1566,7 +1602,10 @@ function ConsiderNeutralItems(tBlacklist)
 		end
 		return
 	elseif itemName == "item_minotaur_horn" then
-		if IsSeriouslyRetreating(npcBot) then
+		if IsSeriouslyRetreating(npcBot)
+		or (npcBot:GetActiveMode() == BOT_MODE_ATTACK
+		and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
+		and #tableNearbyEnemyHeroes > 2) then
 			npcBot:Action_UseAbility(item)
 			return
 		end
@@ -1578,7 +1617,7 @@ function ConsiderNeutralItems(tBlacklist)
 		end
 		return
 	elseif itemName == "item_demonicon" then
-		if npcBot:GetActiveMode() == BOT_MODE_ATTACK then
+		if npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH then
 			npcBot:Action_UseAbility(item)
 		end
 	end
