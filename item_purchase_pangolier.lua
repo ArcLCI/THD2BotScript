@@ -42,8 +42,9 @@ local tableItemsToBuy = {
 
 				"item_mushroom",
 				"item_mushroom",
+				"item_mushroom",
+					"item_recipe_jiaokeshu",
 					"item_recipe_touhou_banana",
-				"item_wind_amulet",
 				"item_sailor_suit",
 				"item_pant",
 					"item_recipe_diary",

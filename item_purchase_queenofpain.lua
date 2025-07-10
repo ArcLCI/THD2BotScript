@@ -4,6 +4,21 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 local tableItemsToBuy = {
 				"item_broom",
+				"item_wind_amulet",
+					"item_recipe_horse_red",
+
+				"item_knife",
+				"item_rocket_diagram",
+					"item_recipe_rocket",
+					"item_recipe_rocket",
+					"item_recipe_rocket",
+					"item_recipe_rocket",
+					"item_recipe_rocket",
+
+				"item_hammer",
+				"item_cat_ear",
+				"item_cherry_leaf",
+				"item_recipe_tentacle",
 
 				"item_violin",
 				"item_rocket_diagram",
@@ -12,21 +27,18 @@ local tableItemsToBuy = {
 				"item_gran_grimoire",
 				"item_recipe_nuetrident",
 
-				"item_recipe_gap_creator",
-
 				"item_frog",
 				"item_juice",
 				"item_magic_guide_book",
 					"item_recipe_eyunzhifu",
-				"item_hammer",
-				"item_cat_ear",
-				"item_cherry_leaf",
-				"item_recipe_tentacle",
 					"item_recipe_morenjingjuan",
+
+				"item_horse_king_compressor",
+				"item_recipe_horse_king",
 
 				"item_gran_grimoire",
 				"item_gran_grimoire",
-				"item_recipe_bagua",
+					 "item_recipe_bagua",
 
 				"item_cat_foot",
 				"item_paper_mask",
@@ -35,15 +47,10 @@ local tableItemsToBuy = {
 					"item_recipe_wanbaochui",
 					"item_recipe_wanbaochui2",
 
-				"item_baozi",
-				"item_sake",
-				"item_ice_block",
-					"item_recipe_hakurei_amulet",
-
-				"item_god_hand",
-				"item_god_hand",
-					"item_recipe_loneliness",
-
+				"item_silver_knife",
+				"item_paper_mask",
+				"item_cat_foot",
+				"item_recipe_ganggenier",
 			}
 
 

@@ -527,7 +527,7 @@ function ConsiderItemStun( item_stun )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		local j_time=0.2
-		if IsRocket( item_stun:GetName() ) then j_time = 0.7 end
+		if IsRocket( item_stun:GetName() ) then j_time = 0.5 end
 		if GetModifiersTimeLeft( npcEnemy, ModifierNamesStun ) < j_time then
 			if ( npcBot:GetTarget() == npcEnemy
 			and CanCastStunOnTarget( npcEnemy )
@@ -572,7 +572,7 @@ function ConsiderItemRoot( item_root )
 	do
 		if ( npcBot:GetTarget() == npcEnemy
 		and CanCastStunOnTarget( npcEnemy )
-		and not (npcEnemy:IsStunned() or npcEnemy:IsRooted()))
+		and not (npcEnemy:IsStunned() or npcEnemy:IsRooted() or npcEnemy:HasModifier("modifier_item_morenjingjuan_antiblink")))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy
 		end

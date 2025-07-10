@@ -67,7 +67,7 @@ function X.DemonThink(owner, hMinionUnit)
     ownerBot = owner
     if IsKeyWordUnit("necronomicon",hMinionUnit) then
 
-         if IsKeyWordUnit("necronomicon_archer",hMinionUnit) then
+        --[[if IsKeyWordUnit("necronomicon_archer",hMinionUnit) then
             local abilityPurge = hMinionUnit:FindAbilityByName("necronomicon_archer_purge")
             local nCastRange = abilityPurge:GetCastRange()
             local tableNearbyEnemyHeroes = CachedGetNearbyHeroes(hMinionUnit, nCastRange, true, BOT_MODE_NONE)
@@ -76,13 +76,11 @@ function X.DemonThink(owner, hMinionUnit)
                 for _, enemy in pairs(tableNearbyEnemyHeroes) do
                     if ownerBot:GetActiveMode() == BOT_MODE_ATTACK and ownerBot:GetTarget() == enemy then
                         hMinionUnit:Action_UseAbilityOnEntity(abilityPurge,enemy)
-                        return
                     end
                 end
                 hMinionUnit:Action_UseAbilityOnEntity(abilityPurge,tableNearbyEnemyHeroes[1])
-                return
             end
-        end
+        end]]--
         hMinionUnit.attack_desire, hMinionUnit.attack_target = ConsiderAttack(hMinionUnit)
         if ConsiderRetreat(hMinionUnit, hMinionUnit.attack_target) then return end
 
