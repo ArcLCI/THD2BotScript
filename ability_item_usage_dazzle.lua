@@ -23,6 +23,8 @@ function MyItemUsageThink()
 					IsItemAvailable( "item_rocket_5" )
 
 	local item_moon_bow  = IsItemAvailable( "item_moon_bow" )
+	local item_root = IsItemAvailable( "item_tentacle" )
+	local item_morenjingjuan = IsItemAvailable( "item_morenjingjuan" )
 
 	local item_horse_red = IsItemAvailable( "item_horse_red" )
 	local item_horse_king = IsItemAvailable( "item_horse_king")
@@ -31,16 +33,34 @@ function MyItemUsageThink()
 
 	if ( item_rocket~=nil and item_rocket:IsFullyCastable() )
 	then
-		castItemStunDesire, castItemStunTarget = ConsiderItemStun( item_rocket )
+		local castItemStunDesire, castItemStunTarget = ConsiderItemStun( item_rocket )
 		if ( castItemStunDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity( item_rocket, castItemStunTarget )
 			return
 		end
 	end
+	if ( item_root~=nil and item_root:IsFullyCastable() )
+	then
+		local castItemRootDesire, castItemRootTarget = ConsiderItemRoot( item_root )
+		if ( castItemRootDesire > 0 )
+		then
+			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget )
+			return
+		end
+	end
+	if ( item_morenjingjuan~=nil and item_morenjingjuan:IsFullyCastable() )
+	then
+		local castItemMoRenDesire, castItemMoRenTarget = ConsiderItemRoot( item_morenjingjuan )
+		if ( castItemMoRenDesire > 0 )
+		then
+			npcBot:Action_UseAbilityOnEntity( item_morenjingjuan, castItemMoRenTarget )
+			return
+		end
+	end
 	if ( item_moon_bow~=nil and item_moon_bow:IsFullyCastable() )
 	then 
-		castItemMoonBowDesire, castItemMoonBowTarget = ConsiderItemMoonBow( item_moon_bow )
+		local castItemMoonBowDesire, castItemMoonBowTarget = ConsiderItemMoonBow( item_moon_bow )
 		if ( castItemMoonBowDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnLocation( item_moon_bow, castItemMoonBowTarget)
@@ -59,7 +79,7 @@ function MyItemUsageThink()
 
 	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
 	then
-		castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
+		local castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
 		if ( castItemHorseKingDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_horse_king )
@@ -69,7 +89,7 @@ function MyItemUsageThink()
 	
 	if ( item_yukkuri_stick~=nil and item_yukkuri_stick:IsFullyCastable() )
 	then
-		castItemYukkuriStickDesire, castItemYukkuriStickTarget = ConsiderItemYukkuriStick( item_yukkuri_stick )
+		local castItemYukkuriStickDesire, castItemYukkuriStickTarget = ConsiderItemYukkuriStick( item_yukkuri_stick )
 		if ( castItemYukkuriStickDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity( item_yukkuri_stick, castItemYukkuriStickTarget )

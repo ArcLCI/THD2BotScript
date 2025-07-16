@@ -111,11 +111,11 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 	end
 
 	--prevent drop items from stash
-	if not ( GetSwitchableInventoryAmount(npcBot) > 0 )
+	--[[if not ( GetSwitchableInventoryAmount(npcBot) > 0 )
 	then
 		npcBot:SetNextItemPurchaseValue( 0 )
 		return -1
-	end
+	end]]--
 
 	local sNextItem = tableItemsToBuy[GetNowEquipment(runnerSeed)]
 
