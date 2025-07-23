@@ -3,11 +3,15 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 local tableItemsToBuy = {}
 
-if RandomInt(1,100) > 70 then
+if RandomInt(1,100) < 70 then
 	tableItemsToBuy = {
 				"item_broom",
 				"item_wind_amulet",
 				"item_recipe_horse_red",
+
+				"item_throwing_knive",
+				"item_scissors",
+				"item_wind_amulet",
 
 				"item_knife",
 				"item_rocket_diagram",
@@ -53,6 +57,10 @@ else
 				"item_broom",
 				"item_wind_amulet",
 				"item_recipe_horse_red",
+
+				"item_throwing_knive",
+				"item_scissors",
+				"item_wind_amulet",
 
 				"item_knife",
 				"item_rocket_diagram",
@@ -115,6 +123,10 @@ function ItemPurchaseThink()
 		table.insert(tableItemsToBuy,tableEdible[randIndex])
 	end
 	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)
+
+	if npcBot:FindItemSlot("item_bagua") >=0 and npcBot:FindItemSlot("item_leiyunzhiyuchuan") >=0 then
+		npcBot:ActionImmediate_SellItem(npcBot:GetItemInSlot(npcBot:FindItemSlot("item_leiyunzhiyuchuan")))
+	end
 end
 
 ----------------------------------------------------------------------------------------------------

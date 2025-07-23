@@ -2,7 +2,7 @@ local Push = {}
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 local pingTimeDelta = 5
-local StartToPushTime = 13 * 60 -- after x mins, start considering to push.
+local StartToPushTime = 9 * 60 -- after x mins, start considering to push.
 local weAreStronger = false
 local nEffctiveEnemyHeroesNearPushLoc = 0
 local teamAveLvl = 0
@@ -15,7 +15,7 @@ local BOT_MODE_DESIRE_EXTRA_LOW = 0.02
 function Push.GetPushDesire(bot, lane)
     if bot.laneToPush == nil then bot.laneToPush = lane end
 
-    local nMaxDesire = 0.82
+    local nMaxDesire = 0.9
     local nSearchRange = 2000
     local botActiveMode = bot:GetActiveMode()
     local nModeDesire = bot:GetActiveModeDesire()
@@ -35,11 +35,8 @@ function Push.GetPushDesire(bot, lane)
 
     -- do not push too early.
     local currentTime = DotaTime()
-    if GetGameMode() == 23 then
-        currentTime = currentTime * 2
-    end
 
-	if (not bMyLane and J.IsInLaningPhase())
+	if (bot:GetAssignedLane() == LANE_MID and J.IsInLaningPhase())
     or (J.IsDoingRoshan(bot) and #J.GetAlliesNearLoc(J.GetCurrentRoshanLocation(), 2800) >= 3)
 	then
 		return BOT_MODE_DESIRE_EXTRA_LOW
@@ -48,7 +45,7 @@ function Push.GetPushDesire(bot, lane)
 	for i = 1, #GetTeamPlayers( GetTeam() )
     do
 		local member = GetTeamMember(i)
-        if member ~= nil and member:GetLevel() < 6 then return BOT_MODE_DESIRE_EXTRA_LOW end
+        if member ~= nil and member:GetLevel() < 7 then return BOT_MODE_DESIRE_EXTRA_LOW end
     end
 
     weAreStronger = J.WeAreStronger(bot, nSearchRange)
@@ -64,14 +61,6 @@ function Push.GetPushDesire(bot, lane)
     or #nInRangeAlly <= 1 and #nInRangeEnemy > 0
     then
         return BOT_MODE_DESIRE_EXTRA_LOW
-    end
-
-    local nH, _ = J.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam())
-    if nH > 0 then
-        if currentTime <= StartToPushTime
-        then
-            return BOT_MODE_DESIRE_EXTRA_LOW
-        end
     end
 
 	if J.IsDefending(bot) and nModeDesire >= 0.8
@@ -136,19 +125,11 @@ function Push.GetPushDesire(bot, lane)
     or ((J.IsLateGame() and isCurrentLanePushLane) or isMidOrEarlyGame)
     then
         if eAliveCount == 0
-        or aAliveCount >= eAliveCount + 2
+        or aAliveCount >= eAliveCount
         then
             if J.DoesTeamHaveAegis() then
                 nPushDesire = nPushDesire + 0.3
             end
-
-            if aAliveCount >= eAliveCount
-            and J.GetAverageLevel(GetTeam()) >= 12
-            then
-                local teamNetworth, enemyNetworth = J.GetInventoryNetworth()
-                nPushDesire = nPushDesire + RemapValClamped(teamNetworth - enemyNetworth, 5000, 15000, 0.0, 1.0)
-            end
-
             return RemapValClamped(nPushDesire, 0, 1, 0, nMaxDesire)
         end
     end
@@ -167,7 +148,8 @@ function Push.WhichLaneToPush(bot, lane)
     local vLaneFrontLocationBot = GetLaneFrontLocation(GetTeam(), LANE_BOT, 0)
 
     -- distance and enemy scores; should more likely to consider a lane closest to a human/core
-    for i = 1, 5 do
+    local members = GetTeamPlayers(GetTeam())
+    for i = 1, #members do
         local member = GetTeamMember(i)
         if J.IsValidHero(member) then
             local topDist = GetUnitToLocationDistance(member, vLaneFrontLocationTop)
@@ -322,7 +304,7 @@ function Push.PushThink(bot, lane)
     local nRange = math.min(700 + botAttackRange, 1600)
 
     local nCreeps = bot:GetNearbyLaneCreeps(nRange, true)
-    if bot:GetLevel() >= 15 then
+    if bot:GetLevel() >= 12 then
         nCreeps = bot:GetNearbyCreeps(nRange, true)
     end
     nCreeps = Push.GetSpecialUnitsNearby(bot, nCreeps, nRange)
@@ -619,6 +601,7 @@ function Push.HasBackdoorProtect(target)
         or target:HasModifier('modifier_backdoor_protection')
         or target:HasModifier('modifier_backdoor_protection_in_base')
         or target:HasModifier('modifier_backdoor_protection_active')
+        or target:HasModifier('modifier_thdots_unit_anti_bd')
 end
 
 return Push

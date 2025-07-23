@@ -41,7 +41,8 @@ function MyItemUsageThink()
 		end
 	end
 	if (item_dragon_star~=nil and item_dragon_star:IsFullyCastable()) then
-        if (npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH ) or IsSeriouslyRetreating(npcBot) then
+        local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, 450, false, BOT_MODE_NONE )
+        if (npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH and #tableNearbyFriendlyHeroes > 0) or IsSeriouslyRetreating(npcBot) then
             npcBot:Action_UseAbility(item_dragon_star)
             return
         end

@@ -48,7 +48,6 @@ function GetDesire()
 		attackDamage = attackDamage + 30
 	end
 
-	currentTime = currentTime * 1.65
 	if currentTime < 0 then return BOT_ACTION_DESIRE_NONE end
 
 	if J.GetEnemiesAroundAncient(bot, 3200) > 0 then
@@ -82,7 +81,7 @@ function GetDesire()
 	if currentTime <= 10 then return 0.268 end
 	if currentTime <= 9 * 60 and botLV <= 7 then return 0.446 end
 	if currentTime <= 12 * 60 and botLV <= 11 then return 0.369 end
-	if botLV <= 15 and J.GetAverageNetworth() < 12000 then return 0.228 end
+	if botLV <= 15 then return 0.228 end
 
 	J.Utils.GameStates.passiveLaningTime = true
 	return BOT_MODE_DESIRE_NONE

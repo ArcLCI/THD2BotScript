@@ -52,6 +52,10 @@ function J.IsValidBuilding( nTarget )
 	return J.Utils.IsValidBuilding(nTarget)
 end
 
+function J.IsValidTarget(nTarget)
+	-- NOTE: return J.Utils.IsValidUnit(nTarget) -- ideally it should be IsValidUnit, but a lot of legacy usage causing some problems.
+	return J.Utils.IsValidHero(nTarget)
+end
 ----------------------------------------------------------------
 
 function J.IsInTeamFight( bot, nRadius )
@@ -67,12 +71,52 @@ function J.IsDefending( bot )
 		or mode == BOT_MODE_DEFEND_TOWER_BOT
 end
 
+function J.IsAttacking( bot )
+
+	local nAnimActivity = bot:GetAnimActivity()
+
+	if nAnimActivity ~= ACTIVITY_ATTACK
+		and nAnimActivity ~= ACTIVITY_ATTACK2
+	then
+		return false
+	end
+	if bot:GetAttackPoint() > bot:GetAnimCycle() * 0.99
+	then
+		return true
+	end
+
+	return false
+end
+
+function J.IsRetreating( bot )
+
+	local mode = bot:GetActiveMode()
+	local modeDesire = bot:GetActiveModeDesire()
+	local bDamagedByAnyHero = bot:WasRecentlyDamagedByAnyHero( 2.0 )
+
+	return ( mode == BOT_MODE_RETREAT and modeDesire > BOT_MODE_DESIRE_MODERATE and bot:DistanceFromFountain() > 0 )
+		 or ( mode == BOT_MODE_EVASIVE_MANEUVERS and bDamagedByAnyHero )
+		 or ( mode == BOT_MODE_FARM and modeDesire > BOT_MODE_DESIRE_ABSOLUTE )
+		
+end
+
+function J.IsGoingOnSomeone( bot )
+
+	local mode = bot:GetActiveMode()
+
+	return mode == BOT_MODE_ROAM
+		or mode == BOT_MODE_TEAM_ROAM
+		or mode == BOT_MODE_GANK
+		or mode == BOT_MODE_ATTACK
+		or mode == BOT_MODE_DEFEND_ALLY
+
+end
+
 ----------------------------------------------------------------
 
 --- DotaTime 相关方法库 ---
 function J.IsInLaningPhase()
-	return DotaTime() < 12 * 60
-	and GetBot():GetNetWorth() < 5000
+	return DotaTime() < 8 * 60
 end
 
 function J.CheckTimeOfDay()
@@ -97,21 +141,21 @@ function J.GetMP( bot )
 end
 
 function J.IsEarlyGame()
-	if DotaTime() < 12 * 60 then
+	if DotaTime() < 8 * 60 then
 		return true
 	end
 	return false
 end
 
 function J.IsMidGame()
-	if DotaTime() > 12 * 60 and DotaTime() < 24 * 60 then
+	if DotaTime() > 8 * 60 and DotaTime() < 18 * 60 then
 		return true
 	end
 	return false
 end
 
 function J.IsLateGame()
-	if DotaTime() > 24 * 60 then
+	if DotaTime() > 18 * 60 then
 		return true
 	end
 	return false

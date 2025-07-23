@@ -19,7 +19,6 @@ function Defend.GetDefendDesire(bot, lane)
 	if bot.DefendLaneDesire == nil then bot.DefendLaneDesire = {0, 0, 0} end
 
 	currentTime = DotaTime()
-	if GetGameMode() == 23 then currentTime = currentTime * 1.65 end
 
 	weAreStronger = false
 	defendLoc = GetLaneFrontLocation( bot:GetTeam(), lane, 0 )
@@ -102,7 +101,7 @@ function Defend.GetDefendDesireHelper(bot, lane)
 	-- 避免特殊情况还坚持防守
 	if #nInRangeEnemy > 0 and distanceToDefendLoc < 1200
 	or bot:GetLevel() < 3
-	or (bot:GetAssignedLane() ~= lane and 7 * 60)
+	or (bot:GetAssignedLane() == LANE_MID and bot:GetLevel() < 10)
 	or (J.IsDoingRoshan(bot) and #J.GetAlliesNearLoc(J.GetCurrentRoshanLocation(), 2800) >= 3)
 	then
 		return BOT_MODE_DESIRE_NONE
@@ -120,13 +119,13 @@ function Defend.GetDefendDesireHelper(bot, lane)
 		end
 	end
 
-	-- 非关键性建筑，没tp没蓝，不防守
-	if (currentTime < 6 * 60 and bot:GetNetWorth() < 7000)
+	-- 非关键性建筑，没tp，不防守
+	if (currentTime < 4 * 60 )
 	and bot:GetAssignedLane() ~= lane
 	and distanceToDefendLoc > nSearchRange * 2
 	and nBuildingfTier < 2
 	then
-		if not J.CanCastAbility(tpScoll) or J.GetMP(bot) < 0.45 then
+		if not J.CanCastAbility(tpScoll) then
 			return BOT_MODE_DESIRE_NONE
 		end
 	end
@@ -136,7 +135,7 @@ function Defend.GetDefendDesireHelper(bot, lane)
 	-- 如果不在当前线上，且等级低，不防守
 	local botLevel = bot:GetLevel()
 	if bot:GetAssignedLane() ~= lane
-	and distanceToDefendLoc > 3000 and botLevel < 6 then
+	and distanceToDefendLoc > 3000 and botLevel < 5 then
 	return BOT_MODE_DESIRE_NONE
 	end
 
