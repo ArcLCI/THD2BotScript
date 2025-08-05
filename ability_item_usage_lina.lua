@@ -24,7 +24,7 @@ function MyItemUsageThink()
 					IsItemAvailable( "item_rocket_4" ) or
 					IsItemAvailable( "item_rocket_5" )
 
-	local item_root = IsItemAvailable( "item_tentacle" )
+	local item_root = IsItemAvailable( "item_tentacle" ) or IsItemAvailable( "item_morenjingjuan" )
 	local item_slow = IsItemAvailable( "item_zaiezhizhurenxing" ) or
 						IsItemAvailable( "item_jiao_shou" )
 

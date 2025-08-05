@@ -1,3 +1,4 @@
+require(GetScriptDirectory() ..  "/thd2_item_recipe_list")
 
 function FindItem(item_name)
     local npcBot = GetBot()
@@ -10,6 +11,10 @@ function FindItem(item_name)
         end
     end
     return
+end
+
+function GetEquipmentMaxNum(tPurchaseList)
+	return #GetFullPurchaseList(tPurchaseList)
 end
 
 local run_checker = {}
@@ -55,12 +60,17 @@ local last_purchase = {}
 local last_purchased = {}
 
 function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
-	
+
+	local tableItemsToBuyFullList = GetFullPurchaseList(tableItemsToBuy)
+	if not tableItemsToBuyFullList then
+		return -1
+	end
+
 	if not last_purchased[runnerSeedID] then
 		if last_purchase[runnerSeedID] == nil then
 			last_purchase[runnerSeedID] = RealTime() + GetBot():GetPlayerID()*0.1
 		end
-		
+
 		if last_purchase[runnerSeedID] + 5 < RealTime() then
 			-- print(runnerSeedID .. ' still thinking.')
 			last_purchase[runnerSeedID] = RealTime()
@@ -68,12 +78,12 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 			return -1
 		end
 	end
-	
+
 	local npcBot = GetBot()
 	local nextPurchase
-		
+
 	--basic checking
-	if runnerSeedIDCounter[runnerSeedID] == nil then 
+	if runnerSeedIDCounter[runnerSeedID] == nil then
 		print('=========')
 		print('New Consider Item Purchase.')
 		print(runnerSeedID)
@@ -87,24 +97,24 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 		end
 		lastrunnerSeedID[npcBot:GetPlayerID()] = runnerSeedID
 	end
-	
-	if runnerSeedIDCounter[runnerSeedID] == false then 
+
+	if runnerSeedIDCounter[runnerSeedID] == false then
 		npcBot:SetNextItemPurchaseValue( 0 )
 		return -1
 	end
-	
+
 	--basic checking end
-	
+
 	local runnerSeed = npcBot:GetPlayerID() *100 + npcBot:GetTeam()
 	-- notice: old runnerSeedID will cancel when old entity erased(like medicine R)
 	-- don't use SeedID to recognize caster, create own seed instead
-	if FixMultiTriggedScript(runnerSeed) == false then 
+	if FixMultiTriggedScript(runnerSeed) == false then
 		npcBot:SetNextItemPurchaseValue( 0 )
 		return -1
 	end
 
 	--print(GetNowEquipment(runnerSeed))
-	if ( #tableItemsToBuy < GetNowEquipment(runnerSeed) )
+	if ( #tableItemsToBuyFullList < GetNowEquipment(runnerSeed) )
 	then
 		npcBot:SetNextItemPurchaseValue( 0 )
 		return -1
@@ -117,14 +127,14 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 		return -1
 	end]]--
 
-	local sNextItem = tableItemsToBuy[GetNowEquipment(runnerSeed)]
+	local sNextItem = tableItemsToBuyFullList[GetNowEquipment(runnerSeed)]
 
 	if ( npcBot:GetGold() >= GetItemCost( sNextItem ) )
 	then
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchasing "..sNextItem)
 		npcBot:ActionImmediate_PurchaseItem( sNextItem )
 		nextPurchase = NextEquipment(runnerSeed)
-		sNextItem = tableItemsToBuy[nextPurchase]
+		sNextItem = tableItemsToBuyFullList[nextPurchase]
 		if sNextItem ~= nil then
 			npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
 			print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)

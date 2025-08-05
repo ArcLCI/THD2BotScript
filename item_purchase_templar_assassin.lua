@@ -4,98 +4,28 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 local tableItemsToBuy = {}
 if RandomInt(1,100) > 50 then
 	tableItemsToBuy = {
-				"item_broom",
-				"item_wind_amulet",
-					"item_recipe_horse_red",
-
-				"item_juice",
-				"item_bird",
-				"item_aunt_clothes",
-				"item_sake",
-				"item_sake",
-					"item_recipe_yueyaomishi",
-
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-				"item_baozi",
-				"item_sake",
-				"item_zun_hat",
-					"item_recipe_nuclear_stick",
-
-				"item_horse_king_compressor",
-				"item_recipe_horse_king",
-
-				"item_ice_block",
-				"item_knife",
-					"item_recipe_dragon_star",
-
-                "item_gran_grimoire",
-                "item_gran_grimoire",
-                "item_recipe_bagua",
-
-                "item_cat_foot",
-				"item_paper_mask",
-				"item_rocket_diagram",
-				"item_zun_hat",
-					"item_recipe_wanbaochui",
-
-                "item_recipe_wanbaochui2",
-
-				"item_god_hand",
-				"item_god_hand",
-					"item_recipe_loneliness",
+	"item_horse_red",
+	"item_yueyaomishi",
+	"item_nuclear_stick",
+	"item_horse_king_compressor",
+	"item_recipe_horse_king",
+	"item_dragon_star",
+    "item_bagua",
+    "item_wanbaochui2",
+	"item_loneliness",
 	}
 else
 	tableItemsToBuy = {
-				"item_broom",
-				"item_wind_amulet",
-					"item_recipe_horse_red",
-
-				"item_juice",
-				"item_bird",
-				"item_aunt_clothes",
-				"item_sake",
-				"item_sake",
-					"item_recipe_yueyaomishi",
-
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-				"item_baozi",
-				"item_sake",
-				"item_zun_hat",
-					"item_recipe_nuclear_stick",
-
-                "item_gran_grimoire",
-                "item_gran_grimoire",
-                "item_recipe_bagua",
-
-				"item_horse_king_compressor",
-				"item_recipe_horse_king",
-
-                "item_cat_foot",
-				"item_paper_mask",
-				"item_rocket_diagram",
-				"item_zun_hat",
-					"item_recipe_wanbaochui",
-
-                "item_magic_guide_book",
-				"item_gran_grimoire",
-				"item_sake",
-					"item_recipe_yukkuri_stick",
-
-                "item_recipe_wanbaochui2",
-
-				"item_god_hand",
-				"item_god_hand",
-				"item_recipe_loneliness",
+	"item_horse_red",
+	"item_yueyaomishi",
+	"item_nuclear_stick",
+    "item_bagua",
+	"item_horse_king_compressor",
+	"item_recipe_horse_king",
+	"item_wanbaochui",
+	"item_yukkuri_stick",
+	"item_recipe_wanbaochui2",
+	"item_loneliness",
 	}
 end
 ----------------------------------------------------------------------------------------------------
@@ -111,7 +41,7 @@ function ItemPurchaseThink()
 	local npcBot = GetBot()
 	local randIndex = RandomInt(1,3)
 	local tableEdible = {"item_mushroom_pie_immediate","item_mushroom_kebab_immediate","item_mushroom_soup_immediate"}
-	if DotaTime() > 0 and next_purchase > 0 and #tableItemsToBuy < next_purchase then
+	if DotaTime() > 0 and next_purchase > 0 and GetEquipmentMaxNum(tableItemsToBuy) < next_purchase then
 		table.insert(tableItemsToBuy,tableEdible[randIndex])
 	end
 	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)

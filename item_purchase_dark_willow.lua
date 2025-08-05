@@ -2,59 +2,17 @@
 require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
-local tableItemsToBuy = { 
-				"item_broom",
-					"item_recipe_9ball",
-					
-				"item_knife",
-				"item_rocket_diagram",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-				
-				"item_pant",
-				"item_pant",
-				"item_violin",
-				"item_paper_mask",
-				
-				"item_frog",
-				"item_juice",
-				"item_magic_guide_book",
-					"item_recipe_eyunzhifu",
-				"item_hammer",
-				"item_cat_ear",
-				"item_cherry_leaf",
-				"item_recipe_tentacle",
-					"item_recipe_morenjingjuan",
-				
-				"item_ice_block",
-					"item_recipe_wanmeitiaoyuezhuangzhi",
-				
-				"item_baozi",
-				"item_sake",
-				"item_zun_hat",
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-					"item_recipe_nuclear_stick",
-				
-				"item_cat_foot",
-				"item_paper_mask",
-				"item_rocket_diagram",
-				"item_zun_hat",
-					"item_recipe_wanbaochui",
-					"item_recipe_wanbaochui2",
-				
-				"item_god_hand",
-				"item_god_hand",
-					"item_recipe_loneliness",
-			}
-
+local tableItemsToBuy = {
+	"item_9ball",
+	"item_rocket",
+	"item_repentancestick",
+	"item_morenjingjuan",
+	"item_ice_block",
+	"item_recipe_wanmeitiaoyuezhuangzhi",
+	"item_nuclear_stick",
+	"item_wanbaochui2",
+	"item_loneliness"
+}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -68,7 +26,7 @@ function ItemPurchaseThink()
 	local npcBot = GetBot()
 	local randIndex = RandomInt(1,3)
 	local tableEdible = {"item_mushroom_pie_immediate","item_mushroom_kebab_immediate","item_mushroom_soup_immediate"}
-	if DotaTime() > 0 and next_purchase > 0 and #tableItemsToBuy < next_purchase then
+	if DotaTime() > 0 and next_purchase > 0 and GetEquipmentMaxNum(tableItemsToBuy) < next_purchase then
 		table.insert(tableItemsToBuy,tableEdible[2])
 	end
 	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)

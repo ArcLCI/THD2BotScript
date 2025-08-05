@@ -8,24 +8,23 @@ cast04Desire = 0
 cast05Desire = 0
 
 function MyItemUsageThink()
-	
+
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
-	
+
 	local item_ghost = IsItemAvailable( "item_ghost_balloon" )
 	local item_weijin = IsItemAvailable( "item_xuenvdeweijin" )
+	local item_kafziel = IsItemAvailable( "item_kafziel" )
 	local item_horse_red = IsItemAvailable( "item_horse_red" )
-	local item_horse_green = IsItemAvailable( "item_horse_green" )
-	local item_horse_blue = IsItemAvailable( "item_horse_blue" )
 	local item_horse_king = IsItemAvailable( "item_horse_king")
-	
+
 	if ( item_ghost~=nil and item_ghost:IsFullyCastable() )
-	then 
+	then
 		--print("stun item exist")
 		castItemGhostDesire = ConsiderItemGhost(item_ghost)
-		if ( castItemGhostDesire > 0 ) 
+		if ( castItemGhostDesire > 0 )
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbility( item_ghost )
@@ -34,58 +33,66 @@ function MyItemUsageThink()
 	end
 
 	if ( item_weijin~=nil and item_weijin:IsFullyCastable() )
-	then 
+	then
 		--print("stun item exist")
 		castItemWeijinDesire = ConsiderItemWeiJin(item_weijin)
-		if ( castItemWeijinDesire > 0 ) 
+		if ( castItemWeijinDesire > 0 )
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbility( item_weijin )
 			return
 		end
 	end
-	
+	if ( item_kafziel~=nil and item_kafziel:IsFullyCastable() )
+	then
+		local castItemKafzielDesire, castItemKafzielTarget = ConsiderItemKafziel( item_kafziel )
+		if ( castItemKafzielDesire > 0 )
+		then
+			npcBot:Action_UseAbilityOnEntity( item_kafziel, castItemKafzielTarget )
+			return
+		end
+	end
 	local item_stand = IsItemAvailable( "item_dummy_doll1" )
 
 	if ( item_stand~=nil and item_stand:IsFullyCastable() )
-	then 
+	then
 		--print("stun item exist")
 		castItemStandDesire = ConsiderItemStand( item_stand )
-		if ( castItemStandDesire > 0 ) 
+		if ( castItemStandDesire > 0 )
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbility( item_stand )
 			return
 		end
 	end
-	
+
 	local item_speed = IsItemAvailable( "item_mystia_wings" ) or
 					IsItemAvailable( "item_brother_sharp" ) or
-					IsItemAvailable( "item_bone_flute" )	
+					IsItemAvailable( "item_bone_flute" )
 
 	if ( item_speed~=nil and item_speed:IsFullyCastable() )
-	then 
+	then
 		castItemSpeedDesire = ConsiderItemSpeed( item_speed )
-		if ( castItemSpeedDesire > 0 ) 
+		if ( castItemSpeedDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_speed )
 			return
 		end
-	end	
-	if ( item_horse_green~=nil and item_horse_green:IsFullyCastable() )
-	then 
-		castItemHorseGreenDesire = ConsiderItemHorseGreen(item_horse_green)
-		if ( castItemHorseGreenDesire > 0 ) 
+	end
+	if ( item_horse_red~=nil and item_horse_red:IsFullyCastable() )
+	then
+		castItemHorseRedDesire = ConsiderItemHorseRed(item_horse_red)
+		if ( castItemHorseRedDesire > 0 )
 		then
-			npcBot:Action_UseAbility( item_horse_green )
+			npcBot:Action_UseAbility( item_horse_red )
 			return
 		end
 	end
 
 	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
-	then 
+	then
 		castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
-		if ( castItemHorseKingDesire > 0 ) 
+		if ( castItemHorseKingDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_horse_king )
 			return
@@ -102,7 +109,7 @@ function AbilityUsageThink()
 	MyItemUsageThink()
 	ConsiderNeutralItems()
 
-	
+
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
@@ -111,25 +118,25 @@ function AbilityUsageThink()
 	ability01 = npcBot:GetAbilityByName( "ability_thdots_miyako01" )
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_miyako04" )
 	ability05 = npcBot:GetAbilityByName( "ability_thdots_miyako05" )
-	
+
 	-- Consider using each ability
 
 	cast01Desire = ConsiderAbilityMiyako01()
-	if ( cast01Desire > 0 ) 
+	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability01)
 		return
 	end
 
 	cast04Desire = ConsiderAbilityMiyako04()
-	if ( cast04Desire > 0 ) 
+	if ( cast04Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability04)
 		return
 	end
 	if npcBot:HasModifier("modifier_item_wanbaochui") then
 	cast05Desire = ConsiderAbilityMiyako05()
-		if ( cast05Desire > 0 ) 
+		if ( cast05Desire > 0 )
 		then
 			npcBot:Action_UseAbility( ability05)
 		end
@@ -154,11 +161,11 @@ function ConsiderAbilityMiyako01()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() ) 
-	then 
+	if ( not ability01:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE
 	end
-	
+
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 600, true, BOT_MODE_NONE )
 	--[[
 	--open
@@ -215,12 +222,12 @@ function ConsiderAbilityMiyako04()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability04:IsFullyCastable() ) 
-	then 
+	if ( not ability04:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE
 	end
-	
-	
+
+
 --[[
 	-- Get some of its values
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 600, true, BOT_MODE_NONE )
@@ -242,13 +249,13 @@ function ConsiderAbilityMiyako04()
 		return BOT_ACTION_DESIRE_HIGH
 	end
 --]]
-	
+
 	if ( npcBot:GetHealth() < npcBot:GetMaxHealth()*0.5 )
-	then 
+	then
 		return BOT_ACTION_DESIRE_HIGH
 	end
 	return BOT_ACTION_DESIRE_NONE
-	
+
 end
 
 
@@ -260,23 +267,23 @@ function ConsiderAbilityMiyako05()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability05:IsFullyCastable() ) 
-	then 
+	if ( not ability05:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE
 	end
-	
-	
-	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+
+
+	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1500, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcEnemy ~= nil ) 
+			if ( npcEnemy ~= nil )
 			then
 				return BOT_ACTION_DESIRE_MODERATE
 			end
 		end
 	end
-	
+
 	return BOT_ACTION_DESIRE_NONE
 end

@@ -23,7 +23,7 @@ function MyItemUsageThink()
 					IsItemAvailable( "item_jiao_shou" )
 	local item_xinyan = IsItemAvailable( "item_third_eyes" )
 	local item_morenjingjuan = IsItemAvailable( "item_morenjingjuan" )
-	local item_qijizhixing = IsItemAvailable( "item_qijizhixing" )
+	local item_qijizhixing = IsItemAvailable( "item_tuzhushen" ) or IsItemAvailable( "item_qijizhixing" )
 	local item_speed = IsItemAvailable( "item_mystia_wings" ) or
 					IsItemAvailable( "item_brother_sharp" ) or
 					IsItemAvailable( "item_bone_flute" )

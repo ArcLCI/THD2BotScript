@@ -17,11 +17,11 @@ function MyItemUsageThink()
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
-	local item_root = IsItemAvailable( "item_tentacle" )
+	local item_root = IsItemAvailable( "item_morenjingjuan" ) or IsItemAvailable( "item_tentacle" )
 	
 	if ( item_root~=nil and item_root:IsFullyCastable() )
 	then 
-		castItemRootDesire, castItemRootTarget = ConsiderItemRoot( item_root )
+		local castItemRootDesire, castItemRootTarget = ConsiderItemRoot( item_root )
 		if ( castItemRootDesire > 0 ) 
 		then
 			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget )

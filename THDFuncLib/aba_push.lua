@@ -601,7 +601,7 @@ function Push.HasBackdoorProtect(target)
         or target:HasModifier('modifier_backdoor_protection')
         or target:HasModifier('modifier_backdoor_protection_in_base')
         or target:HasModifier('modifier_backdoor_protection_active')
-        or target:HasModifier('modifier_thdots_unit_anti_bd')
+        or not target:HasModifier('modifier_thdots_anti_bd_stop')
 end
 
 return Push

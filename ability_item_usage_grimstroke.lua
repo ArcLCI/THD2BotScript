@@ -3,57 +3,52 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 
 ----------------------------------------------------------------------------------------------------
 
-cast01Desire = 0
-cast02Desire = 0
-cast03Desire = 0
-cast04Desire = 0
-castExDesire = 0
+local cast01Desire,cast02Desire,cast03Desire,cast04Desire,castExDesire = 0,0,0,0,0
+local ability01,ability02,ability03,ability04,abilityEx,cast01Target,cast02Target,cast03Target,cast04Target,castExLocation
 
 
 function MyItemUsageThink()
-	
+
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
-	
+
+	local item_horse_red = IsItemAvailable( "item_horse_red" )
+	local item_horse_king = IsItemAvailable( "item_horse_king")
+
+	if ( item_horse_red~=nil and item_horse_red:IsFullyCastable() )
+	then
+		local castItemHorseRedDesire = ConsiderItemHorseRed(item_horse_red)
+		if ( castItemHorseRedDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_horse_red )
+			return
+		end
+	end
+
+	if ( item_horse_king~=nil and item_horse_king:IsFullyCastable() )
+	then
+		local castItemHorseKingDesire = ConsiderItemHorseKing(item_horse_king)
+		if ( castItemHorseKingDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_horse_king )
+			return
+		end
+	end
+
 	local item_stand = IsItemAvailable( "item_dummy_doll1" )
 	if ( item_stand~=nil and item_stand:IsFullyCastable() )
-	then 
+	then
 		--print("stun item exist")
-		castItemStandDesire = ConsiderItemStand( item_stand )
-		if ( castItemStandDesire > 0 ) 
+		local castItemStandDesire = ConsiderItemStand( item_stand )
+		if ( castItemStandDesire > 0 )
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbility( item_stand )
 			return
 		end
 	end
-	
-	local item_slow = IsItemAvailable( "item_zaiezhizhurenxing" ) or
-					IsItemAvailable( "item_jiao_shou" )
-	if ( item_slow~=nil and item_slow:IsFullyCastable() )
-	then 
-		castItemSlowDesire, castItemSlowTarget = ConsiderItemSlow( item_slow )
-		if ( castItemSlowDesire > 0 ) 
-		then
-			npcBot:Action_UseAbilityOnLocation( item_slow, castItemSlowTarget)
-			return
-		end
-	end
-	
-	local item_speed = IsItemAvailable( "item_mystia_wings" ) or
-					IsItemAvailable( "item_brother_sharp" ) or
-					IsItemAvailable( "item_bone_flute" )
-	if ( item_speed~=nil and item_speed:IsFullyCastable() )
-	then 
-		castItemSpeedDesire = ConsiderItemSpeed( item_speed )
-		if ( castItemSpeedDesire > 0 ) 
-		then
-			npcBot:Action_UseAbility( item_speed )
-			return
-		end
-	end	
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -65,7 +60,7 @@ function AbilityUsageThink()
 	MyItemUsageThink()
 	ConsiderNeutralItems()
 
-	
+
 	local npcBot = GetBot()
 
 	-- Check if we're already using an ability
@@ -79,35 +74,35 @@ function AbilityUsageThink()
 
 	-- Consider using each ability
 	cast01Desire, cast01Target = ConsiderAbilitySeiga01()
-	if ( cast01Desire > 0 ) 
+	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability01 , cast01Target)
 		return
 	end
 
 	cast02Desire, cast02Target = ConsiderAbilitySeiga02()
-	if ( cast02Desire > 0 ) 
+	if ( cast02Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability02 , cast02Target )
 		return
 	end
 
 	cast03Desire, cast03Target = ConsiderAbilitySeiga03()
-	if ( cast03Desire > 0 ) 
+	if ( cast03Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability03, cast03Target)
 		return
 	end
 
 	cast04Desire, cast04Target = ConsiderAbilitySeiga04()
-	if ( cast04Desire > 0 ) 
+	if ( cast04Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target)
 		return
 	end
 
 	castExDesire, castExLocation = ConsiderAbilitySeigaEx()
-	if ( castExDesire > 0 ) 
+	if ( castExDesire > 0 )
 	then
 		npcBot:Action_UseAbilityOnLocation( abilityEx , castExLocation)
 		return
@@ -143,16 +138,16 @@ function ConsiderAbilitySeiga01()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() ) 
-	then 
+	if ( not ability01:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
-	
+
 	local nCastRange = 800
-	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )	
+	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
 	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 	do
-		if ( CanCastSeiga01OnTarget( npcFriend ) and 
+		if ( CanCastSeiga01OnTarget( npcFriend ) and
 			( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
 			npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
 			IsUnderAttack( npcFriend )))
@@ -170,16 +165,16 @@ function ConsiderAbilitySeiga02()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability02:IsFullyCastable() ) 
-	then 
+	if ( not ability02:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
-	
+
 	local nCastRange = 800
-	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )	
+	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )
 	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 	do
-		if ( CanCastSeiga02OnTarget( npcFriend ) and 
+		if ( CanCastSeiga02OnTarget( npcFriend ) and
 			( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
 			npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
 			IsUnderAttack( npcFriend )))
@@ -194,21 +189,21 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilitySeiga03()
-	
+
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability03:IsFullyCastable() ) 
-	then 
+	if ( not ability03:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
-	
+
 	local nCastRange = 800
 
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetTarget() == npcEnemy and CanCastSeiga03OnTarget( npcEnemy ) ) 
+			if ( npcBot:GetTarget() == npcEnemy and CanCastSeiga03OnTarget( npcEnemy ) )
 			then
 				return BOT_ACTION_DESIRE_VERYHIGH, npcEnemy
 			end
@@ -224,12 +219,12 @@ function ConsiderAbilitySeiga04()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability04:IsFullyCastable() ) 
-	then 
+	if ( not ability04:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
-	
-	
+
+
 
 	for _,npcFriend in pairs(GetUnitList(UNIT_LIST_ALLIED_HEROES))
 	do
@@ -237,19 +232,19 @@ function ConsiderAbilitySeiga04()
 		then
 			if ( npcFriend:IsAlive())
 			then
-				if ( CanCastSeiga04OnTarget( npcFriend ) and npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.3 and 
+				if ( CanCastSeiga04OnTarget( npcFriend ) and npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.3 and
 					( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
 					npcFriend:WasRecentlyDamagedByAnyHero( 1.0 ) or
-					IsUnderAttack( npcFriend ))) 
+					IsUnderAttack( npcFriend )))
 				then
 					return BOT_ACTION_DESIRE_HIGH, npcFriend
 				end
 			end
 		end
 	end
-	
+
 	return BOT_ACTION_DESIRE_NONE, nil
-	
+
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -259,14 +254,14 @@ function ConsiderAbilitySeigaEx()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not abilityEx:IsFullyCastable() ) 
-	then 
+	if ( not abilityEx:IsFullyCastable() )
+	then
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
 
 	-- Get some of its values
 	local nCastRange = 1000
-	
+
 	--[[
 	--------------------------------------
 	-- Mode based usage
@@ -291,7 +286,7 @@ function ConsiderAbilitySeigaEx()
 		end
 	end
 	--]]
-	
+
 	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
 		local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 		local v_target = - npcBot:GetLocation() + v_shop

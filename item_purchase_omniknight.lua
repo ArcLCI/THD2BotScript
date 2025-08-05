@@ -3,58 +3,16 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
 local tableItemsToBuy = {
-				"item_broom",
-					"item_recipe_9ball",
-
-				"item_knife",
-				"item_rocket_diagram",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-
-				"item_god_hand",
-				"item_god_hand",
-					"item_recipe_loneliness",
-
-				"item_baozi",
-				"item_sake",
-				"item_zun_hat",
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-					"item_recipe_nuclear_stick",
-
-				"item_scissors",
-				"item_sailor_suit",
-					"item_recipe_frock",
-
-				"item_ice_block",
-					"item_recipe_wanmeitiaoyuezhuangzhi",
-
-				"item_cat_foot",
-				"item_paper_mask",
-				"item_rocket_diagram",
-				"item_zun_hat",
-					"item_recipe_wanbaochui",
-					"item_recipe_wanbaochui2",
-
-				"item_bra",
-				"item_baozi",
-				"item_glue",
-					"item_recipe_pad",
-				"item_sailor_suit",
-				"item_juice",
-				"item_aunt_clothes",
-					"item_recipe_ghost_balloon",
-				"item_swimming_suit",
-						"item_recipe_xuenvdeweijin",
-			}
-
+	"item_9ball",
+	"item_rocket",
+	"item_loneliness",
+	"item_nuclear_stick",
+	"item_frock",
+	"item_ice_block",
+	"item_recipe_wanmeitiaoyuezhuangzhi",
+	"item_wanbaochui2",
+	"item_xuenvdeweijin",
+}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -68,7 +26,7 @@ function ItemPurchaseThink()
 	local npcBot = GetBot()
 	local randIndex = RandomInt(1,3)
 	local tableEdible = {"item_mushroom_pie_immediate","item_mushroom_kebab_immediate","item_mushroom_soup_immediate"}
-	if DotaTime() > 0 and next_purchase > 0 and #tableItemsToBuy < next_purchase then
+	if DotaTime() > 0 and next_purchase > 0 and GetEquipmentMaxNum(tableItemsToBuy) < next_purchase then
 		table.insert(tableItemsToBuy,tableEdible[2])
 	end
 	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)

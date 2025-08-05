@@ -3,57 +3,18 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
 local tableItemsToBuy = {
-				"item_broom",
-
-				"item_hammer",
-				"item_cat_ear",
-				"item_cherry_leaf",
-				"item_recipe_tentacle",
-
-				"item_recipe_gap_creator",
-
-				"item_knife",
-				"item_rocket_diagram",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-					"item_recipe_rocket",
-
-				"item_baozi",
-				"item_sake",
-				"item_ice_block",
-					"item_recipe_hakurei_amulet",
-
-				"item_aghanims_shard",
-
-				"item_cat_foot",
-				"item_paper_mask",
-				"item_rocket_diagram",
-				"item_zun_hat",
-					"item_recipe_wanbaochui",
-					"item_recipe_wanbaochui2",
-
-				"item_gran_grimoire",
-				"item_gran_grimoire",
-					"item_recipe_bagua",
-
-				"item_wind_amulet",
-				"item_magic_guide_book",
-					"item_recipe_doctor_doll",
-				"item_cat_ear",
-				"item_cherry_leaf",
-				"item_sailor_suit",
-					"item_recipe_jiao_shou",
-				"item_wing",
-					"item_recipe_zaiezhizhurenxing",
-
-				"item_gran_grimoire",
-				"item_gran_grimoire",
-					"item_recipe_bagua",
-
-			}
-
+	"item_broom",
+	"item_tentacle",
+	"item_recipe_gap_creator",
+	"item_rocket",
+	"item_hakurei_amulet",
+	"item_aghanims_shard",
+	"item_eyunzhifu",
+    "item_recipe_morenjingjuan",
+	"item_wanbaochui2",
+	"item_zaiezhizhurenxing",
+	"item_bagua",
+}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -67,7 +28,7 @@ function ItemPurchaseThink()
 	local npcBot = GetBot()
 	local randIndex = RandomInt(1,3)
 	local tableEdible = {"item_mushroom_pie_immediate","item_mushroom_kebab_immediate","item_mushroom_soup_immediate"}
-	if DotaTime() > 0 and next_purchase > 0 and #tableItemsToBuy < next_purchase then
+	if DotaTime() > 0 and next_purchase > 0 and GetEquipmentMaxNum(tableItemsToBuy) < next_purchase then
 		table.insert(tableItemsToBuy,tableEdible[2])
 	end
 	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)

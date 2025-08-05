@@ -3,49 +3,15 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
 local tableItemsToBuy = {
-				"item_broom",
-
-				"item_hammer",
-				"item_cat_ear",
-				"item_cherry_leaf",
-				"item_recipe_tentacle",
-
-				"item_recipe_gap_creator",
-
-				"item_wind_lace",
-				"item_sailor_suit",
-				"item_mushroom",
-				"item_cherry_branch",
-					"item_recipe_mushroom_kebab",
-					"item_recipe_mystia_wings",
-				"item_ice_block",
-					"item_recipe_bone_flute",
-
-				"item_wind_amulet",
-				"item_wind_amulet",
-					"item_recipe_luna_chip",
-					"item_paper_mask",
-						"item_recipe_zuzhoumujian",
-				"item_hammer",
-						"item_recipe_feixiangjian",
-
-				"item_scissors",
-				"item_sailor_suit",
-					"item_recipe_frock",
-
-				"item_cat_foot",
-				"item_paper_mask",
-				"item_rocket_diagram",
-				"item_zun_hat",
-					"item_recipe_wanbaochui",
-					"item_recipe_wanbaochui2",					
-
-				"item_god_hand",
-				"item_god_hand",
-					"item_recipe_loneliness",
-
-			}
-
+	"item_broom",
+	"item_tentacle",
+	"item_recipe_gap_creator",
+	"item_bone_flute",
+	"item_feixiangjian",
+	"item_frock",
+	"item_wanbaochui2",
+	"item_loneliness",
+}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -59,7 +25,7 @@ function ItemPurchaseThink()
 	local npcBot = GetBot()
 	local randIndex = RandomInt(1,2)
 	local tableEdible = {"item_mushroom_pie_immediate","item_mushroom_kebab_immediate","item_mushroom_soup_immediate"}
-	if DotaTime() > 0 and next_purchase > 0 and #tableItemsToBuy < next_purchase then
+	if DotaTime() > 0 and next_purchase > 0 and GetEquipmentMaxNum(tableItemsToBuy) < next_purchase then
 		table.insert(tableItemsToBuy,tableEdible[randIndex])
 	end
 	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)

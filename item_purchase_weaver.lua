@@ -3,62 +3,17 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
 local tableItemsToBuy = {
-				"item_broom",
-
-				"item_swimming_suit",
-				"item_cherry_leaf",
-				"item_pant",
-					"item_recipe_guilty_mask",
-				"item_mushroom",
-				"item_cherry_branch",
-					"item_recipe_mushroom_kebab",
-						"item_recipe_third_eyes",
-
-					"item_recipe_gap_creator",
-
-				"item_baozi",
-				"item_sake",
-				"item_zun_hat",
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-				"item_mushroom",
-				"item_cookbook",
-					"item_recipe_mushroom_soup",
-					"item_recipe_nuclear_stick",
-
-				"item_baozi",
-				"item_zun_hat",
-				"item_pant",
-					"item_recipe_qijizhixing",
-
-				"item_wind_lace",
-				"item_sailor_suit",
-				"item_mushroom",
-				"item_cherry_branch",
-					"item_recipe_mushroom_kebab",
-					"item_recipe_mystia_wings",
-				"item_ice_block",
-					"item_recipe_bone_flute",
-
-				"item_wind_amulet",
-				"item_magic_guide_book",
-					"item_recipe_doctor_doll",
-				"item_cat_ear",
-				"item_cherry_leaf",
-				"item_sailor_suit",
-					"item_recipe_jiao_shou",
-				"item_wing",
-					"item_recipe_zaiezhizhurenxing",
-
-				"item_cat_foot",
-				"item_paper_mask",
-				"item_rocket_diagram",
-				"item_zun_hat",
-					"item_recipe_wanbaochui",
-					"item_recipe_wanbaochui2",
-			}
-
+	"item_broom",
+	"item_third_eyes",
+	"item_recipe_gap_creator",
+	"item_nuclear_stick",
+	"item_qijizhixing",
+	"item_zaiezhizhurenxing",
+	"item_zun_glasses",
+    "item_tuzhushen_ticket_recipe",
+	"item_bone_flute",
+	"item_wanbaochui2",
+}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -72,7 +27,7 @@ function ItemPurchaseThink()
 	local npcBot = GetBot()
 	local randIndex = RandomInt(2,3)
 	local tableEdible = {"item_mushroom_pie_immediate","item_mushroom_kebab_immediate","item_mushroom_soup_immediate"}
-	if DotaTime() > 0 and next_purchase > 0 and #tableItemsToBuy < next_purchase then
+	if DotaTime() > 0 and next_purchase > 0 and GetEquipmentMaxNum(tableItemsToBuy) < next_purchase then
 		table.insert(tableItemsToBuy,tableEdible[randIndex])
 	end
 	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)
