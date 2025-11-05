@@ -230,7 +230,7 @@ function ConsiderAbilitySeiga04()
 	do
 		if ( npcFriend~=nil )
 		then
-			if ( npcFriend:IsAlive())
+			if ( npcFriend:IsAlive() and not IsPossibleIllusion(npcFriend) )
 			then
 				if ( CanCastSeiga04OnTarget( npcFriend ) and npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.3 and
 					( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
