@@ -6,12 +6,26 @@ local DireFountain = Vector( 6928, 6372, 392 )
 J.Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 J.Site = require( GetScriptDirectory()..'/THDFuncLib/aba_site')
 
+local IsModeTurbo = J.Utils.IsModeTurbo
+
+function Patch741DesireChange(desire)
+	return desire * 0.6
+end
 
 --- Item 相关方法库 ---
 function J.HasItem( bot, sItemName )
 	local Slot = bot:FindItemSlot( sItemName )
 	if Slot >= 0 and Slot <= 5 then	return true end
 	return false
+end
+
+function J.IsItemAvailable( sItemName )
+	local bot = GetBot()
+	local slot = bot:FindItemSlot( sItemName )
+	if slot >= 0 and slot <= 5
+	then
+		return bot:GetItemInSlot( slot )
+	end
 end
 
 function J.IsHaveAegis( bot )
@@ -58,11 +72,63 @@ function J.IsValidTarget(nTarget)
 end
 ----------------------------------------------------------------
 
+function J.GetSpecialModeAllies( bot, nDistance, nMode )
+
+	local allyList = {}
+	local numPlayer = GetTeamPlayers( GetTeam() )
+	for i = 1, #numPlayer
+	do
+		local member = GetTeamMember( i )
+		if member ~= nil and member:IsAlive()
+		then
+			if member:GetActiveMode() == nMode
+				and GetUnitToUnitDistance( member, bot ) <= nDistance
+			then
+				table.insert( allyList, member )
+			end
+		end
+	end
+
+	return allyList
+
+end
+
+
+function J.GetSpecialModeAlliesCount( nMode )
+
+	local allyList = J.GetSpecialModeAllies( GetBot(), 99999, nMode )
+
+	return #allyList
+
+end
+
 function J.IsInTeamFight( bot, nRadius )
 	if nRadius == nil or nRadius > 1600 then nRadius = 1600 end
 	local attackModeAllyList = J.GetNearbyHeroes(bot, nRadius, false, BOT_MODE_ATTACK )
 	return #attackModeAllyList >= 2
 end
+
+function J.GetTeamFightLocation( bot )
+	local team = GetTeam()
+	local targetLocation = nil
+	local numPlayer = GetTeamPlayers( team )
+	for i = 1, #numPlayer
+	do
+		local member = GetTeamMember( i )
+		if member ~= nil and member:IsAlive()
+			and J.IsInTeamFight( member, 1500 )
+			and J.GetEnemyCount( member, 1400 ) >= 2
+		then
+			local allyList = J.GetSpecialModeAllies( member, 1400, BOT_MODE_ATTACK )
+			targetLocation = J.GetCenterOfUnits( allyList )
+			break
+		end
+	end
+
+	return targetLocation
+
+end
+
 
 function J.IsDefending( bot )
 	local mode = bot:GetActiveMode()
@@ -270,6 +336,51 @@ function J.GetEnemiesNearLoc(vLoc, nRadius)
 	return enemies
 end
 
+function J.GetNearbyLocationToTp( nLoc )
+
+	local nTeam = GetTeam()
+	local nFountain = J.GetTeamFountain()
+
+	if J.GetLocationToLocationDistance( nLoc, nFountain ) <= 2500
+	then
+		return nLoc
+	end
+
+	local targetTower = nil
+	local minDist = 99999
+	for i=0, 10, 1 do
+		local tower = GetTower( nTeam, i )
+		if tower ~= nil
+			and GetUnitToLocationDistance( tower, nLoc ) < minDist
+		then
+			 targetTower = tower
+			 minDist = GetUnitToLocationDistance( tower, nLoc )
+		end
+	end
+
+	local watchTowerList = J.Site.GetAllWatchTower()
+	for _, watchTower in pairs( watchTowerList )
+	do
+		if watchTower ~= nil
+			and watchTower:GetTeam() == nTeam
+			and GetUnitToLocationDistance( watchTower, nLoc ) < minDist - 1300
+			and ( not J.IsEnemyHeroAroundLocation( watchTower:GetLocation(), 600 )
+					or J.IsAllyHeroAroundLocation( watchTower:GetLocation(), 600 ) )
+		then
+			 targetTower = watchTower
+			 minDist = GetUnitToLocationDistance( watchTower, nLoc ) + 1300
+		end
+	end
+
+	if targetTower ~= nil
+	then
+		return J.GetLocationTowardDistanceLocation( targetTower, nLoc, 575 )
+	end
+
+	return nFountain
+
+end
+
 function J.GetAverageLevel( bEnemy )
 	local count = 0
 	local sum = 0
@@ -301,6 +412,73 @@ function J.GetLocationToLocationDistance( fLoc, sLoc )
 	local y2 = sLoc.y
 
 	return math.sqrt( ( y2-y1 )^2 + ( x2-x1 )^2 )
+
+end
+
+function J.GetLocationTowardDistanceLocation( bot, towardLocation, nDistance )
+	local npcBotLocation = bot:GetLocation()
+	local tempVector = ( towardLocation - npcBotLocation ) / GetUnitToLocationDistance( bot, towardLocation )
+	return npcBotLocation + nDistance * tempVector
+end
+
+function J.IsAllyHeroAroundLocation( vLoc, nRadius )
+	for i = 1, #GetTeamPlayers( GetTeam() )
+	do
+		local npcAlly = GetTeamMember( i )
+		if npcAlly ~= nil
+			and npcAlly:IsAlive()
+			and GetUnitToLocationDistance( npcAlly, vLoc ) <= nRadius
+		then
+			return true
+		end
+	end
+	return false
+end
+
+
+function J.IsEnemyHeroAroundLocation( vLoc, nRadius )
+	for i, id in pairs( GetTeamPlayers( GetOpposingTeam() ) )
+	do
+		if IsHeroAlive( id ) then
+			local info = GetHeroLastSeenInfo( id )
+			if info ~= nil then
+				local dInfo = info[1]
+				if dInfo ~= nil
+					and J.GetLocationToLocationDistance( vLoc, dInfo.location ) <= nRadius
+					and dInfo.time_since_seen < 2.0
+				then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+function J.GetNearestLaneFrontLocation( nUnitLoc, bEnemy, fDeltaFromFront )
+
+	local nTeam = GetTeam()
+	if bEnemy then nTeam = GetOpposingTeam() end
+
+	local nTopLoc = GetLaneFrontLocation( nTeam, LANE_TOP, fDeltaFromFront )
+	local nMidLoc = GetLaneFrontLocation( nTeam, LANE_MID, fDeltaFromFront )
+	local nBotLoc = GetLaneFrontLocation( nTeam, LANE_BOT, fDeltaFromFront )
+
+	local nTopDist = J.GetLocationToLocationDistance( nUnitLoc, nTopLoc )
+	local nMidDist = J.GetLocationToLocationDistance( nUnitLoc, nMidLoc )
+	local nBotDist = J.GetLocationToLocationDistance( nUnitLoc, nBotLoc )
+
+	if nTopDist < nMidDist and nTopDist < nBotDist
+	then
+		return nTopLoc
+	end
+
+	if nBotDist < nMidDist and nBotDist < nTopDist
+	then
+		return nBotLoc
+	end
+
+	return nMidLoc
 
 end
 
@@ -817,11 +995,44 @@ function J.CanNotUseAction( bot )
 			or bot:IsNightmared()
 end
 
+function J.GetHeroesTargetingUnit(tUnits, hUnit)
+    local tAttackingUnits = {}
+    for _, enemyHero in pairs(tUnits) do
+        if J.IsValidHero(enemyHero)
+		and not J.IsSuspiciousIllusion(enemyHero)
+        and (enemyHero:GetAttackTarget() == hUnit or J.IsChasingTarget(enemyHero, hUnit))
+        then
+            table.insert(tAttackingUnits, enemyHero)
+        end
+    end
+
+    return tAttackingUnits
+end
+
+function J.CanKillTarget( npcTarget, dmg, dmgType )
+	if dmgType == DAMAGE_TYPE_PURE then
+		return dmg >= npcTarget:GetHealth()
+	end
+
+	return npcTarget:GetActualIncomingDamage( dmg, dmgType ) >= npcTarget:GetHealth()
+
+end
+
 function J.IsSeriouslyRetreating( npcBot )
 	return (npcBot:GetActiveMode() == BOT_MODE_RETREAT
 	and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH
 	and not npcBot:HasModifier("modifier_fountain_aura_buff"))
 	or npcBot:GetHealth()/npcBot:GetMaxHealth() < 0.1
+end
+
+function J.IsPushing( bot )
+
+	local mode = bot:GetActiveMode()
+
+	return mode == BOT_MODE_PUSH_TOWER_TOP
+		or mode == BOT_MODE_PUSH_TOWER_MID
+		or mode == BOT_MODE_PUSH_TOWER_BOT
+
 end
 
 function J.IsDoingRoshan( bot )
@@ -875,6 +1086,87 @@ function J.GetEnemyFountain()
 	else
 		return DireFountain
 	end
+end
+
+local killTime = 0.0
+function J.IsRoshanAlive()
+	if GetRoshanKillTime() > killTime
+    then
+        killTime = GetRoshanKillTime()
+    end
+
+    if GetRoshanKillTime() == 0
+	or DotaTime() - killTime > (IsModeTurbo() and (6 * 60) or (11 * 60))
+    then
+        return true
+    end
+
+    return false
+end
+
+function J.GetAttackProjectileDamageByRange( nUnit, nRadius )
+	local nDamage = 0
+	local incProj = nUnit:GetIncomingTrackingProjectiles()
+	for _, p in pairs( incProj )
+	do
+		if p.is_attack and p.caster ~= nil
+			and GetUnitToLocationDistance( nUnit, p.location ) < nRadius
+		then
+			nDamage = nDamage + p.caster:GetAttackDamage() * 1
+		end
+	end
+	return nDamage
+end
+
+
+function J.GetAllyList( bot, nRadius )
+	if nRadius > 1600 then nRadius = 1600 end
+	local nRealAllyList = {}
+	local nCandidate = J.GetNearbyHeroes(bot, nRadius, false, BOT_MODE_NONE )
+	if #nCandidate <= 1 then return nCandidate end
+
+	for _, ally in pairs( nCandidate )
+	do
+		if ally ~= nil and ally:IsAlive()
+			and not ally:IsIllusion()
+		then
+			table.insert( nRealAllyList, ally )
+		end
+	end
+	return nRealAllyList
+end
+
+
+function J.GetAllyCount( bot, nRadius )
+	local nRealAllyList = J.GetAllyList( bot, nRadius )
+	return #nRealAllyList
+end
+
+function J.GetEnemyList( bot, nRadius )
+	if nRadius > 1600 then nRadius = 1600 end
+	local nRealEnemyList = {}
+	local nCandidate = J.GetNearbyHeroes(bot, nRadius, true, BOT_MODE_NONE )
+	if nCandidate[1] == nil then return nCandidate end
+
+	for _, enemy in pairs( nCandidate )
+	do
+		if enemy ~= nil and type(enemy) == "table" and enemy:IsAlive()
+			and not J.IsSuspiciousIllusion( enemy )
+		then
+			table.insert( nRealEnemyList, enemy )
+		end
+	end
+	return nRealEnemyList
+end
+
+function J.GetEnemyCount( bot, nRadius )
+	local nRealEnemyList = J.GetEnemyList( bot, nRadius )
+	return #nRealEnemyList
+end
+
+function J.GetAroundTargetAllyHeroCount( target, nRadius )
+	local heroList = J.GetAlliesNearLoc( target:GetLocation(), nRadius )
+	return #heroList
 end
 
 return J

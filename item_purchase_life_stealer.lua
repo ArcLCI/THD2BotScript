@@ -8,9 +8,10 @@ local tableItemsToBuy = {
 	"item_recipe_gap_creator",
 	"item_ganggenier",
 	"item_loneliness",
-	"item_kafziel",
+	"item_glutton_spork",
 	"item_wanbaochui2",
 	"item_xuenvdeweijin",
+	"item_recipe_trinity"
 }
 
 ----------------------------------------------------------------------------------------------------

@@ -12,7 +12,8 @@ local tableItemsToBuy = {
 	"item_esdw",
 	"item_ganggenier",
 	"item_wanbaochui2",
-	"item_loneliness"
+	"item_loneliness",
+	"item_recipe_trinity"
 }
 
 ----------------------------------------------------------------------------------------------------

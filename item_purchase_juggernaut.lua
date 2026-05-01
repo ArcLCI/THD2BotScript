@@ -15,7 +15,7 @@ local tableItemsToBuy = {
 	"item_teeth",
 	"item_sampan",
 	"item_recipe_ertianyiliu",
-	"item_loneliness",
+	"item_trinity"
 }
 
 ----------------------------------------------------------------------------------------------------

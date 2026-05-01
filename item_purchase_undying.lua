@@ -6,10 +6,11 @@ local tableItemsToBuy = {
 	"item_broom",
 	"item_loneliness",
 	"item_recipe_gap_creator",
-	"item_kafziel",
+	"item_glutton_spork",
 	"item_xuenvdeweijin",
 	"item_nuclear_stick",
 	"item_dummy_doll1",
+	"item_recipe_trinity"
 }
 
 ----------------------------------------------------------------------------------------------------

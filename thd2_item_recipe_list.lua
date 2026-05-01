@@ -691,7 +691,7 @@ Item['item_tingshiyice'] = {
 --绯想剑
 Item['item_feixiangjian'] = {
     "item_zuzhoumujian",
-    "item_naginata",
+    "item_leiyunzhiyuchuan",
     "item_recipe_feixiangjian"
 }
 --不明飞行物
@@ -724,7 +724,23 @@ Item['item_esdw'] = {
     "item_cht",
     "item_recipe_esdw"
 }
-
+--七星剑
+Item['item_sss'] = {
+    "item_naginata",
+    "item_cht",
+    "item_recipe_sss"
+}
+--饕餮叉勺
+Item['item_glutton_spork'] = {
+    "item_hoshiguma_cup",
+    "item_naginata",
+    "item_recipe_glutton_spork"
+}
+--三位一体
+Item['item_trinity'] = {
+    "item_glutton_spork",
+    "item_recipe_trinity"
+}
 -------------------------------------------
 
 function GetFullPurchaseList(tPurchaseList)
