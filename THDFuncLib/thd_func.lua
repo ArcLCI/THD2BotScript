@@ -302,7 +302,7 @@ function J.GetEnemiesAroundLoc(vLoc, nRadius)
 		end
 	end
 
-	J.Utils.SetCachedVars('GetEnemiesAroundLoc'..cacheKey, nUnitCount)
+	J.Utils.SetCachedVars(cacheKey, nUnitCount)
 	return nUnitCount
 end
 
@@ -942,21 +942,65 @@ function J.IsNotSelf(bot, ally)
 	return false
 end
 
+local LastGetNearbyHeroesDotaTime = {}
+local LastGetNearbyHeroesResult = {}
+
+local NEARBY_HERO_NATIVE_MAX_RADIUS = 1600
+local NEARBY_HERO_FALLBACK_RADIUS = 1500
+local NEARBY_HERO_CACHE_ALIVE_LIMIT = 0.00
+
 function J.GetNearbyHeroes(bot, nRadius, bEnemy, bBotMode)
+	if bot == nil then bot = GetBot() end
+	if nRadius == nil then nRadius = NEARBY_HERO_NATIVE_MAX_RADIUS end
 	if not bBotMode then bBotMode = BOT_MODE_NONE end
-	local nearby = bot:GetNearbyHeroes(nRadius, bEnemy, bBotMode)
-	if not nearby then
-		return nearby
+
+	local radius = math.max(0, nRadius)
+	local radiusSqr = radius * radius
+
+	local tag = bot:GetPlayerID() * 2048 + math.floor(radius)
+	tag = tag * 2
+	if bEnemy then tag = tag + 1 end
+	tag = tag * 64 + bBotMode
+
+	if LastGetNearbyHeroesDotaTime[tag] == nil then
+    	LastGetNearbyHeroesDotaTime[tag] = -6000
+    	LastGetNearbyHeroesResult[tag] = {}
 	end
 
-	local heroes = {}
-	for _, hero in pairs( nearby )
-	do
-		if J.IsValidHero(hero) then
-			table.insert(heroes, hero)
+	if DotaTime() - LastGetNearbyHeroesDotaTime[tag] > NEARBY_HERO_CACHE_ALIVE_LIMIT then
+		LastGetNearbyHeroesDotaTime[tag] = DotaTime()
+		LastGetNearbyHeroesResult[tag] = {}
+
+		local candidates = {}
+
+		if radius > NEARBY_HERO_FALLBACK_RADIUS then
+			if bEnemy then
+				candidates = GetUnitList(UNIT_LIST_ENEMY_HEROES)
+			else
+				candidates = GetUnitList(UNIT_LIST_ALLIED_HEROES)
+			end
+
+			for _, hero in pairs(candidates) do
+				if J.IsValidHero(hero)
+				and GetUnitToUnitDistanceSqr(bot, hero) <= radiusSqr
+				and (bBotMode == BOT_MODE_NONE or hero:GetActiveMode() == bBotMode)
+				then
+					table.insert(LastGetNearbyHeroesResult[tag], hero)
+				end
+			end
+		else
+			candidates = bot:GetNearbyHeroes(radius, bEnemy, bBotMode)
+			if candidates == nil then candidates = {} end
+
+			for _, hero in pairs(candidates) do
+				if J.IsValidHero(hero) then
+					table.insert(LastGetNearbyHeroesResult[tag], hero)
+				end
+			end
 		end
 	end
-	return heroes
+
+	return LastGetNearbyHeroesResult[tag]
 end
 
 function J.IsInRange( bot, npcTarget, nRadius )

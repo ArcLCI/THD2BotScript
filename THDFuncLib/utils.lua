@@ -1645,6 +1645,27 @@ function ____exports.IsNearEnemyHighGroundTower(unit, range)
     end
     return false
 end
+
+local function CountAlliedHeroesNearUnit(unit, range)
+    local count = 0
+    local rangeSqr = range * range
+
+    for i = 1, #GetTeamPlayers(GetTeam()) do
+        local ally = GetTeamMember(i)
+        if ally ~= nil
+        and not ally:IsNull()
+        and ally:IsAlive()
+        and ally:CanBeSeen()
+        and ally:IsHero()
+        and GetUnitToUnitDistanceSqr(unit, ally) <= rangeSqr
+        then
+            count = count + 1
+        end
+    end
+
+    return count
+end
+
 --- Check if the team is pushing second tier or high ground.
 -- 
 -- @param bot - The bot to check.
@@ -1657,7 +1678,12 @@ function ____exports.IsTeamPushingSecondTierOrHighGround(bot)
     end
     local ancient = GetAncient(GetOpposingTeam())
     if ancient ~= nil then
-        local res = #bot:GetNearbyHeroes(2000, false, BotMode.None) > 2 and (____exports.IsNearEnemySecondTierTower(bot, 2000) or ____exports.IsNearEnemyHighGroundTower(bot, 3000) or GetUnitToUnitDistance(bot, ancient) < 3000)
+        local res = CountAlliedHeroesNearUnit(bot, 2000) > 2
+            and (
+                ____exports.IsNearEnemySecondTierTower(bot, 2000)
+                or ____exports.IsNearEnemyHighGroundTower(bot, 3000)
+                or GetUnitToUnitDistance(bot, ancient) < 3000
+        )
         ____exports.SetCachedVars(cacheKey, res)
         return res
     end
