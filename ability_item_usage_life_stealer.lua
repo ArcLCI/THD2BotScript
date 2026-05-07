@@ -21,11 +21,11 @@ function MyItemUsageThink()
 	if ( item_ghost~=nil and item_ghost:IsFullyCastable() )
 	then
 		--print("stun item exist")
-		local castItemGhostDesire = ConsiderItemGhost(item_ghost)
+		local castItemGhostDesire, castItemGhostTarget = ConsiderItemGhost(item_ghost)
 		if ( castItemGhostDesire > 0 )
 		then
 			--print("stun luanch")
-			npcBot:Action_UseAbility( item_ghost )
+			npcBot:Action_UseAbilityOnEntity( item_ghost, castItemGhostTarget )
 			return
 		end
 	end

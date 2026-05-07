@@ -812,16 +812,25 @@ function ConsiderItemGhost( item_ghost )
 	-- Make sure it's castable
 	if ( not item_ghost:IsFullyCastable() )
 	then
-		return BOT_ACTION_DESIRE_NONE
+		return BOT_ACTION_DESIRE_NONE, nil
 	end
 
-	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( IsUnderAttack(npcBot) )
-	then
-		return BOT_ACTION_DESIRE_MODERATE
+	-- Get some of its values
+	local nCastRange = item_ghost:GetCastRange()
+
+	local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200, false, BOT_MODE_NONE )
+
+	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
+	do
+		if ( GetModifiersTimeLeft(npcFriend, ModifierNamesHighDebuff) > 0.5 or
+			npcFriend:WasRecentlyDamagedByAnyHero( 2.5 ) or
+			npcFriend:GetHealth() < npcFriend:GetMaxHealth()*0.5)
+		then
+			return BOT_ACTION_DESIRE_HIGH, npcFriend
+		end
 	end
 
-	return BOT_ACTION_DESIRE_NONE
+	return BOT_ACTION_DESIRE_NONE, nil
 
 end
 

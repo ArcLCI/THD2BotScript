@@ -452,19 +452,6 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		then
 			hEffectTarget = tpLoc
 			sCastMotive = '前往守塔:'..sLane
-
-			if botName == 'npc_dota_hero_furion'
-			then
-				local Teleportation = bot:GetAbilityByName('furion_teleportation')
-				if Teleportation:IsTrained()
-				and Teleportation:IsFullyCastable()
-				then
-					bot.useProphetTP = true
-					bot.ProphetTPLocation = hEffectTarget
-					return BOT_ACTION_DESIRE_NONE
-				end
-			end
-
 			return BOT_ACTION_DESIRE_ABSOLUTE, hEffectTarget, sCastType, sCastMotive
 		end
 	end
