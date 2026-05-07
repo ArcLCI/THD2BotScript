@@ -8,6 +8,7 @@ local tableItemsToBuy = {
 	"item_recipe_wanmeitiaoyuezhuangzhi",
 	"item_qijizhixing",
 	"item_phoenix_wing",
+	"item_aghanims_shard",
 	"item_zun_glasses",
 	"item_recipe_tuzhushen",
 	"item_nuclear_stick",
