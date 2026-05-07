@@ -225,7 +225,7 @@ function ConsiderAbilitySagume03()
 
 	-- Make sure it's castable
 	if not ability03:IsFullyCastable() then
-		return BOT_ACTION_DESIRE_MODERATE
+		return BOT_ACTION_DESIRE_NONE
 	end
 
 	if not toggleState and npcBot:GetMana()/npcBot:GetMaxMana() > 0.25 then

@@ -893,41 +893,6 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderItemFeiXiangJian( item_feixiangjian )
-
-	local npcBot = GetBot()
-
-	-- Make sure it's castable
-	if ( not item_feixiangjian:IsFullyCastable() )
-	then
-		return BOT_ACTION_DESIRE_NONE, nil
-	end
-
-	-- Get some of its values
-	local nCastRange = item_feixiangjian:GetCastRange()
-	--print(nCastRange)
-
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200 , true, BOT_MODE_NONE )
-	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-	do
-		if npcEnemy:HasModifier("modifier_thdots_shikieiki04_debuff") or npcEnemy:IsMuted()
-		then
-			return BOT_ACTION_DESIRE_NONE, nil
-		end
-
-		if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ))
-		then
-			return BOT_ACTION_DESIRE_HIGH, npcEnemy
-		end
-
-		if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ) )
-		then
-			if ( CanCastStunOnTarget( npcEnemy ) )
-			then
-				return BOT_ACTION_DESIRE_MODERATE, npcEnemy
-			end
-		end
-
-	end
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 

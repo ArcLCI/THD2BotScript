@@ -78,6 +78,7 @@ function AbilityUsageThink()
 	ability02 = npcBot:GetAbilityByName( "ability_thdots_suwako02" )
 	ability03 = npcBot:GetAbilityByName( "ability_thdots_suwako03z" )
 	abilityEx = npcBot:GetAbilityByName( "ability_thdots_suwako05" )
+	castExToggleState = abilityEx:GetAutoCastState()
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_suwako04new" )
 
 	if npcBot:GetLevel() < 25 and npcBot:HasModifier("modifier_ability_thdots_suwako02_telent")
@@ -104,10 +105,12 @@ function AbilityUsageThink()
 		return
 	end
 
-	castExDesire, castExLocation = ConsiderAbilitySuwakoEx()
-	if ( castExDesire > 0 )
-	then
-		npcBot:Action_UseAbilityOnLocation( abilityEx , castExLocation)
+	castExDesire = ConsiderAbilitySuwakoEx()
+	if castExDesire >= BOT_ACTION_DESIRE_HIGH and not castExToggleState then
+		abilityEx:ToggleAutoCast()
+		return
+	elseif cast03Desire == 0 and castExToggleState then
+		abilityEx:ToggleAutoCast()
 		return
 	end
 
@@ -128,10 +131,6 @@ end
 
 function CanCastSuwako02OnTarget( npcTarget )
 	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
-end
-
-function CanCastSuwakoExOnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
 end
 
 function CanCastSuwako04OnTarget( npcTarget )
@@ -214,71 +213,17 @@ end
 function ConsiderAbilitySuwakoEx()
 
 	local npcBot = GetBot()
-
+	local toggleState = abilityEx:GetAutoCastState()
 	-- Make sure it's castable
-	if ( not abilityEx:IsFullyCastable() )
-	then
-		return BOT_ACTION_DESIRE_NONE, 0
+	if not abilityEx:IsFullyCastable() then
+		return BOT_ACTION_DESIRE_NONE
 	end
 
-	local nCastRange = 600
-	local nRadius = 200
-	local nDamage = 25
-	-- Fighting or Retreating with hero
-	if not (npcBot:GetActiveMode() == BOT_MODE_RETREAT )
-	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
-		if #tableNearbyEnemyHeroes > 1 then
-			local lowestHP = 99999
-			local lowestHPTarget
-			for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-			do
-				if CanCastSuwakoExOnTarget(npcEnemy) then
-					if npcEnemy:GetHealth() <= lowestHP then
-						lowestHP = npcEnemy:GetHealth()
-						lowestHPTarget = npcEnemy:GetLocation()
-					end
-				end
-			end
-			return BOT_ACTION_DESIRE_HIGH, lowestHPTarget
-		else
-			for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-			do
-				if ( npcEnemy ~= nil ) then
-					if CanCastSuwakoExOnTarget(npcEnemy) then
-						return BOT_ACTION_DESIRE_MODERATE, npcEnemy:GetLocation()
-					end
-				end
-			end
-		end
+	if not toggleState then
+		return BOT_ACTION_DESIRE_HIGH
 	end
 
-	-- If we're farming and can kill 3+ creeps with LSA
-	if ( npcBot:GetActiveMode() == BOT_MODE_FARM ) then
-		local locationAoE = CachedFindAoELocation( npcBot, 1, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, nDamage )
-
-		if ( locationAoE.count >= 3 ) then
-			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc
-		end
-	end
-
-	-- If we're pushing or defending a lane and can hit 4+ creeps, go for it
-	if ( npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_TOP or
-		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_MID or
-		 npcBot:GetActiveMode() == BOT_MODE_PUSH_TOWER_BOT or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_TOP or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_MID or
-		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_TOWER_BOT )
-	then
-		local locationAoE = CachedFindAoELocation( npcBot, 2, true, false, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 )
-
-		if ( locationAoE.count >= 4 )
-		then
-			return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc
-		end
-	end
-
-	return BOT_ACTION_DESIRE_NONE, 0
+	return BOT_ACTION_DESIRE_NONE
 end
 
 ----------------------------------------------------------------------------------------------------
