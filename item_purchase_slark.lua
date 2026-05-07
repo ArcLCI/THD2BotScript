@@ -3,7 +3,7 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 local tableItemsToBuy = {}
 
-if RandomInt(1,100) > 50 then
+if RandomInt(1,100) > 20 then
 	tableItemsToBuy = {
 	"item_pad",
 	"item_cirno_claymore",

@@ -8,5 +8,5 @@ if bot:IsInvulnerable() or not bot:IsHero() or not string.find(botName, "hero") 
 	return
 end
 
-function GetDesire() return Patch741DesireChange(Defend.GetDefendDesire(bot, LANE_BOT)) end
-function OnEnd() Defend.OnEnd(bot, LANE_BOT) end
+function GetDesire() return Defend.GetDefendDesire(bot, LANE_BOT) end
+function Think() Defend.OnEnd(bot, LANE_BOT) end

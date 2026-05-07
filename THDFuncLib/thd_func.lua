@@ -8,10 +8,6 @@ J.Site = require( GetScriptDirectory()..'/THDFuncLib/aba_site')
 
 local IsModeTurbo = J.Utils.IsModeTurbo
 
-function Patch741DesireChange(desire)
-	return desire * 0.6
-end
-
 --- Item 相关方法库 ---
 function J.HasItem( bot, sItemName )
 	local Slot = bot:FindItemSlot( sItemName )

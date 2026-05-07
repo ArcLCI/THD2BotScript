@@ -48,10 +48,6 @@ function Defend.GetDefendDesire(bot, lane)
 end
 
 function Defend.GetDefendDesireHelper(bot, lane)
-	-- 如果在打高地 就别撤退去干别的
-	if J.Utils.IsTeamPushingSecondTierOrHighGround(bot) then
-		return BOT_MODE_DESIRE_NONE
-	end
 
 	local nSearchRange = 2500
 	local team = bot:GetTeam()

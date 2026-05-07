@@ -82,7 +82,7 @@ function Push.GetPushDesire(bot, lane)
 	local nEnemyUnitsAroundAncient = J.GetEnemiesAroundLoc(teamAncientLoc, 4500)
     if nEnemyUnitsAroundAncient > 0 and nEffctiveAllyHeroesNearAncient < 1
     then
-        nMaxDesire = 0.65
+        nMaxDesire = 0.55
     end
     if nEffctiveAllyHeroesNearAncient >= 1 then
         nPushDesire = nPushDesire * 0.5

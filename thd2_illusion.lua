@@ -1,7 +1,5 @@
 local X = {}
 local ownerBot
-local nNextMoveTime = 0
-local nNextMoveTimeD = 0
 
 local nEnemyAncient = GetAncient(GetOpposingTeam())
 local RadiantFountain = Vector( -6619, -6336, 384 )
@@ -35,7 +33,7 @@ function X.IllusionThink(owner, hMinionUnit)
         end
     end
 
-    if DotaTime() >= nNextMoveTime then
+    if DotaTime() >= (hMinionUnit.nextMoveTime or 0) then
         hMinionUnit.move_desire, hMinionUnit.move_location = ConsiderMove(hMinionUnit)
         if hMinionUnit.move_desire > 0 then
             if GetUnitToLocationDistance(hMinionUnit, hMinionUnit.move_location) > 400 then
@@ -43,7 +41,7 @@ function X.IllusionThink(owner, hMinionUnit)
             else
                 hMinionUnit:Action_AttackMove(GetRandomLocationWithinDist(hMinionUnit.move_location, 0, 300))
             end
-            nNextMoveTime = DotaTime() + 0.2
+            hMinionUnit.nextMoveTime = DotaTime() + 0.2
             return
         end
 
@@ -58,7 +56,7 @@ function X.IllusionThink(owner, hMinionUnit)
             if not success then
                 hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
             end
-        nNextMoveTime = DotaTime() + 0.2
+        hMinionUnit.nextMoveTime = DotaTime() + 0.2
     end
 end
 
@@ -91,7 +89,7 @@ function X.DemonThink(owner, hMinionUnit)
             end
         end
 
-        if DotaTime() >= nNextMoveTimeD then
+        if DotaTime() >= (hMinionUnit.nextMoveTimeD or 0) then
             hMinionUnit.move_desire, hMinionUnit.move_location = ConsiderMove(hMinionUnit)
             if hMinionUnit.move_desire > 0 then
                 if GetUnitToLocationDistance(hMinionUnit, hMinionUnit.move_location) > 400 then
@@ -99,7 +97,7 @@ function X.DemonThink(owner, hMinionUnit)
                 else
                     hMinionUnit:Action_AttackMove(GetRandomLocationWithinDist(hMinionUnit.move_location, 0, 300))
                 end
-                nNextMoveTimeD = DotaTime() + 0.2
+                hMinionUnit.nextMoveTimeD = DotaTime() + 0.2
                 return
             end
 
@@ -114,7 +112,7 @@ function X.DemonThink(owner, hMinionUnit)
             if not success then
                 hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
             end
-            nNextMoveTimeD = DotaTime() + 0.2
+            hMinionUnit.nextMoveTimeD = DotaTime() + 0.2
         end
     end
 end
