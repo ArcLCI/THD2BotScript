@@ -1,27 +1,26 @@
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 local Defend = {}
-local nInRangeAlly, nInRangeEnemy, weAreStronger
-local distanceToLane = {[1] = 0, [2] = 0, [3] = 0}
-local defendLoc = nil
-local nEnemyUnitsAroundAncient = 0
-
-local nEffctiveAllyHeroesNearPingedDefendLoc = nil
-local lEnemyHeroesAroundLoc = 0
-local aliveAllyHeroes = 0
-local botTarget = nil
 local currentTime = DotaTime()
 local maxDesire = 0.98
 
+local function GetLaneState(bot, lane)
+	if bot.DefendLaneState == nil then bot.DefendLaneState = {} end
+	if bot.DefendLaneState[lane] == nil then bot.DefendLaneState[lane] = {} end
+	return bot.DefendLaneState[lane]
+end
+
 function Defend.GetDefendDesire(bot, lane)
-	if bot:IsIllusion() then return end
+	if bot:IsIllusion() then return BOT_MODE_DESIRE_NONE end
 	if bot.laneToDefend == nil then bot.laneToDefend = lane end
 	if bot.DefendLaneDesire == nil then bot.DefendLaneDesire = {0, 0, 0} end
+	local state = GetLaneState(bot, lane)
 
 	currentTime = DotaTime()
 
-	weAreStronger = false
-	defendLoc = GetLaneFrontLocation( bot:GetTeam(), lane, 0 )
+	state.weAreStronger = false
+	local defendLoc = GetLaneFrontLocation( bot:GetTeam(), lane, 0 )
+	state.defendLoc = defendLoc
 
 	-- 如果己方没有兵线，防御点设为对方兵线
 	if J.Utils.GetLocationToLocationDistance(J.Utils.GetTeamFountainTpPoint(), defendLoc) < 3000 then
@@ -31,15 +30,15 @@ function Defend.GetDefendDesire(bot, lane)
 		if GetUnitToLocationDistance(bot, enemyLaneFront) > bot:GetAttackRange()
 		and #hEnemyNearEnemyLaneFront <= #hAllyNearEnemyLaneFront + 1 then
 			defendLoc = enemyLaneFront
-			bot:Action_AttackMove(defendLoc)
+			state.defendLoc = defendLoc
 		end
 	end
 
-	distanceToLane[lane] = GetUnitToLocationDistance(bot, defendLoc)
-	nInRangeAlly = J.GetNearbyHeroes(bot,1600,false,BOT_MODE_NONE)
-	nInRangeEnemy = J.GetLastSeenEnemiesNearLoc( bot:GetLocation(), 1600)
+	state.distanceToLane = GetUnitToLocationDistance(bot, defendLoc)
+	state.nInRangeAlly = J.GetNearbyHeroes(bot,1600,false,BOT_MODE_NONE)
+	state.nInRangeEnemy = J.GetLastSeenEnemiesNearLoc( bot:GetLocation(), 1600)
 
-	bot.DefendLaneDesire[lane] = Defend.GetDefendDesireHelper(bot, lane)
+	bot.DefendLaneDesire[lane] = Defend.GetDefendDesireHelper(bot, lane, state)
 	local defendDesire = bot.DefendLaneDesire[lane]
 	if defendDesire > 0.9 then
 		J.Utils.GameStates['recentDefendTime'] = DotaTime()
@@ -47,44 +46,48 @@ function Defend.GetDefendDesire(bot, lane)
 	return defendDesire
 end
 
-function Defend.GetDefendDesireHelper(bot, lane)
+function Defend.GetDefendDesireHelper(bot, lane, state)
 
 	local nSearchRange = 2500
 	local team = bot:GetTeam()
 	local laneFront = GetLaneFrontLocation(team, lane, 0)
 	local ancient = GetAncient(team)
 	local attackRange = bot:GetAttackRange()
-	botTarget = J.GetProperTarget(bot);
-	weAreStronger = J.WeAreStronger(bot, nSearchRange)
+	local defendLoc = state.defendLoc or GetLaneFrontLocation(team, lane, 0)
+	state.defendLoc = defendLoc
+	state.botTarget = J.GetProperTarget(bot);
+	state.weAreStronger = J.WeAreStronger(bot, nSearchRange)
 
-	nEnemyUnitsAroundAncient = J.GetEnemiesAroundLoc(ancient:GetLocation(), 1500)
+	state.nEnemyUnitsAroundAncient = J.GetEnemiesAroundLoc(ancient:GetLocation(), 1500)
 
 	local nDefendAllyHeroes = J.GetAlliesNearLoc(defendLoc, nSearchRange)
-	nEffctiveAllyHeroesNearPingedDefendLoc = #nDefendAllyHeroes + #J.Utils.GetAllyIdsInTpToLocation(defendLoc, nSearchRange)
-	lEnemyHeroesAroundLoc = J.GetLastSeenEnemiesNearLoc(defendLoc, nSearchRange)
-	aliveAllyHeroes = J.GetNumOfAliveHeroes(false)
+	state.nEffctiveAllyHeroesNearPingedDefendLoc = #nDefendAllyHeroes + #J.Utils.GetAllyIdsInTpToLocation(defendLoc, nSearchRange)
+	state.lEnemyHeroesAroundLoc = J.GetLastSeenEnemiesNearLoc(defendLoc, nSearchRange)
+	state.aliveAllyHeroes = J.GetNumOfAliveHeroes(false)
 
 	-- 如果基地附近有敌人，则重点防御基地
-	if nEnemyUnitsAroundAncient > 0
+	if state.nEnemyUnitsAroundAncient > 0
 	then
 		nSearchRange = 1800
 		local ancientHp = J.GetHP(ancient)
 
 		defendLoc = ancient:GetLocation()
+		state.defendLoc = defendLoc
 		nDefendAllyHeroes = J.GetAlliesNearLoc(defendLoc, nSearchRange)
-		nEffctiveAllyHeroesNearPingedDefendLoc = #nDefendAllyHeroes + #J.Utils.GetAllyIdsInTpToLocation(defendLoc, nSearchRange)
-		lEnemyHeroesAroundLoc = J.GetLastSeenEnemiesNearLoc(defendLoc, nSearchRange)
+		state.nEffctiveAllyHeroesNearPingedDefendLoc = #nDefendAllyHeroes + #J.Utils.GetAllyIdsInTpToLocation(defendLoc, nSearchRange)
+		state.lEnemyHeroesAroundLoc = J.GetLastSeenEnemiesNearLoc(defendLoc, nSearchRange)
+		state.distanceToLane = GetUnitToLocationDistance(bot, defendLoc)
 
-		if #lEnemyHeroesAroundLoc == 0 and (J.IsAnyAllyDefending(bot, lane) or nEffctiveAllyHeroesNearPingedDefendLoc >= 1) then
+		if #state.lEnemyHeroesAroundLoc == 0 and (J.IsAnyAllyDefending(bot, lane) or state.nEffctiveAllyHeroesNearPingedDefendLoc >= 1) then
 			return BOT_MODE_DESIRE_NONE
 		end
-		if (#nDefendAllyHeroes < nEnemyUnitsAroundAncient + 1
+		if (#nDefendAllyHeroes < state.nEnemyUnitsAroundAncient + 1
 		or ancientHp < 0.95
-		or (nEffctiveAllyHeroesNearPingedDefendLoc < aliveAllyHeroes and nEffctiveAllyHeroesNearPingedDefendLoc <= #lEnemyHeroesAroundLoc + 1 )
-		or (#lEnemyHeroesAroundLoc >= 3 and nEffctiveAllyHeroesNearPingedDefendLoc < aliveAllyHeroes))
+		or (state.nEffctiveAllyHeroesNearPingedDefendLoc < state.aliveAllyHeroes and state.nEffctiveAllyHeroesNearPingedDefendLoc <= #state.lEnemyHeroesAroundLoc + 1 )
+		or (#state.lEnemyHeroesAroundLoc >= 3 and state.nEffctiveAllyHeroesNearPingedDefendLoc < state.aliveAllyHeroes))
 		and J.GetLocationToLocationDistance(defendLoc, laneFront) < nSearchRange
 		and #J.GetNearbyHeroes(bot, math.max(attackRange + 100, 1000), true, BOT_MODE_NONE) <= 0
-		and ((#nInRangeEnemy <= 1 and not (J.IsValidHero(botTarget) and J.GetHP(botTarget) < 0.3)) or not bot:WasRecentlyDamagedByAnyHero(2)) then
+		and ((#state.nInRangeEnemy <= 1 and not (J.IsValidHero(state.botTarget) and J.GetHP(state.botTarget) < 0.3)) or not bot:WasRecentlyDamagedByAnyHero(2)) then
 			print("Ancient is in danger for team " .. team)
 			local desire = RemapValClamped(J.GetHP(bot), 0.25, 0.5, BOT_ACTION_DESIRE_NONE, BOT_ACTION_DESIRE_ABSOLUTE)
 			return desire
@@ -92,10 +95,11 @@ function Defend.GetDefendDesireHelper(bot, lane)
 	end
 
 	local distanceToDefendLoc = GetUnitToLocationDistance(bot, defendLoc)
+	state.distanceToLane = distanceToDefendLoc
 	local tpScoll = J.Utils.GetItemFromFullInventory(bot, 'item_tpscroll')
 
 	-- 避免特殊情况还坚持防守
-	if #nInRangeEnemy > 0 and distanceToDefendLoc < 1200
+	if #state.nInRangeEnemy > 0 and distanceToDefendLoc < 1200
 	or bot:GetLevel() < 3
 	or (bot:GetAssignedLane() == LANE_MID and bot:GetLevel() < 10)
 	or (J.IsDoingRoshan(bot) and #J.GetAlliesNearLoc(J.GetCurrentRoshanLocation(), 2800) >= 3)
@@ -136,13 +140,13 @@ function Defend.GetDefendDesireHelper(bot, lane)
 	end
 
 	-- 如果附近没有敌方英雄，同时队友去防守了，则不防守
-	if #lEnemyHeroesAroundLoc == 0 and J.IsAnyAllyDefending(bot, lane) then
+	if #state.lEnemyHeroesAroundLoc == 0 and J.IsAnyAllyDefending(bot, lane) then
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	-- 如果附近有1个敌方英雄，同时队友去防守了，则不防守
-	if #lEnemyHeroesAroundLoc == 1
-	and (nEffctiveAllyHeroesNearPingedDefendLoc > #lEnemyHeroesAroundLoc
+	if #state.lEnemyHeroesAroundLoc == 1
+	and (state.nEffctiveAllyHeroesNearPingedDefendLoc > #state.lEnemyHeroesAroundLoc
 		or (J.IsAnyAllyDefending(bot, lane) and J.GetAverageLevel(false) >= J.GetAverageLevel(true)))
 	then
 		return BOT_MODE_DESIRE_NONE
@@ -154,21 +158,21 @@ function Defend.GetDefendDesireHelper(bot, lane)
 	local urgentMultipler = RemapValClamped(nUnitsAroundBuilding * urgentNum, 1, 15, 0.6, 3)
 
 	-- 如果建筑物优先级大于等于3，且我方英雄数量不少于敌方英雄数量，则提高欲望
-	if nBuildingfTier >= 3 and nEffctiveAllyHeroesNearPingedDefendLoc >= #lEnemyHeroesAroundLoc then
+	if nBuildingfTier >= 3 and state.nEffctiveAllyHeroesNearPingedDefendLoc >= #state.lEnemyHeroesAroundLoc then
 		maxDesire = 1
 	end
 	-- 按照血量、建筑物优先级 和初始欲望来重新计算欲望
 	nDefendDesire = RemapValClamped(J.GetHP(bot), 0.75, 0.2, RemapValClamped(GetDefendLaneDesire(lane) * urgentMultipler, 0, 1, BOT_ACTION_DESIRE_NONE, maxDesire), BOT_ACTION_DESIRE_LOW)
 
 	-- 如果距离防御点小于1600，且敌方英雄数量大于我方英雄数量，且我方不强，则降低欲望
-	if (distanceToDefendLoc and distanceToDefendLoc < 1600 and #nInRangeEnemy > #nInRangeAlly) and not weAreStronger then
+	if (distanceToDefendLoc and distanceToDefendLoc < 1600 and #state.nInRangeEnemy > #state.nInRangeAlly) and not state.weAreStronger then
 		-- 1. if we are not stronger, most likely defend == feed
 		-- 2. we dont want to get stuck in defend mode too much because other modes are also important after bots arrive the location.
 		nDefendDesire = RemapValClamped(nDefendDesire, 0, 1, BOT_ACTION_DESIRE_NONE, BOT_ACTION_DESIRE_HIGH)
 	end
 
 	-- 如果敌方英雄血量低于我方英雄血量，且距离小于1500，则降低欲望
-	if J.IsValidHero(botTarget) and J.GetHP(botTarget) < 0.6 and J.GetHP(bot) > J.GetHP(botTarget) and GetUnitToUnitDistance(bot, botTarget) < 1500 then
+	if J.IsValidHero(state.botTarget) and J.GetHP(state.botTarget) < 0.6 and J.GetHP(bot) > J.GetHP(state.botTarget) and GetUnitToUnitDistance(bot, state.botTarget) < 1500 then
 		nDefendDesire = nDefendDesire * 0.4
 	end
 
@@ -186,16 +190,30 @@ end
 
 function Defend.DefendThink(bot, lane)
     if J.CanNotUseAction(bot) then return end
+	local state = GetLaneState(bot, lane)
 	local nSearchRange = 1800
 
 	local attackRange = bot:GetAttackRange()
-	if not defendLoc then
-		defendLoc = GetLaneFrontLocation(GetTeam(), lane, 0)
-	end
+	local defendLoc = state.defendLoc or GetLaneFrontLocation(GetTeam(), lane, 0)
+	local distanceToDefendLoc = GetUnitToLocationDistance(bot, defendLoc)
+	state.distanceToLane = distanceToDefendLoc
+	local nInRangeAlly = state.nInRangeAlly or J.GetNearbyHeroes(bot, 1600, false, BOT_MODE_NONE)
+	local weAreStronger = state.weAreStronger or false
+	local nEnemyUnitsAroundAncient = state.nEnemyUnitsAroundAncient or 0
 	local nAttackSearchRange = attackRange < 900 and 900 or math.min(attackRange, nSearchRange)
 
 	local nEnemyHeroes = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
 	local nEnemyHeroes_real = J.GetEnemiesNearLoc(defendLoc, nSearchRange)
+
+	if J.IsValidHero(nEnemyHeroes_real[1]) and J.IsInRange(bot, nEnemyHeroes_real[1], nAttackSearchRange)
+	then
+		bot:Action_AttackUnit(nEnemyHeroes_real[1], true)
+		return
+	elseif J.IsValidHero(nEnemyHeroes[1]) and J.IsInRange(bot, nEnemyHeroes[1], nAttackSearchRange)
+	then
+		bot:Action_AttackUnit(nEnemyHeroes[1], true)
+		return
+	end
 
 	if nEnemyUnitsAroundAncient > 0 then
 		local ancient = GetAncient(GetTeam())
@@ -207,13 +225,8 @@ function Defend.DefendThink(bot, lane)
 		end
 	end
 
-	if J.IsValidHero(nEnemyHeroes_real[1]) and J.IsInRange(bot, nEnemyHeroes_real[1], nAttackSearchRange)
-	then
-		bot:Action_AttackUnit(nEnemyHeroes_real[1], true)
-		return
-	elseif J.IsValidHero(nEnemyHeroes[1]) and J.IsInRange(bot, nEnemyHeroes[1], nAttackSearchRange)
-	then
-		bot:Action_AttackUnit(nEnemyHeroes[1], true)
+	if distanceToDefendLoc > nSearchRange then
+		bot:Action_MoveToLocation(defendLoc + J.RandomForwardVector(300))
 		return
 	end
 
@@ -241,9 +254,9 @@ function Defend.DefendThink(bot, lane)
 		end
 	end
 
-	if (weAreStronger or #nInRangeAlly >= #nEnemyHeroes_real) and distanceToLane[lane] and distanceToLane[lane] < nSearchRange then
+	if weAreStronger or #nInRangeAlly >= #nEnemyHeroes_real then
 		bot:Action_AttackMove(defendLoc + J.RandomForwardVector(300))
-	elseif distanceToLane[lane] and distanceToLane[lane] > nSearchRange * 1.7 then
+	else
 		bot:Action_MoveToLocation(defendLoc + J.RandomForwardVector(300))
 	end
 end

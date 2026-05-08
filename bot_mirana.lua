@@ -3,14 +3,12 @@ require(GetScriptDirectory() ..  "/bot_generic")
 
 ----------------------------------------------------------------------------------------------------
 
-local nNextMoveTime = 0
-
 function MinionThink( hMinionUnit )
 
 	local ownerBot = GetBot()
 	if not hMinionUnit:IsIllusion() then return end
 
-	if hMinionUnit.isIllusion then
+	if hMinionUnit:IsIllusion() then
         if ConfuseEnemyWithIllusions(ownerBot, hMinionUnit) > 0 then
 			print("Confusing Enemy...")
             return
@@ -36,7 +34,7 @@ function MinionThink( hMinionUnit )
         end
     end
 
-    if DotaTime() >= nNextMoveTime then
+    if DotaTime() >= (hMinionUnit.nextMoveTime or 0) then
         hMinionUnit.move_desire, hMinionUnit.move_location = ConsiderMove(hMinionUnit)
         if hMinionUnit.move_desire > 0 then
             if GetUnitToLocationDistance(hMinionUnit, hMinionUnit.move_location) > 400 then
@@ -44,7 +42,7 @@ function MinionThink( hMinionUnit )
             else
                 hMinionUnit:Action_AttackMove(GetRandomLocationWithinDist(hMinionUnit.move_location, 0, 300))
             end
-            nNextMoveTime = DotaTime() + 0.2
+            hMinionUnit.nextMoveTime = DotaTime() + 0.2
             return
         end
 
@@ -55,7 +53,7 @@ function MinionThink( hMinionUnit )
         else
             hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
         end
-        nNextMoveTime = DotaTime() + 0.2
+        hMinionUnit.nextMoveTime = DotaTime() + 0.2
     end
 
     THD2DemonThink(hMinionUnit)

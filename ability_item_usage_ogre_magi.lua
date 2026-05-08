@@ -109,9 +109,6 @@ function AbilityUsageThink()
 	if castExDesire >= BOT_ACTION_DESIRE_HIGH and not castExToggleState then
 		abilityEx:ToggleAutoCast()
 		return
-	elseif cast03Desire == 0 and castExToggleState then
-		abilityEx:ToggleAutoCast()
-		return
 	end
 
 	cast04Desire = ConsiderAbilitySuwako04()
