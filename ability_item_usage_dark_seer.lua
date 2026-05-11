@@ -18,6 +18,7 @@ function MyItemUsageThink()
 	item_morenjingjuan = IsItemAvailable( "item_morenjingjuan" )
 	item_ghost = IsItemAvailable( "item_ghost_balloon" )
 	item_weijin = IsItemAvailable( "item_xuenvdeweijin" )
+	item_shield = IsItemAvailable( "item_esdw" ) or IsItemAvailable( "item_trinity" )
 	
 	if ( item_morenjingjuan~=nil and item_morenjingjuan:IsFullyCastable() )
 	then 
@@ -35,10 +36,20 @@ function MyItemUsageThink()
 	then 
 		--print("stun item exist")
 		castItemGhostDesire, castItemGhostTarget = ConsiderItemGhost(item_ghost)
-		if ( castItemGhostDesire > 0 ) 
+		if ( castItemGhostDesire > 0 )
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbilityOnEntity( item_ghost, castItemGhostTarget )
+			return
+		end
+	end
+
+	if ( item_shield~=nil and item_shield:IsFullyCastable() )
+	then 
+		castItemShieldDesire = ConsiderItemShield(item_shield)
+		if ( castItemShieldDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_shield )
 			return
 		end
 	end
@@ -47,7 +58,7 @@ function MyItemUsageThink()
 	then 
 		--print("stun item exist")
 		castItemWeijinDesire = ConsiderItemWeiJin(item_weijin)
-		if ( castItemWeijinDesire > 0 ) 
+		if ( castItemWeijinDesire > 0 )
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbility( item_weijin )

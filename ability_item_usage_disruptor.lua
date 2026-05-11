@@ -29,12 +29,23 @@ function MyItemUsageThink()
 					IsItemAvailable( "item_jiao_shou" )
 
 	local item_xinyan = IsItemAvailable( "item_third_eyes" )
+	local item_shield = IsItemAvailable( "item_esdw" ) or IsItemAvailable( "item_trinity" )
 	if ( item_xinyan~=nil and item_xinyan:IsFullyCastable() )
 	then
 		local castItemXinYanDesire, castItemXinYanTarget = ConsiderItemXinYan( item_xinyan )
 		if ( castItemXinYanDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity( item_xinyan, castItemXinYanTarget )
+			return
+		end
+	end
+
+	if ( item_shield~=nil and item_shield:IsFullyCastable() )
+	then 
+		local castItemShieldDesire = ConsiderItemShield(item_shield)
+		if ( castItemShieldDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_shield )
 			return
 		end
 	end

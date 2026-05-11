@@ -16,6 +16,7 @@ local tableItemsToBuy = {
 	"item_wanbaochui2",
 	"item_sampan",
 	"item_recipe_ertianyiliu",
+	"item_trinity"
 }
 
 ----------------------------------------------------------------------------------------------------

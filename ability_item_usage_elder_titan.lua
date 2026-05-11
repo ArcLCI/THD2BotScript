@@ -19,6 +19,7 @@ function MyItemUsageThink()
 					IsItemAvailable( "item_bone_flute" )
 	local item_kafziel = IsItemAvailable( "item_kafziel" )
 	local item_feixiangjian = IsItemAvailable( "item_feixiangjian" )
+	local item_shield = IsItemAvailable( "item_esdw" ) or IsItemAvailable( "item_trinity" )
 	if ( item_morenjingjuan~=nil and item_morenjingjuan:IsFullyCastable() )
 	then
 		--print("stun item exist")
@@ -27,6 +28,15 @@ function MyItemUsageThink()
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbilityOnEntity( item_morenjingjuan, castItemMoRenTarget )
+			return
+		end
+	end
+	if ( item_shield~=nil and item_shield:IsFullyCastable() )
+	then
+		local castItemShieldDesire = ConsiderItemShield(item_shield)
+		if ( castItemShieldDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_shield )
 			return
 		end
 	end

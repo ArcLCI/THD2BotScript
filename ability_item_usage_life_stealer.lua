@@ -17,6 +17,7 @@ function MyItemUsageThink()
 	local item_ghost = IsItemAvailable( "item_ghost_balloon" )
 	local item_weijin = IsItemAvailable( "item_xuenvdeweijin" )
 	local item_kafziel = IsItemAvailable( "item_kafziel" )
+	local item_shield = IsItemAvailable( "item_esdw" ) or IsItemAvailable( "item_trinity" )
 
 	if ( item_ghost~=nil and item_ghost:IsFullyCastable() )
 	then
@@ -26,6 +27,16 @@ function MyItemUsageThink()
 		then
 			--print("stun luanch")
 			npcBot:Action_UseAbilityOnEntity( item_ghost, castItemGhostTarget )
+			return
+		end
+	end
+
+	if ( item_shield~=nil and item_shield:IsFullyCastable() )
+	then
+		local castItemShieldDesire = ConsiderItemShield(item_shield)
+		if ( castItemShieldDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_shield )
 			return
 		end
 	end

@@ -12,7 +12,9 @@ local tableItemsToBuy = {
 	"item_pad",
 	"item_recipe_yuetufensuijvren",
 	"item_camera",
-	"item_laevateinn",
+	"item_tengu_fan",
+    "item_ice_block",
+    "item_recipe_laevateinn"
 }
 
 ----------------------------------------------------------------------------------------------------

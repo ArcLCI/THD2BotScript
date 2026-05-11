@@ -331,6 +331,20 @@ function HasSpecificEnemyHero( nHeroName )
 	return false
 end
 
+function HasSpecificEnemyHeroList( tHeroNameList )
+	if tHeroNameList == nil then return false end
+	local tEnemyPlayers = GetEnemyPlayersID()
+	for _, i in pairs(tEnemyPlayers) do
+		local nSelectedHeroName = GetSelectedHeroName(i)
+		for _, nHeroName in pairs(tHeroNameList) do
+			if nSelectedHeroName == nHeroName then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 function IsKeyWordUnit( keyWord, uUnit )
 
 	if string.find( uUnit:GetUnitName(), keyWord ) ~= nil
@@ -853,6 +867,32 @@ function ConsiderItemWeiJin( item_weijin )
 		if ( #tableNearbyEnemyHeroes > 0 ) then
 			return BOT_ACTION_DESIRE_MODERATE
 		end
+	end
+
+	return BOT_ACTION_DESIRE_NONE
+
+end
+
+----------------------------------------------------------------------------------------------------
+
+function ConsiderItemShield( item_shield )
+
+	local npcBot = GetBot()
+
+	if ( not item_shield:IsFullyCastable() ) then
+		return BOT_ACTION_DESIRE_NONE
+	end
+
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1200 , true, BOT_MODE_NONE )
+	for _,npcEnemy in pairs( tableNearbyEnemyHeroes ) do
+		if IsSeriouslyRetreating(npcBot) and npcBot:WasRecentlyDamagedByHero( npcEnemy, 1.5 ) then
+			return BOT_ACTION_DESIRE_HIGH
+		end
+	end
+
+	if npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
+	and (#tableNearbyEnemyHeroes > 1 or npcBot:GetHealth() < npcBot:GetMaxHealth() * 0.5) then
+		return BOT_ACTION_DESIRE_MODERATE
 	end
 
 	return BOT_ACTION_DESIRE_NONE
@@ -1420,6 +1460,8 @@ function ConsiderNeutralItems(tBlacklist)
 	local itemName = item:GetName()
 	local nCastRange = item:GetCastRange()
 
+	local tDemoniconSpecificHeroes = {"npc_dota_hero_clinkz", "npc_dota_hero_rattletrap", "npc_dota_hero_riki"}
+
 	if tBlacklist ~= nil and #tBlacklist > 0 then
 		for _, blacklistedItem in pairs(tBlacklist) do
 			if itemName == blacklistedItem then
@@ -1571,7 +1613,7 @@ function ConsiderNeutralItems(tBlacklist)
 					end
 				end
 			end
-			npcBot:Action_UseAbilityOnLocation(item,tableNearbyEnemyHeroes[1]:GetLocation())
+			npcBot:Action_UseAbilityOnLocation(item,tableNearbyEnemyHeroes[1]:GetLocation()+RandomVector(25))
 			return
 		end
 		return
@@ -1591,7 +1633,8 @@ function ConsiderNeutralItems(tBlacklist)
 		end
 		return
 	elseif itemName == "item_demonicon" then
-		if npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH then
+		if HasSpecificEnemyHeroList(tDemoniconSpecificHeroes) or
+		(npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH) then
 			npcBot:Action_UseAbility(item)
 		end
 	end

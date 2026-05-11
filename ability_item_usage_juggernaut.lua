@@ -22,6 +22,7 @@ function MyItemUsageThink()
 	local item_horse_red = IsItemAvailable( "item_horse_red" )
 	local item_horse_green = IsItemAvailable( "item_horse_green" )
 	local item_horse_king = IsItemAvailable( "item_horse_king")
+	local item_shield = IsItemAvailable( "item_esdw" ) or IsItemAvailable( "item_trinity" )
 
 	local ability03 = npcBot:GetAbilityByName( "ability_thdots_youmu03" )
 
@@ -37,6 +38,16 @@ function MyItemUsageThink()
 		if ( castItemTeethDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_teeth )
+			return
+		end
+	end
+
+	if ( item_shield~=nil and item_shield:IsFullyCastable() )
+	then
+		local castItemShieldDesire = ConsiderItemShield(item_shield)
+		if ( castItemShieldDesire > 0 )
+		then
+			npcBot:Action_UseAbility( item_shield )
 			return
 		end
 	end
