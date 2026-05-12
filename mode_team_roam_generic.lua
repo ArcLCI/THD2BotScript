@@ -2,6 +2,7 @@ local bot = GetBot()
 local botName = bot:GetUnitName()
 local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
 local IsAvoidingAbilityZone = false
 local IsAvoidingAbilityProjectile = false
@@ -76,23 +77,25 @@ function HasProjectileThatNeedToAvoid(nProjectiles)
 end
 
 function HasSpecialUnitThatNeedToAttack()
-	for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMIES))
-    do
-        if IsValid(enemy)
-        then
-            local enemyName = enemy:GetUnitName()
-
-            if specialUnits[enemyName]
-            and enemy:GetTeam() ~= bot:GetTeam()
-            and GetUnitToUnitDistance(bot, enemy) <= specialUnits[enemyName] * 1400
-            and RandomInt(0, 100) <= specialUnits[enemyName] * 100
+	return Timer.GetOrCompute('TeamRoamSpecialUnit-'..tostring(bot:GetPlayerID()), 0.4, function()
+		for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMIES))
+        do
+            if IsValid(enemy)
             then
-				specialTarget = enemy
-				return true
+                local enemyName = enemy:GetUnitName()
+
+                if specialUnits[enemyName]
+                and enemy:GetTeam() ~= bot:GetTeam()
+                and GetUnitToUnitDistance(bot, enemy) <= specialUnits[enemyName] * 1400
+                and RandomInt(0, 100) <= specialUnits[enemyName] * 100
+                then
+				    specialTarget = enemy
+				    return true
+                end
             end
         end
-    end
-	return false
+		return false
+	end)
 end
 
 function SpecialYugi04()

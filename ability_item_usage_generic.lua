@@ -174,6 +174,17 @@ end
 
 function IsCourierTargetedByUnit( courier )
 
+	if courier == nil then return false end
+	if courier:DistanceFromFountain() < 900 then return false end
+
+	local cacheKey = 'IsCourierTargetedByUnit-'..tostring(bot:GetPlayerID())..'-'..tostring(J.ToNearest500(courier:GetLocation().x))..'-'..tostring(J.ToNearest500(courier:GetLocation().y))
+	return J.Utils.GetCachedOrCompute(cacheKey, 0.6, function()
+		return ComputeIsCourierTargetedByUnit(courier)
+	end)
+end
+
+function ComputeIsCourierTargetedByUnit( courier )
+
 	local botLV = bot:GetLevel()
 
 	if GetHP( courier ) < 0.9
@@ -316,10 +327,11 @@ function GetHP( unit )
 end
 
 function CourierUsageThink()
+	if bot:IsIllusion() or not bot:IsAlive() then return end
 	if bot.lastCourierFrameProcessTime == nil then bot.lastCourierFrameProcessTime = DotaTime() end
 	if DotaTime() - bot.lastCourierFrameProcessTime < bot.frameProcessTime then return end
 	bot.lastCourierFrameProcessTime = DotaTime()
-	if not bot:IsIllusion() then CourierUsageComplement() end
+	CourierUsageComplement()
 end
 
 local function ItemUsageComplement()

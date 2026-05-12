@@ -1,8 +1,11 @@
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
 local Defend = {}
 local currentTime = DotaTime()
 local maxDesire = 0.98
+local DEFEND_DESIRE_CACHE_INTERVAL = 0.75
+local DEFEND_DESIRE_STAGGER_INTERVAL = 0.08
 
 local function GetLaneState(bot, lane)
 	if bot.DefendLaneState == nil then bot.DefendLaneState = {} end
@@ -11,6 +14,12 @@ local function GetLaneState(bot, lane)
 end
 
 function Defend.GetDefendDesire(bot, lane)
+	return Timer.GetOrComputeBotLane('DefendDesire', bot, lane, DEFEND_DESIRE_CACHE_INTERVAL, function()
+		return Defend.ComputeDefendDesire(bot, lane)
+	end, DEFEND_DESIRE_STAGGER_INTERVAL)
+end
+
+function Defend.ComputeDefendDesire(bot, lane)
 	if bot:IsIllusion() then return BOT_MODE_DESIRE_NONE end
 	if bot.laneToDefend == nil then bot.laneToDefend = lane end
 	if bot.DefendLaneDesire == nil then bot.DefendLaneDesire = {0, 0, 0} end
@@ -58,7 +67,8 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 	state.botTarget = J.GetProperTarget(bot);
 	state.weAreStronger = J.WeAreStronger(bot, nSearchRange)
 
-	state.nEnemyUnitsAroundAncient = J.GetEnemiesAroundLoc(ancient:GetLocation(), 1500)
+	local ancientDefenseState = J.GetAncientDefenseState(1500)
+	state.nEnemyUnitsAroundAncient = ancientDefenseState.enemyPressure
 
 	local nDefendAllyHeroes = J.GetAlliesNearLoc(defendLoc, nSearchRange)
 	state.nEffctiveAllyHeroesNearPingedDefendLoc = #nDefendAllyHeroes + #J.Utils.GetAllyIdsInTpToLocation(defendLoc, nSearchRange)
@@ -102,7 +112,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 	if #state.nInRangeEnemy > 0 and distanceToDefendLoc < 1200
 	or bot:GetLevel() < 3
 	or (bot:GetAssignedLane() == LANE_MID and bot:GetLevel() < 10)
-	or (J.IsDoingRoshan(bot) and #J.GetAlliesNearLoc(J.GetCurrentRoshanLocation(), 2800) >= 3)
+	or (J.IsDoingRoshan(bot) and J.GetRoshanTeamState(2800).isDoingRoshanWithTeam)
 	then
 		return BOT_MODE_DESIRE_NONE
 	end

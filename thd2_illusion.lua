@@ -1,4 +1,5 @@
 local X = {}
+local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local ownerBot
 
 local nEnemyAncient = GetAncient(GetOpposingTeam())
@@ -477,6 +478,13 @@ function ConsiderAttack(hMinionUnit)
 end
 
 function GetAttackTarget(hMinionUnit)
+	local cacheKey = 'IllusionAttackTarget-'..tostring(hMinionUnit:GetUnitName())..'-'..tostring(Timer.RoundLocationKey(hMinionUnit:GetLocation()))
+	return Timer.GetOrCompute(cacheKey, 0.4, function()
+		return ComputeAttackTarget(hMinionUnit)
+	end)
+end
+
+function ComputeAttackTarget(hMinionUnit)
 	local target = nil
 	local bot = GetBot()
 

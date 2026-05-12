@@ -219,11 +219,10 @@ function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 	end
 	]]--
 	--special: reduce to avoid error
-	--local CacheAliveLimit = 0.05
-	local CacheAliveLimit = 0.00
+	local CacheAliveLimit = 0.12
 
-	--if nRadius > 1500 then CacheAliveLimit = CacheAliveLimitWild end
-	--if nRadius > 1500 and nRadius < 3000 then nRadius = 1500 end
+	--if nRadius > 1600 then CacheAliveLimit = CacheAliveLimitWild end
+	--if nRadius > 1600 and nRadius < 3000 then nRadius = 1600 end
 	--nRadius = nRadius - (nRadius%200)
 
 	local RadiusSqr = nRadius*nRadius
@@ -239,11 +238,11 @@ function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 	end
 
 	-- Update 
-	if DotaTime()-LastGetNearbyHeroesDotaTime[tag] > CacheAliveLimit then
-		LastGetNearbyHeroesDotaTime[tag] = DotaTime()
+	if GameTime()-LastGetNearbyHeroesDotaTime[tag] > CacheAliveLimit then
+		LastGetNearbyHeroesDotaTime[tag] = GameTime()
 		local tmp = {}
 		LastGetNearbyHeroesResult[tag] = {}
-		if nRadius > 1500 then
+		if nRadius > 1600 then
 			if bEnemies then
 				tmp = GetUnitList(UNIT_LIST_ENEMY_HEROES)
 			else

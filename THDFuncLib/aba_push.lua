@@ -1,5 +1,6 @@
 local Push = {}
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
 local pingTimeDelta = 5
 local StartToPushTime = 9 * 60 -- after x mins, start considering to push.
@@ -11,8 +12,16 @@ local nInRangeAlly
 local nInRangeEnemy
 local hEnemyAncient
 local BOT_MODE_DESIRE_EXTRA_LOW = 0.02
+local PUSH_DESIRE_CACHE_INTERVAL = 0.75
+local PUSH_DESIRE_STAGGER_INTERVAL = 0.08
 
 function Push.GetPushDesire(bot, lane)
+    return Timer.GetOrComputeBotLane('PushDesire', bot, lane, PUSH_DESIRE_CACHE_INTERVAL, function()
+        return Push.ComputePushDesire(bot, lane)
+    end, PUSH_DESIRE_STAGGER_INTERVAL)
+end
+
+function Push.ComputePushDesire(bot, lane)
     if bot.laneToPush == nil then bot.laneToPush = lane end
 
     local nMaxDesire = 0.9
@@ -37,7 +46,7 @@ function Push.GetPushDesire(bot, lane)
     local currentTime = DotaTime()
 
 	if (bot:GetAssignedLane() == LANE_MID and J.IsInLaningPhase())
-    or (J.IsDoingRoshan(bot) and #J.GetAlliesNearLoc(J.GetCurrentRoshanLocation(), 2800) >= 3)
+    or (J.IsDoingRoshan(bot) and J.GetRoshanTeamState(2800).isDoingRoshanWithTeam)
 	then
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
@@ -77,9 +86,9 @@ function Push.GetPushDesire(bot, lane)
     local teamKillsRatio = allyKills / enemyKills
 
     local distanceToEnemyAncient = GetUnitToUnitDistance(bot, hEnemyAncient)
-    local teamAncientLoc = GetAncient(GetTeam()):GetLocation()
-    local nEffctiveAllyHeroesNearAncient = #J.GetAlliesNearLoc(teamAncientLoc, 4500) + #J.Utils.GetAllyIdsInTpToLocation(teamAncientLoc, 4500)
-	local nEnemyUnitsAroundAncient = J.GetEnemiesAroundLoc(teamAncientLoc, 4500)
+    local ancientDefenseState = J.GetAncientDefenseState(4500)
+    local nEffctiveAllyHeroesNearAncient = ancientDefenseState.effectiveAllyCount
+	local nEnemyUnitsAroundAncient = ancientDefenseState.enemyPressure
     if nEnemyUnitsAroundAncient > 0 and nEffctiveAllyHeroesNearAncient < 1
     then
         nMaxDesire = 0.55
@@ -138,6 +147,12 @@ function Push.GetPushDesire(bot, lane)
 end
 
 function Push.WhichLaneToPush(bot, lane)
+    local cacheKey = 'PushWhichLaneToPush-'..tostring(GetTeam())
+    local cachedLane = J.Utils.GetCachedVars(cacheKey, 1.0)
+    if cachedLane ~= nil then
+        return cachedLane
+    end
+
     -- the smaller the higher desire
     local topLaneScore = 0
     local midLaneScore = 0
@@ -220,21 +235,25 @@ function Push.WhichLaneToPush(bot, lane)
     if  topLaneScore < midLaneScore
     and topLaneScore < botLaneScore
     then
+        J.Utils.SetCachedVars(cacheKey, LANE_TOP)
         return LANE_TOP
     end
 
     if  midLaneScore < topLaneScore
     and midLaneScore < botLaneScore
     then
+        J.Utils.SetCachedVars(cacheKey, LANE_MID)
         return LANE_MID
     end
 
     if  botLaneScore < topLaneScore
     and botLaneScore < midLaneScore
     then
+        J.Utils.SetCachedVars(cacheKey, LANE_BOT)
         return LANE_BOT
     end
 
+    J.Utils.SetCachedVars(cacheKey, LANE_MID)
     return LANE_MID
 end
 
@@ -460,42 +479,48 @@ function Push.IsEnemyTP(nID)
 end
 
 function Push.IsInDangerWithinTower(hUnit, fThreshold, fDuration)
-    local totalDamage = 0
-    for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMIES)) do
-        if J.IsValid(enemy)
-        and J.IsInRange(hUnit, enemy, 1600)
-        and (enemy:GetAttackTarget() == hUnit or J.IsChasingTarget(enemy, hUnit)) then
-            totalDamage = totalDamage + hUnit:GetActualIncomingDamage(enemy:GetAttackDamage() * enemy:GetAttackSpeed() * fDuration, DAMAGE_TYPE_PHYSICAL)
+    local cacheKey = 'PushIsInDangerWithinTower-'..tostring(hUnit:GetUnitName())..'-'..tostring(J.ToNearest500(hUnit:GetLocation().x))..'-'..tostring(J.ToNearest500(hUnit:GetLocation().y))
+    return J.Utils.GetCachedOrCompute(cacheKey, 0.3, function()
+        local totalDamage = 0
+        for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMIES)) do
+            if J.IsValid(enemy)
+            and J.IsInRange(hUnit, enemy, 1600)
+            and (enemy:GetAttackTarget() == hUnit or J.IsChasingTarget(enemy, hUnit)) then
+                totalDamage = totalDamage + hUnit:GetActualIncomingDamage(enemy:GetAttackDamage() * enemy:GetAttackSpeed() * fDuration, DAMAGE_TYPE_PHYSICAL)
+            end
         end
-    end
 
-    local hUnitHealth = hUnit:GetHealth()
-    return (totalDamage / hUnitHealth * 1.2) > fThreshold
+        local hUnitHealth = hUnit:GetHealth()
+        return (totalDamage / hUnitHealth * 1.2) > fThreshold
+    end)
 end
 
 function Push.GetSpecialUnitsNearby(bot, hUnitList, nRadius)
-    local hCreepList = hUnitList
-    for _, unit in pairs(GetUnitList(UNIT_LIST_ENEMIES)) do
-        if unit ~= nil and unit:CanBeSeen() and J.IsInRange(bot, unit, nRadius) then
-            local sUnitName = unit:GetUnitName()
-            if string.find(sUnitName, 'invoker_forge_spirit')
-            or string.find(sUnitName, 'lycan_wolf')
-            or string.find(sUnitName, 'eidolon')
-            or string.find(sUnitName, 'beastmaster_boar')
-            or string.find(sUnitName, 'beastmaster_greater_boar')
-            or string.find(sUnitName, 'furion_treant')
-            or string.find(sUnitName, 'broodmother_spiderling')
-            or string.find(sUnitName, 'skeleton_warrior')
-            or string.find(sUnitName, 'warlock_golem')
-            or unit:HasModifier('modifier_dominated')
-            or unit:HasModifier('modifier_chen_holy_persuasion')
-            then
-                table.insert(hCreepList, unit)
+    local cacheKey = 'PushGetSpecialUnitsNearby-'..tostring(bot:GetPlayerID())..'-'..tostring(nRadius)
+    return J.Utils.GetCachedOrCompute(cacheKey, 0.5, function()
+        local hCreepList = hUnitList
+        for _, unit in pairs(GetUnitList(UNIT_LIST_ENEMIES)) do
+            if unit ~= nil and unit:CanBeSeen() and J.IsInRange(bot, unit, nRadius) then
+                local sUnitName = unit:GetUnitName()
+                if string.find(sUnitName, 'invoker_forge_spirit')
+                or string.find(sUnitName, 'lycan_wolf')
+                or string.find(sUnitName, 'eidolon')
+                or string.find(sUnitName, 'beastmaster_boar')
+                or string.find(sUnitName, 'beastmaster_greater_boar')
+                or string.find(sUnitName, 'furion_treant')
+                or string.find(sUnitName, 'broodmother_spiderling')
+                or string.find(sUnitName, 'skeleton_warrior')
+                or string.find(sUnitName, 'warlock_golem')
+                or unit:HasModifier('modifier_dominated')
+                or unit:HasModifier('modifier_chen_holy_persuasion')
+                then
+                    table.insert(hCreepList, unit)
+                end
             end
         end
-    end
 
-    return hCreepList
+        return hCreepList
+    end)
 end
 
 function Push.IsHealthyInsideFountain(hUnit)

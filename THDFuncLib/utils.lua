@@ -522,21 +522,15 @@ local multiply = ____native_2Doperators.multiply
 local sub = ____native_2Doperators.sub
 local ____heroes = require(GetScriptDirectory().."/ts_libs/dota/heroes")
 local HeroName = ____heroes.HeroName
+local Timer = require(GetScriptDirectory().."/thd2_timer")
 function ____exports.SetCachedVars(key, value)
-    if not ____exports.GameStates.cachedVars then
-        ____exports.GameStates.cachedVars = {}
-    end
-    ____exports.GameStates.cachedVars[key] = value
-    ____exports.GameStates.cachedVars[key .. "-Time"] = DotaTime()
+    Timer.Set(key, value)
 end
 function ____exports.GetCachedVars(key, withinTime)
-    if not ____exports.GameStates.cachedVars or not ____exports.GameStates.cachedVars[key] then
-        return nil
-    end
-    if DotaTime() - ____exports.GameStates.cachedVars[key .. "-Time"] <= withinTime then
-        return ____exports.GameStates.cachedVars[key]
-    end
-    return nil
+    return Timer.Get(key, withinTime)
+end
+function ____exports.GetCachedOrCompute(key, withinTime, computeFn)
+    return Timer.GetOrCompute(key, withinTime, computeFn)
 end
 --- Check if the target is a valid unit. can be hero, creep, or building.
 -- 
@@ -1955,12 +1949,18 @@ end
 -- @param nDistance - The distance to check.
 -- @returns An array of ally ids.
 function ____exports.GetAllyIdsInTpToLocation(vLoc, nDistance)
+    local cacheKey = (("GetAllyIdsInTpToLocation" .. tostring(nDistance)) .. "-") .. Timer.RoundLocationKey(vLoc)
+    local cachedRes = ____exports.GetCachedVars(cacheKey, 0.5)
+    if cachedRes ~= nil then
+        return cachedRes
+    end
     local allies = {}
     for ____, tp in ipairs(GetIncomingTeleports()) do
         if tp ~= nil and ____exports.GetLocationToLocationDistance(vLoc, tp.location) <= nDistance and IsTeamPlayer(tp.playerid) then
             allies[#allies + 1] = tp.playerid
         end
     end
+    ____exports.SetCachedVars(cacheKey, allies)
     return allies
 end
 --- Check if the bot is pushing a tower in danger.

@@ -257,7 +257,8 @@ end
 function J.GetEnemiesAroundLoc(vLoc, nRadius)
 	if not nRadius then nRadius = 2000 end
 	local cacheKey = 'GetEnemiesAroundLoc'..tostring(nRadius) ..'-'..tostring(J.ToNearest500(vLoc.x))..'-'..tostring(J.ToNearest500(vLoc.y))
-	local cache = J.Utils.GetCachedVars(cacheKey, 0.5)
+	local cacheAliveLimit = nRadius >= 3000 and 1.25 or 0.75
+	local cache = J.Utils.GetCachedVars(cacheKey, cacheAliveLimit)
 	if cache ~= nil then return cache end
 
 	local nUnitCount = 0
@@ -300,6 +301,76 @@ function J.GetEnemiesAroundLoc(vLoc, nRadius)
 
 	J.Utils.SetCachedVars(cacheKey, nUnitCount)
 	return nUnitCount
+end
+
+function J.GetAncientDefenseState(nRadius)
+	if not nRadius then nRadius = 4500 end
+	local ancientLoc = GetAncient(GetTeam()):GetLocation()
+	local cacheKey = 'AncientDefenseState-'..tostring(GetTeam())..'-'..tostring(nRadius)
+	return J.Utils.GetCachedOrCompute(cacheKey, 1.25, function()
+		local allyHeroes = J.GetAlliesNearLoc(ancientLoc, nRadius)
+		local allyTpIds = J.Utils.GetAllyIdsInTpToLocation(ancientLoc, nRadius)
+		local enemyPressure = J.GetEnemiesAroundLoc(ancientLoc, nRadius)
+		return {
+			allyHeroCount = #allyHeroes,
+			allyTpCount = #allyTpIds,
+			effectiveAllyCount = #allyHeroes + #allyTpIds,
+			enemyPressure = enemyPressure,
+			hasEnemy = enemyPressure > 0,
+		}
+	end)
+end
+
+function J.GetRoshanTeamState(nRadius)
+	if not nRadius then nRadius = 2800 end
+	local cacheKey = 'RoshanTeamState-'..tostring(GetTeam())..'-'..tostring(nRadius)
+	return J.Utils.GetCachedOrCompute(cacheKey, 1.0, function()
+		local roshanLoc = J.GetCurrentRoshanLocation()
+		local allyHeroCount = J.CountAliveAlliesNearLoc(roshanLoc, nRadius)
+		return {
+			allyHeroCount = allyHeroCount,
+			isDoingRoshanWithTeam = allyHeroCount >= 3,
+		}
+	end)
+end
+
+function J.CountAliveAlliesNearLoc(vLoc, nRadius)
+	local count = 0
+	local radiusSqr = nRadius * nRadius
+	for i = 1, #GetTeamPlayers(GetTeam()) do
+		local member = GetTeamMember(i)
+		if member ~= nil
+		and member:IsHero()
+		and member:IsAlive()
+		and not member:IsIllusion()
+		and GetUnitToLocationDistanceSqr(member, vLoc) <= radiusSqr
+		then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+function J.CountLastSeenEnemiesNearLoc(vLoc, nRadius, maxSeenAge)
+	if maxSeenAge == nil then maxSeenAge = 5.0 end
+	local count = 0
+	local radiusSqr = nRadius * nRadius
+	for _, id in pairs(GetTeamPlayers(GetOpposingTeam())) do
+		if IsHeroAlive(id) then
+			local info = GetHeroLastSeenInfo(id)
+			if info ~= nil then
+				local dInfo = info[1]
+				if dInfo ~= nil and dInfo.time_since_seen <= maxSeenAge then
+					local dx = dInfo.location.x - vLoc.x
+					local dy = dInfo.location.y - vLoc.y
+					if dx * dx + dy * dy <= radiusSqr then
+						count = count + 1
+					end
+				end
+			end
+		end
+	end
+	return count
 end
 
 function J.GetAlliesNearLoc( vLoc, nRadius )
@@ -942,8 +1013,8 @@ local LastGetNearbyHeroesDotaTime = {}
 local LastGetNearbyHeroesResult = {}
 
 local NEARBY_HERO_NATIVE_MAX_RADIUS = 1600
-local NEARBY_HERO_FALLBACK_RADIUS = 1500
-local NEARBY_HERO_CACHE_ALIVE_LIMIT = 0.00
+local NEARBY_HERO_FALLBACK_RADIUS = 1600
+local NEARBY_HERO_CACHE_ALIVE_LIMIT = 0.12
 
 function J.GetNearbyHeroes(bot, nRadius, bEnemy, bBotMode)
 	if bot == nil then bot = GetBot() end
@@ -963,8 +1034,8 @@ function J.GetNearbyHeroes(bot, nRadius, bEnemy, bBotMode)
     	LastGetNearbyHeroesResult[tag] = {}
 	end
 
-	if DotaTime() - LastGetNearbyHeroesDotaTime[tag] > NEARBY_HERO_CACHE_ALIVE_LIMIT then
-		LastGetNearbyHeroesDotaTime[tag] = DotaTime()
+	if GameTime() - LastGetNearbyHeroesDotaTime[tag] > NEARBY_HERO_CACHE_ALIVE_LIMIT then
+		LastGetNearbyHeroesDotaTime[tag] = GameTime()
 		LastGetNearbyHeroesResult[tag] = {}
 
 		local candidates = {}
