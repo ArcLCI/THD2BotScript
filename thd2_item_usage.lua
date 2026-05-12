@@ -1610,11 +1610,19 @@ function ConsiderNeutralItems(tBlacklist)
 					if locationAoE.count > 2 then
 						npcBot:Action_UseAbilityOnLocation(item,locationAoE.targetloc)
 						return
+					elseif npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH then
+						npcBot:Action_UseAbilityOnLocation(item,tableNearbyEnemyHeroes[1]:GetLocation()+RandomVector(50))
+						return
+					elseif IsSeriouslyRetreating(npcBot) then
+						local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
+						local v_target = - npcBot:GetLocation() + v_shop
+						local dis = GetUnitToLocationDistance( npcBot,v_shop)
+						local v_final = v_target/dis * nCastRange + npcBot:GetLocation()
+						npcBot:Action_UseAbilityOnLocation(item,v_final)
+						return
 					end
 				end
 			end
-			npcBot:Action_UseAbilityOnLocation(item,tableNearbyEnemyHeroes[1]:GetLocation()+RandomVector(25))
-			return
 		end
 		return
 	elseif itemName == "item_minotaur_horn" then
