@@ -726,14 +726,17 @@ function X.CanJuke()
 			end
 		end
 	end
-
+	local totalDamage = 0
 	local nEnemies = J.GetNearbyHeroes(bot, 1200, true, BOT_MODE_NONE )
-	if #nEnemies >= 2 and J.GetHP(bot) < 0.35 then
-		return false
+	for _, enemy in pairs( nEnemies )
+	do
+		local enemyDamage = enemy:GetEstimatedDamageToTarget( true, bot, 4.0, DAMAGE_TYPE_ALL )
+		totalDamage = totalDamage + enemyDamage
+		if bot:OriginalGetHealth() <= totalDamage then
+			return false
+		end
 	end
-
 	return true
-
 end
 
 function ItemUsageThink()

@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -138,33 +139,18 @@ end
 
 ----------------------------------------------------------------------------------------------------
 
-local function IsValidBotTarget(npcTarget)
-	if npcTarget == nil then return false end
-	local ok, result = pcall(function()
-		if npcTarget.CanBeSeen == nil or npcTarget.IsHero == nil or npcTarget.IsMagicImmune == nil or npcTarget.IsInvulnerable == nil then
-			return false
-		end
-		return npcTarget:CanBeSeen()
-			and npcTarget:IsHero()
-			and not npcTarget:IsMagicImmune()
-			and not npcTarget:IsInvulnerable()
-			and not IsPossibleIllusion(npcTarget)
-	end)
-	return ok and result == true
-end
-
 function CanCastShikieiki01OnTarget( npcTarget )
-	return IsValidBotTarget(npcTarget)
+	return J.IsValidBotTarget(npcTarget)
 end
 
 
 function CanCastShikieiki02OnTarget( npcTarget )
-	return IsValidBotTarget(npcTarget)
+	return J.IsValidBotTarget(npcTarget)
 end
 
 
 function CanCastShikieiki04OnTarget( npcTarget )
-	return IsValidBotTarget(npcTarget)
+	return J.IsValidBotTarget(npcTarget)
 end
 ----------------------------------------------------------------------------------------------------
 

@@ -109,8 +109,8 @@ function AbilityUsageThink()
 	cast02Desire = ConsiderAbilityYugi02()
 	if ( cast02Desire > 0 )
 	then
-		J.ClearActionsThrottled(npcBot, 'centaur_cast02', false, 0.6)
-		J.QueueUseAbilityThrottled(npcBot, 'centaur_queue_cast02', ability02, 0.6)
+		J.ClearActionsThrottled(npcBot, 'yugi_cast02', false, 0.6)
+		J.QueueUseAbilityThrottled(npcBot, 'yugi_queue_cast02', ability02, 0.6)
 		return
 	end
 
@@ -119,9 +119,9 @@ function AbilityUsageThink()
 		cast02JumpDesire, cast02JumpLoc = ConsiderAbilityYugi02WithJump(item_jump)
 		if ( cast02JumpDesire > 0 )
 		then
-			if not J.ClearActionsThrottled(npcBot, 'centaur_jump_cast02', false, 0.8) then return end
-			J.QueueUseAbilityOnLocationThrottled(npcBot, 'centaur_queue_jump_item02', item_jump, cast02JumpLoc, 0.8, 180)
-			J.QueueUseAbilityThrottled(npcBot, 'centaur_queue_jump_cast02', ability02, 0.6)
+			if not J.ClearActionsThrottled(npcBot, 'yugi_jump_cast02', false, 0.8) then return end
+			J.QueueUseAbilityOnLocationThrottled(npcBot, 'yugi_queue_jump_item02', item_jump, cast02JumpLoc, 0.8, 180)
+			J.QueueUseAbilityThrottled(npcBot, 'yugi_queue_jump_cast02', ability02, 0.6)
 			return
 		end
 	end
@@ -130,8 +130,8 @@ function AbilityUsageThink()
 
 	if ( cast04Desire > 0 )
 	then
-		J.ClearActionsThrottled(npcBot, 'centaur_cast04', false, 0.6)
-		J.QueueUseAbilityOnEntityThrottled(npcBot, 'centaur_queue_cast04', ability04, cast04Target, 0.6)
+		J.ClearActionsThrottled(npcBot, 'yugi_cast04', false, 0.6)
+		J.QueueUseAbilityOnEntityThrottled(npcBot, 'yugi_queue_cast04', ability04, cast04Target, 0.6)
 		return
 	end
 
@@ -140,9 +140,9 @@ function AbilityUsageThink()
 		cast04JumpDesire, cast04JumpTarget, cast04JumpLoc = ConsiderAbilityYugi04WithJump(item_jump)
 		if ( cast04JumpDesire > 0 )
 		then
-			if not J.ClearActionsThrottled(npcBot, 'centaur_jump_cast04', false, 0.8) then return end
-			J.QueueUseAbilityOnLocationThrottled(npcBot, 'centaur_queue_jump_item04', item_jump, cast04JumpLoc, 0.8, 180)
-			J.QueueUseAbilityOnEntityThrottled(npcBot, 'centaur_queue_jump_cast04', ability04, cast04JumpTarget, 0.6)
+			if not J.ClearActionsThrottled(npcBot, 'yugi_jump_cast04', false, 0.8) then return end
+			J.QueueUseAbilityOnLocationThrottled(npcBot, 'yugi_queue_jump_item04', item_jump, cast04JumpLoc, 0.8, 180)
+			J.QueueUseAbilityOnEntityThrottled(npcBot, 'yugi_queue_jump_cast04', ability04, cast04JumpTarget, 0.6)
 			return
 		end
 	end
