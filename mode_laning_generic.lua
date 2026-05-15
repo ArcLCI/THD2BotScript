@@ -146,15 +146,15 @@ if local_mode_laning_generic then
 	function Think()
 		local hitCreep, moveToCreep = GetBestLastHitCreep(nEnemyCreeps)
 		if J.IsValid(hitCreep) then
-			bot:SetTarget(hitCreep)
-			bot:Action_AttackUnit(hitCreep, true)
+			J.SetTargetIfChanged(bot, hitCreep, 0.3)
+			J.ActionAttackUnit(bot, 'laning_last_hit', hitCreep, true, 0.25)
 			return
 		end
 
 		local denyCreep = GetBestDenyCreep(nAllyCreeps)
 		if J.IsValid(denyCreep) then
-			bot:SetTarget(denyCreep)
-			bot:Action_AttackUnit(denyCreep, true)
+			J.SetTargetIfChanged(bot, denyCreep, 0.3)
+			J.ActionAttackUnit(bot, 'laning_deny', denyCreep, true, 0.25)
 			return
 		end
 
@@ -172,6 +172,6 @@ if local_mode_laning_generic then
 			target_loc = GetLaneFrontLocation(GetOpposingTeam(), botAssignedLane, -nLongestAttackRange)
 		end
 
-		bot:Action_MoveToLocation(target_loc + RandomVector(50))
+		J.ActionMoveToLocation(bot, 'laning_move_front', J.GetStableFormationLocation(bot, 'laning_move_front', target_loc, 80, 10.0), 0.5, 180)
 	end
 end

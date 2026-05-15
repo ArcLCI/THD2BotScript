@@ -5,56 +5,7 @@ require(GetScriptDirectory() ..  "/bot_generic")
 
 function MinionThink( hMinionUnit )
 
-	local ownerBot = GetBot()
-	if not hMinionUnit:IsIllusion() then return end
-
 	if hMinionUnit:IsIllusion() then
-        if ConfuseEnemyWithIllusions(ownerBot, hMinionUnit) > 0 then
-			print("Confusing Enemy...")
-            return
-        end
+        THD2MinionThink( hMinionUnit )
     end
-
-	hMinionUnit.attack_desire, hMinionUnit.attack_target = ConsiderAttack(hMinionUnit)
-    if ConsiderRetreat(hMinionUnit, hMinionUnit.attack_target) then return end
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( ownerBot, 1200, true, BOT_MODE_NONE )
-	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-	do
-		if npcEnemy:HasModifier("modifier_thdots_reisen03_full")
-		then
-			hMinionUnit.attack_target = npcEnemy
-			hMinionUnit.attack_desire = 0.95
-		end
-	end
-
-    if hMinionUnit.attack_desire > 0 then
-        if IsValidUnit(hMinionUnit.attack_target) then
-            hMinionUnit:Action_AttackUnit(hMinionUnit.attack_target, false)
-            return
-        end
-    end
-
-    if DotaTime() >= (hMinionUnit.nextMoveTime or 0) then
-        hMinionUnit.move_desire, hMinionUnit.move_location = ConsiderMove(hMinionUnit)
-        if hMinionUnit.move_desire > 0 then
-            if GetUnitToLocationDistance(hMinionUnit, hMinionUnit.move_location) > 400 then
-                hMinionUnit:Action_MoveToLocation(hMinionUnit.move_location)
-            else
-                hMinionUnit:Action_AttackMove(GetRandomLocationWithinDist(hMinionUnit.move_location, 0, 300))
-            end
-            hMinionUnit.nextMoveTime = DotaTime() + 0.2
-            return
-        end
-
-        -- Default
-        if ownerBot:IsAlive()
-        then
-            hMinionUnit:Action_MoveToLocation(GetRandomLocationWithinDist(ownerBot:GetLocation(), 400, 800))
-        else
-            hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
-        end
-        hMinionUnit.nextMoveTime = DotaTime() + 0.2
-    end
-
-    THD2DemonThink(hMinionUnit)
 end

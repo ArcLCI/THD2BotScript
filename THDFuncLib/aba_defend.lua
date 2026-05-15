@@ -1,11 +1,16 @@
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
+local Scheduler = require(GetScriptDirectory()..'/thd2_scheduler')
+
 
 local Defend = {}
 local currentTime = DotaTime()
 local maxDesire = 0.98
-local DEFEND_DESIRE_CACHE_INTERVAL = 0.75
-local DEFEND_DESIRE_STAGGER_INTERVAL = 0.08
+local DEFEND_DESIRE_CACHE_INTERVAL = 1.5
+local DEFEND_DESIRE_STAGGER_INTERVAL = 0.14
+local DEFEND_LANE_STICKY_SECONDS = 3.0
+local DEFEND_LANES = {LANE_TOP, LANE_MID, LANE_BOT}
+
 
 local function GetLaneState(bot, lane)
 	if bot.DefendLaneState == nil then bot.DefendLaneState = {} end
@@ -13,7 +18,65 @@ local function GetLaneState(bot, lane)
 	return bot.DefendLaneState[lane]
 end
 
+local function GetDefendActiveModeForLane(lane)
+	if lane == LANE_TOP then return BOT_MODE_DEFEND_TOWER_TOP end
+	if lane == LANE_MID then return BOT_MODE_DEFEND_TOWER_MID end
+	if lane == LANE_BOT then return BOT_MODE_DEFEND_TOWER_BOT end
+	return BOT_MODE_NONE
+end
+
+function Defend.GetStableDefendLane(bot, requestedLane)
+	if bot == nil then return requestedLane end
+
+	local now = GameTime()
+	local activeMode = bot:GetActiveMode()
+	for _, lane in pairs(DEFEND_LANES) do
+		if activeMode == GetDefendActiveModeForLane(lane) then
+			bot.StableDefendLane = lane
+			bot.StableDefendLaneUntil = now + DEFEND_LANE_STICKY_SECONDS
+			return lane
+		end
+	end
+
+	local ancientDefenseState = J.GetAncientDefenseState(1500)
+	if ancientDefenseState ~= nil and ancientDefenseState.enemyPressure > 0 then
+		if bot.StableDefendLane == nil or bot.StableDefendLaneUntil == nil or now >= bot.StableDefendLaneUntil then
+			bot.StableDefendLane = requestedLane
+			bot.StableDefendLaneUntil = now + DEFEND_LANE_STICKY_SECONDS
+		end
+		return bot.StableDefendLane
+	end
+
+	if bot.StableDefendLane ~= nil
+	and bot.StableDefendLaneUntil ~= nil
+	and now < bot.StableDefendLaneUntil
+	then
+		return bot.StableDefendLane
+	end
+
+	local selectedLane = requestedLane
+	local bestDesire = -1
+	if bot.DefendLaneDesire ~= nil then
+		for _, lane in pairs(DEFEND_LANES) do
+			local desire = bot.DefendLaneDesire[lane] or 0
+			if desire > bestDesire then
+				bestDesire = desire
+				selectedLane = lane
+			end
+		end
+	end
+
+	bot.StableDefendLane = selectedLane
+	bot.StableDefendLaneUntil = now + DEFEND_LANE_STICKY_SECONDS
+	return selectedLane
+end
+
 function Defend.GetDefendDesire(bot, lane)
+	local stableLane = Defend.GetStableDefendLane(bot, lane)
+	if stableLane ~= lane then
+		return BOT_MODE_DESIRE_NONE
+	end
+
 	return Timer.GetOrComputeBotLane('DefendDesire', bot, lane, DEFEND_DESIRE_CACHE_INTERVAL, function()
 		return Defend.ComputeDefendDesire(bot, lane)
 	end, DEFEND_DESIRE_STAGGER_INTERVAL)
@@ -217,28 +280,35 @@ function Defend.DefendThink(bot, lane)
 
 	if J.IsValidHero(nEnemyHeroes_real[1]) and J.IsInRange(bot, nEnemyHeroes_real[1], nAttackSearchRange)
 	then
-		bot:Action_AttackUnit(nEnemyHeroes_real[1], true)
+		local target = J.GetStickyTarget(bot, 'defend_real_enemy_'..tostring(lane), nEnemyHeroes_real[1], 1.2, nAttackSearchRange + 250)
+		J.ActionAttackUnit(bot, 'defend_attack_real_enemy', target, true, 0.35)
 		return
 	elseif J.IsValidHero(nEnemyHeroes[1]) and J.IsInRange(bot, nEnemyHeroes[1], nAttackSearchRange)
 	then
-		bot:Action_AttackUnit(nEnemyHeroes[1], true)
+		local target = J.GetStickyTarget(bot, 'defend_near_enemy_'..tostring(lane), nEnemyHeroes[1], 1.2, nAttackSearchRange + 250)
+		J.ActionAttackUnit(bot, 'defend_attack_near_enemy', target, true, 0.35)
 		return
 	end
+
 
 	if nEnemyUnitsAroundAncient > 0 then
 		local ancient = GetAncient(GetTeam())
 		if GetUnitToLocationDistance(ancient, defendLoc) < 100 then
 			if GetUnitToUnitDistance(bot, ancient) > 3000 then
-				bot:Action_MoveToLocation(defendLoc + J.RandomForwardVector(300))
+				local moveLoc = J.GetStableFormationLocation(bot, 'defend_move_ancient_'..tostring(lane), defendLoc, 300, 30.0)
+				J.ActionMoveToLocation(bot, 'defend_move_ancient', moveLoc, 0.5, 240)
 				return
 			end
+
 		end
 	end
 
 	if distanceToDefendLoc > nSearchRange then
-		bot:Action_MoveToLocation(defendLoc + J.RandomForwardVector(300))
+		local moveLoc = J.GetStableFormationLocation(bot, 'defend_move_location_'..tostring(lane), defendLoc, 300, 30.0)
+		J.ActionMoveToLocation(bot, 'defend_move_location_'..tostring(lane), moveLoc, 0.5, 240)
 		return
 	end
+
 
 	local nEnemyLaneCreeps = bot:GetNearbyCreeps(900, true)
 	if (nEnemyHeroes_real == nil or #nEnemyHeroes_real <= 0)
@@ -255,20 +325,23 @@ function Defend.DefendThink(bot, lane)
 				attackDMG = creep:GetAttackDamage()
 				targetCreep = creep
 			end
+		end
 
-			if targetCreep ~= nil
-			then
-				bot:Action_AttackUnit(creep, true)
-				return
-			end
+		if targetCreep ~= nil
+		then
+			targetCreep = J.GetStickyTarget(bot, 'defend_creep_'..tostring(lane), targetCreep, 1.0, 1200)
+			J.ActionAttackUnit(bot, 'defend_attack_creep', targetCreep, true, 0.35)
+			return
 		end
 	end
 
+	local actionLoc = J.GetStableFormationLocation(bot, 'defend_action_'..tostring(lane), defendLoc, 300, 30.0)
 	if weAreStronger or #nInRangeAlly >= #nEnemyHeroes_real then
-		bot:Action_AttackMove(defendLoc + J.RandomForwardVector(300))
+		J.ActionAttackMove(bot, 'defend_attack_move_'..tostring(lane), actionLoc, 0.5, 260)
 	else
-		bot:Action_MoveToLocation(defendLoc + J.RandomForwardVector(300))
+		J.ActionMoveToLocation(bot, 'defend_move_fallback_'..tostring(lane), actionLoc, 0.5, 260)
 	end
+
 end
 
 function Defend.GetFurthestBuildingOnLane(lane)
@@ -432,10 +505,18 @@ function Defend.GetFurthestBuildingOnLane(lane)
 end
 
 function Defend.IsValidBuildingTarget(unit)
-	return unit ~= nil
-	and unit:IsAlive()
-	and unit:IsBuilding()
-	and unit:CanBeSeen()
+	if unit == nil then return false end
+
+	local ok, result = pcall(function()
+		return unit.IsAlive ~= nil
+		and unit.IsBuilding ~= nil
+		and unit.CanBeSeen ~= nil
+		and unit:IsAlive()
+		and unit:IsBuilding()
+		and unit:CanBeSeen()
+	end)
+
+	return ok and result == true
 end
 
 function Defend.OnEnd() end

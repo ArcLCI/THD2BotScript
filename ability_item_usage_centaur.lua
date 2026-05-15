@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -108,8 +109,8 @@ function AbilityUsageThink()
 	cast02Desire = ConsiderAbilityYugi02()
 	if ( cast02Desire > 0 )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbility( ability02 )
+		J.ClearActionsThrottled(npcBot, 'centaur_cast02', false, 0.6)
+		J.QueueUseAbilityThrottled(npcBot, 'centaur_queue_cast02', ability02, 0.6)
 		return
 	end
 
@@ -118,9 +119,9 @@ function AbilityUsageThink()
 		cast02JumpDesire, cast02JumpLoc = ConsiderAbilityYugi02WithJump(item_jump)
 		if ( cast02JumpDesire > 0 )
 		then
-			npcBot:Action_ClearActions(false)
-			npcBot:ActionQueue_UseAbilityOnLocation(item_jump,cast02JumpLoc)
-			npcBot:ActionQueue_UseAbility( ability02 )
+			if not J.ClearActionsThrottled(npcBot, 'centaur_jump_cast02', false, 0.8) then return end
+			J.QueueUseAbilityOnLocationThrottled(npcBot, 'centaur_queue_jump_item02', item_jump, cast02JumpLoc, 0.8, 180)
+			J.QueueUseAbilityThrottled(npcBot, 'centaur_queue_jump_cast02', ability02, 0.6)
 			return
 		end
 	end
@@ -129,8 +130,8 @@ function AbilityUsageThink()
 
 	if ( cast04Desire > 0 )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnEntity( ability04 , cast04Target )
+		J.ClearActionsThrottled(npcBot, 'centaur_cast04', false, 0.6)
+		J.QueueUseAbilityOnEntityThrottled(npcBot, 'centaur_queue_cast04', ability04, cast04Target, 0.6)
 		return
 	end
 
@@ -139,9 +140,9 @@ function AbilityUsageThink()
 		cast04JumpDesire, cast04JumpTarget, cast04JumpLoc = ConsiderAbilityYugi04WithJump(item_jump)
 		if ( cast04JumpDesire > 0 )
 		then
-			npcBot:Action_ClearActions(false)
-			npcBot:ActionQueue_UseAbilityOnLocation(item_jump,cast04JumpLoc)
-			npcBot:ActionQueue_UseAbilityOnEntity(ability04, cast04JumpTarget)
+			if not J.ClearActionsThrottled(npcBot, 'centaur_jump_cast04', false, 0.8) then return end
+			J.QueueUseAbilityOnLocationThrottled(npcBot, 'centaur_queue_jump_item04', item_jump, cast04JumpLoc, 0.8, 180)
+			J.QueueUseAbilityOnEntityThrottled(npcBot, 'centaur_queue_jump_cast04', ability04, cast04JumpTarget, 0.6)
 			return
 		end
 	end
@@ -151,7 +152,7 @@ function AbilityUsageThink()
 		if ( npcEnemy ~= nil
 		and npcEnemy:HasModifier( "modifier_thdots_yugi04_think_interval" ))
 		then
-			npcBot:SetTarget(npcEnemy)
+			J.SetTargetIfChanged(npcBot, npcEnemy, 0.8)
 			return
 		end
 	end

@@ -32,7 +32,7 @@ function ItemPurchaseThink()
 	end
 	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)
 
-	if npcBot:FindItemSlot("item_esdw") >=0 and npcBot:FindItemSlot("item_third_eyes") >=0 then
+	if npcBot:FindItemSlot("item_loneliness") >=0 and npcBot:FindItemSlot("item_third_eyes") >=0 then
 		npcBot:ActionImmediate_SellItem(npcBot:GetItemInSlot(npcBot:FindItemSlot("item_third_eyes")))
 	end
 end

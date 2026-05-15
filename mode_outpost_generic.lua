@@ -3,6 +3,13 @@ local botName = bot:GetUnitName()
 if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Timer = require(GetScriptDirectory()..'/thd2_timer')
+
+local OUTPOST_DESIRE_INTERVAL = 1.8
+local OUTPOST_DESIRE_LATE_INTERVAL = 5.0
+local OUTPOST_DESIRE_STAGGER = 0.13
+local OUTPOST_LATE_GAME_TIME = 25 * 60
+local OUTPOST_LATE_MAX_DISTANCE = 1800
 
 local Outposts = {}
 local DidWeGetOutpost = false
@@ -38,6 +45,15 @@ function GetDesire()
 
 	if not IsEnemyTier2Down then return BOT_ACTION_DESIRE_NONE end
 
+	local outpostDesireInterval = OUTPOST_DESIRE_INTERVAL
+	if DotaTime() > OUTPOST_LATE_GAME_TIME then
+		outpostDesireInterval = OUTPOST_DESIRE_LATE_INTERVAL
+	end
+
+	if not Timer.ShouldRunBotTask(bot, 'outpost_desire', outpostDesireInterval, OUTPOST_DESIRE_STAGGER) then
+		return BOT_MODE_DESIRE_NONE
+	end
+
 	if not DidWeGetOutpost
 	then
 		for _, unit in pairs(GetUnitList(UNIT_LIST_ALL))
@@ -53,6 +69,14 @@ function GetDesire()
 	end
 
 	ClosestOutpost, ClosestOutpostDist = GetClosestOutpost()
+	if DotaTime() > OUTPOST_LATE_GAME_TIME and ClosestOutpostDist > OUTPOST_LATE_MAX_DISTANCE then
+		return BOT_MODE_DESIRE_NONE
+	end
+
+	if DotaTime() > 30 * 60 and #bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE) > 0 then
+		return BOT_MODE_DESIRE_NONE
+	end
+
 	if ClosestOutpost ~= nil and ClosestOutpostDist < 3000
 	and not IsEnemyCloserToOutpostLoc(ClosestOutpost:GetLocation(), ClosestOutpostDist)
 	and IsSuitableToCaptureOutpost()
@@ -89,13 +113,13 @@ function Think()
 	then
 		if GetUnitToUnitDistance(bot, ClosestOutpost) > 300
 		then
-			bot:Action_MoveToLocation(ClosestOutpost:GetLocation())
+			J.ActionMoveToLocation(bot, 'outpost_move', ClosestOutpost:GetLocation(), 0.5, 180)
 			return
 		else
 			if hAbilityCapture then
 				bot:Action_UseAbilityOnEntity(hAbilityCapture, ClosestOutpost)
 			else
-				bot:Action_AttackUnit(ClosestOutpost, false)
+				J.ActionAttackUnit(bot, 'outpost_attack', ClosestOutpost, false, 0.5)
 			end
 			return
 		end

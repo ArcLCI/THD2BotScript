@@ -3,7 +3,14 @@ local botName = bot:GetUnitName();
 if bot == nil or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 local X = {}
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
+local RUNE_DESIRE_EARLY_INTERVAL = 0.35
+local RUNE_DESIRE_MID_INTERVAL = 0.9
+local RUNE_DESIRE_LATE_INTERVAL = 3.0
+local RUNE_DESIRE_STAGGER = 0.11
+local RUNE_LATE_GAME_TIME = 20 * 60
+local RUNE_LATE_NEAR_DISTANCE = 900
 local MAX_DIST = 1600
 local minute = 0
 local second = 0
@@ -53,13 +60,32 @@ function GetDesire()
 
     botActiveMode = bot:GetActiveMode()
 
-    if bot:IsInvulnerable() and J.GetHP(bot) > 0.95 and bot:DistanceFromFountain() < 100 then
+	if bot:IsInvulnerable() and J.GetHP(bot) > 0.95 and bot:DistanceFromFountain() < 100 then
         return BOT_MODE_DESIRE_ABSOLUTE
     end
+
+	local runeDesireInterval = RUNE_DESIRE_MID_INTERVAL
+	if DotaTime() < 0 then
+		runeDesireInterval = RUNE_DESIRE_EARLY_INTERVAL
+	elseif DotaTime() > 20 * 60 then
+		runeDesireInterval = RUNE_DESIRE_LATE_INTERVAL
+	end
+
+	if not Timer.ShouldRunBotTask(bot, 'rune_desire', runeDesireInterval, RUNE_DESIRE_STAGGER) then
+		return BOT_MODE_DESIRE_NONE
+	end
 
 	local wrDesire = ConsiderWisdomRune()
 	if wrDesire > 0.1 then
 		return wrDesire
+	end
+
+	if DotaTime() > RUNE_LATE_GAME_TIME and not X.IsNearRune(bot, RUNE_LATE_NEAR_DISTANCE) then
+		return BOT_MODE_DESIRE_NONE
+	end
+
+	if DotaTime() > 30 * 60 and not X.IsNearRune(bot, 450) then
+		return BOT_MODE_DESIRE_NONE
 	end
 
 	if DotaTime() > -10 and bot:GetCurrentActionType() == BOT_ACTION_TYPE_IDLE then
@@ -162,7 +188,15 @@ function ConsiderWisdomRune()
 		X.UpdateWisdom()
 		if DotaTime() >= 7 * 60 then
 			if DotaTime() < wisdomRuneInfo[1] + 3.5 then
-				if GetUnitToLocationDistance(bot, wisdomRuneSpots[wisdomRuneInfo[2]]) < 50 then
+				local activeWisdomSpot = wisdomRuneInfo[2]
+				local activeWisdomLoc = activeWisdomSpot ~= nil and wisdomRuneSpots[activeWisdomSpot] or nil
+				if activeWisdomLoc == nil then
+					wisdomRuneInfo[1] = 0
+					wisdomRuneInfo[2] = nil
+					wisdomRuneInfo[3] = false
+					return 0
+				end
+				if GetUnitToLocationDistance(bot, activeWisdomLoc) < 50 then
 					return 0
 				end
 				if not bot:WasRecentlyDamagedByAnyHero(3.0) then
@@ -183,6 +217,8 @@ function ConsiderWisdomRune()
 			local runeSpot = X.GetWisdomRuneSpot()
 			if runeSpot ~= nil
 			and bot.wisdom ~= nil
+			and bot.wisdom[timeInMin] ~= nil
+			and wisdomRuneSpots[runeSpot] ~= nil
 			and bot.wisdom[timeInMin][runeSpot] == false
 			and bot == X.GetWisdomAlly(wisdomRuneSpots[runeSpot]) then
 				wisdomRuneInfo[2] = runeSpot
@@ -208,7 +244,7 @@ function Think()
     if bot:IsInvulnerable()
     and J.GetHP(bot) > 0.95
     and bot:DistanceFromFountain() < 100 then
-        bot:Action_MoveToLocation(bot:GetLocation() + RandomVector(500))
+        J.ActionMoveToLocation(bot, "rune_fountain_leave", J.GetStableRandomLocation(bot, 'rune_fountain_leave', bot:GetLocation(), 450, 550, 1.5), 0.5)
         return
     end
 
@@ -228,11 +264,11 @@ function Think()
             local vGoOutLocation = X.GetGoOutLocation()
 
             if GetUnitToLocationDistance(bot, vGoOutLocation) > 500 then
-                bot:Action_MoveToLocation(vGoOutLocation)
+                J.ActionMoveToLocation(bot, "rune_pre_go_out", vGoOutLocation, 0.5)
                 return
             end
 
-            bot:Action_ClearActions(false)
+            J.ClearActionsThrottled(bot, 'rune_pre_go_out_clear', false, 1.0)
             return
         end
 
@@ -240,19 +276,19 @@ function Think()
 		then
 			if bot:GetAssignedLane() == LANE_BOT
 			then
-				bot:Action_MoveToLocation(GetRuneSpawnLocation(RUNE_BOUNTY_2) + RandomVector(50))
+				J.ActionMoveToLocation(bot, "rune_pre_bounty_2", J.GetStableRandomLocation(bot, 'rune_pre_bounty_2', GetRuneSpawnLocation(RUNE_BOUNTY_2), 30, 60, 1.0), 0.5)
 				return
             else
-                bot:Action_MoveToLocation(GetRuneSpawnLocation(RUNE_POWERUP_1) + RandomVector(50))
+                J.ActionMoveToLocation(bot, "rune_pre_power_1", J.GetStableRandomLocation(bot, 'rune_pre_power_1', GetRuneSpawnLocation(RUNE_POWERUP_1), 30, 60, 1.0), 0.5)
 				return
 			end
 		else
 			if bot:GetAssignedLane() == LANE_TOP
 			then
-				bot:Action_MoveToLocation(GetRuneSpawnLocation(RUNE_BOUNTY_1) + RandomVector(50))
+				J.ActionMoveToLocation(bot, "rune_pre_bounty_1", J.GetStableRandomLocation(bot, 'rune_pre_bounty_1', GetRuneSpawnLocation(RUNE_BOUNTY_1), 30, 60, 1.0), 0.5)
 				return
             else
-                bot:Action_MoveToLocation(GetRuneSpawnLocation(RUNE_POWERUP_2) + RandomVector(50))
+                J.ActionMoveToLocation(bot, "rune_pre_power_2", J.GetStableRandomLocation(bot, 'rune_pre_power_2', GetRuneSpawnLocation(RUNE_POWERUP_2), 30, 60, 1.0), 0.5)
 				return
 			end
 		end
@@ -266,14 +302,15 @@ function Think()
 	if nRuneStatus == RUNE_STATUS_AVAILABLE then
 		if ClosestDistance > 50 then
 			if J.IsValidHero(nEnemyHeroes[1])
-            and bot:GetEstimatedDamageToTarget(false, nEnemyHeroes[1], 5.0, DAMAGE_TYPE_ALL) > nEnemyHeroes[1]:GetEstimatedDamageToTarget(false, bot, 5.0, DAMAGE_TYPE_ALL) * 1.5
+            and J.GetHP(bot) > 0.65
+            and J.GetHP(nEnemyHeroes[1]) < 0.45
             and bot:GetHealth() > 500
 			then
-				bot:Action_AttackUnit(nEnemyHeroes[1], true)
+				J.ActionAttackUnit(bot, "rune_attack_enemy", nEnemyHeroes[1], true, 0.35)
 				return
 			end
 
-			bot:Action_MoveToLocation(GetRuneSpawnLocation(ClosestRune) + RandomVector(25))
+			J.ActionMoveToLocation(bot, "rune_move_closest", J.GetStableRandomLocation(bot, 'rune_move_closest_'..tostring(ClosestRune), GetRuneSpawnLocation(ClosestRune), 15, 30, 0.8), 0.4)
 			return
 		else
 			bot:Action_PickUpRune(ClosestRune)
@@ -281,14 +318,15 @@ function Think()
 		end
 	else
         if J.IsValidHero(nEnemyHeroes[1])
-        and bot:GetEstimatedDamageToTarget(false, nEnemyHeroes[1], 5.0, DAMAGE_TYPE_ALL) > nEnemyHeroes[1]:GetEstimatedDamageToTarget(false, bot, 5.0, DAMAGE_TYPE_ALL) * 1.5
+        and J.GetHP(bot) > 0.65
+        and J.GetHP(nEnemyHeroes[1]) < 0.45
         and bot:GetHealth() > 500
         then
-            bot:Action_AttackUnit(nEnemyHeroes[1], true)
+            J.ActionAttackUnit(bot, "rune_attack_enemy_missing", nEnemyHeroes[1], true, 0.35)
             return
         end
 
-		bot:Action_MoveToLocation(GetRuneSpawnLocation(ClosestRune))
+		J.ActionMoveToLocation(bot, "rune_move_spawn", GetRuneSpawnLocation(ClosestRune), 0.4)
 		return
 	end
  end
@@ -325,10 +363,11 @@ function X.IsSuitableToPickRune()
 	return true
 end
 
-function X.IsNearRune(hUnit)
+function X.IsNearRune(hUnit, nDistance)
+	if nDistance == nil then nDistance = 600 end
 	for _, rune in pairs(nRuneList) do
 		local rLoc = GetRuneSpawnLocation(rune)
-		if GetUnitToLocationDistance(hUnit, rLoc) <= 600 then
+		if GetUnitToLocationDistance(hUnit, rLoc) <= nDistance then
 			return true
 		end
 	end

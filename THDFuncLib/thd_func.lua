@@ -66,7 +66,328 @@ function J.IsValidTarget(nTarget)
 	-- NOTE: return J.Utils.IsValidUnit(nTarget) -- ideally it should be IsValidUnit, but a lot of legacy usage causing some problems.
 	return J.Utils.IsValidHero(nTarget)
 end
+
+local ACTION_THROTTLE_DEFAULT_INTERVAL = 0.35
+local ACTION_THROTTLE_DEFAULT_DISTANCE = 160
+local ACTION_STABLE_RANDOM_INTERVAL = 1.5
+
+local function GetActionThrottleState(bot)
+	if bot.ActionThrottleState == nil then bot.ActionThrottleState = {} end
+	return bot.ActionThrottleState
+end
+
+local function IsNullUnit(unit)
+	if unit == nil then return true end
+	if unit.IsNull == nil then return false end
+	local ok, result = pcall(function() return unit:IsNull() end)
+	if not ok then return false end
+	return result == true
+end
+
+local GetLocationActionKey
+
+local function GetUnitActionKey(unit)
+	if IsNullUnit(unit) then return 'nil' end
+
+	if unit.entindex ~= nil then
+		local ok, result = pcall(function() return unit:entindex() end)
+		if ok and result ~= nil then return 'ent:' .. tostring(result) end
+	end
+
+	if unit.GetEntityIndex ~= nil then
+		local ok, result = pcall(function() return unit:GetEntityIndex() end)
+		if ok and result ~= nil then return 'idx:' .. tostring(result) end
+	end
+
+	local unitName = 'unit'
+	if unit.GetUnitName ~= nil then
+		local ok, result = pcall(function() return unit:GetUnitName() end)
+		if ok and result ~= nil then unitName = tostring(result) end
+	end
+
+	local playerId = nil
+	if unit.GetPlayerID ~= nil then
+		local ok, result = pcall(function() return unit:GetPlayerID() end)
+		if ok and result ~= nil then playerId = result end
+	elseif unit.GetPlayerOwnerID ~= nil then
+		local ok, result = pcall(function() return unit:GetPlayerOwnerID() end)
+		if ok and result ~= nil then playerId = result end
+	end
+
+	local locKey = 'no_loc'
+	if unit.GetLocation ~= nil then
+		local ok, loc = pcall(function() return unit:GetLocation() end)
+		if ok and loc ~= nil then
+			locKey = GetLocationActionKey(loc, 80)
+		end
+	elseif unit.GetAbsOrigin ~= nil then
+		local ok, loc = pcall(function() return unit:GetAbsOrigin() end)
+		if ok and loc ~= nil then
+			locKey = GetLocationActionKey(loc, 80)
+		end
+	end
+
+	return table.concat({ unitName, tostring(playerId or -1), locKey }, ':')
+end
+
+GetLocationActionKey = function(vLoc, distance)
+	if vLoc == nil then return 'nil' end
+	if distance == nil then distance = ACTION_THROTTLE_DEFAULT_DISTANCE end
+	local x = math.floor(vLoc.x / distance + 0.5) * distance
+	local y = math.floor(vLoc.y / distance + 0.5) * distance
+	return tostring(x)..':'..tostring(y)
+end
+
+function J.GetStableRandomLocation(bot, key, center, minRadius, maxRadius, interval)
+	if bot == nil or center == nil then return center end
+	if minRadius == nil then minRadius = 0 end
+	if maxRadius == nil then maxRadius = minRadius end
+	if interval == nil then interval = ACTION_STABLE_RANDOM_INTERVAL end
+
+	local state = GetActionThrottleState(bot)
+	local stateKey = 'stable_random_' .. tostring(key)
+	local now = GameTime()
+	local cached = state[stateKey]
+	if cached ~= nil and cached.location ~= nil and now - cached.time < interval then
+		return cached.location
+	end
+
+	local location = center + RandomVector(RandomInt(minRadius, maxRadius))
+	state[stateKey] = { location = location, time = now }
+	return location
+end
+
+function J.GetStableBotOffset(bot, key, radius, interval)
+	if bot == nil then return Vector(0, 0, 0) end
+	if radius == nil then radius = 260 end
+	if interval == nil then interval = 30.0 end
+
+	local state = GetActionThrottleState(bot)
+	local stateKey = 'stable_offset_' .. tostring(key)
+	local now = GameTime()
+	local cached = state[stateKey]
+	if cached ~= nil and cached.offset ~= nil and now - cached.time < interval then
+		return cached.offset
+	end
+
+	local playerId = nil
+	if bot.GetPlayerID ~= nil then
+		local ok, result = pcall(function() return bot:GetPlayerID() end)
+		if ok then playerId = result end
+	end
+	if playerId == nil or playerId < 0 then
+		if bot.entindex ~= nil then
+			local ok, result = pcall(function() return bot:entindex() end)
+			if ok then playerId = result end
+		end
+	end
+	if playerId == nil or playerId < 0 then playerId = 0 end
+	local angle = (playerId * 137.507764) % 360
+	local radians = math.rad(angle)
+	local offset = Vector(math.cos(radians) * radius, math.sin(radians) * radius, 0)
+	state[stateKey] = { offset = offset, time = now }
+	return offset
+end
+
+function J.GetStableFormationLocation(bot, key, center, radius, interval)
+	if center == nil then return center end
+	return center + J.GetStableBotOffset(bot, key, radius, interval)
+end
+
+function J.ShouldThrottleAction(bot, actionName, targetKey, interval)
+	if bot == nil then return false end
+	if interval == nil then interval = ACTION_THROTTLE_DEFAULT_INTERVAL end
+
+	local state = GetActionThrottleState(bot)
+	local now = GameTime()
+	local last = state[actionName]
+	if last ~= nil and last.targetKey == targetKey and now - last.time < interval then
+		return true
+	end
+
+	state[actionName] = { targetKey = targetKey, time = now }
+	return false
+end
+
+local ACTION_PRESSURE_STATS = {}
+
+local function IncrementActionPressure(bot, actionType)
+	if actionType == nil then return end
+	local now = GameTime()
+	local stats = ACTION_PRESSURE_STATS[actionType]
+	if stats == nil then
+		stats = { total = 0, window = 0, windowStart = now, owners = {} }
+		ACTION_PRESSURE_STATS[actionType] = stats
+	end
+	if now - stats.windowStart > 300 then
+		stats.window = 0
+		stats.windowStart = now
+		stats.owners = {}
+	end
+	stats.total = stats.total + 1
+	stats.window = stats.window + 1
+	local playerId = -1
+	if bot ~= nil and bot.GetPlayerID ~= nil then
+		playerId = bot:GetPlayerID()
+	elseif bot ~= nil and bot.GetPlayerOwnerID ~= nil then
+		playerId = bot:GetPlayerOwnerID()
+	end
+	stats.owners[playerId] = (stats.owners[playerId] or 0) + 1
+end
+
+function J.GetActionPressureStats()
+	return ACTION_PRESSURE_STATS
+end
+
+function J.PrintActionPressureStats(interval)
+	local now = GameTime()
+	if J._lastActionPressurePrintTime ~= nil and now - J._lastActionPressurePrintTime < (interval or 300) then return end
+	J._lastActionPressurePrintTime = now
+	if ACTION_PRESSURE_STATS == nil then return end
+	for actionType, stats in pairs(ACTION_PRESSURE_STATS) do
+		if stats ~= nil and (stats.window or 0) > 0 then
+			print(string.format('[PERF][BotActionPressure] action=%s total=%d window=%d windowStart=%.1f', tostring(actionType), stats.total or 0, stats.window or 0, stats.windowStart or 0))
+			if stats.owners ~= nil then
+				for playerId, count in pairs(stats.owners) do
+					print(string.format('[PERF][BotActionPressureOwner] action=%s player=%s count=%d', tostring(actionType), tostring(playerId), count or 0))
+				end
+			end
+		end
+	end
+end
+
+function J.ResetActionPressureStats()
+	ACTION_PRESSURE_STATS = {}
+end
+
+function J.SetTargetIfChanged(bot, target, interval)
+	if IsNullUnit(target) then return false end
+	local targetKey = GetUnitActionKey(target)
+	if J.ShouldThrottleAction(bot, 'set_target', targetKey, interval or 0.5) then return true end
+	if bot:GetTarget() == target then return true end
+	IncrementActionPressure(bot, 'SetTarget')
+	bot:SetTarget(target)
+	return true
+end
+
+function J.ClearActionsThrottled(bot, actionName, once, interval)
+	if bot == nil then return false end
+	if actionName == nil then actionName = 'clear_actions' end
+	if J.ShouldThrottleAction(bot, actionName, tostring(once), interval or 0.4) then return false end
+	IncrementActionPressure(bot, 'ClearActions')
+	bot:Action_ClearActions(once == true)
+	return true
+end
+
+function J.QueueUseAbilityThrottled(bot, actionName, ability, interval)
+	if bot == nil or ability == nil then return false end
+	local abilityName = ability.GetName ~= nil and ability:GetName() or tostring(ability)
+	if J.ShouldThrottleAction(bot, actionName or 'queue_ability', abilityName, interval or 0.4) then return false end
+	IncrementActionPressure(bot, 'ActionQueue_UseAbility')
+	bot:ActionQueue_UseAbility(ability)
+	return true
+end
+
+function J.QueueUseAbilityOnEntityThrottled(bot, actionName, ability, target, interval)
+	if bot == nil or ability == nil or IsNullUnit(target) then return false end
+	local abilityName = ability.GetName ~= nil and ability:GetName() or tostring(ability)
+	local targetKey = abilityName .. ':' .. GetUnitActionKey(target)
+	if J.ShouldThrottleAction(bot, actionName or 'queue_ability_entity', targetKey, interval or 0.4) then return false end
+	IncrementActionPressure(bot, 'ActionQueue_UseAbilityOnEntity')
+	bot:ActionQueue_UseAbilityOnEntity(ability, target)
+	return true
+end
+
+function J.QueueUseAbilityOnLocationThrottled(bot, actionName, ability, vLoc, interval, distance)
+	if bot == nil or ability == nil or vLoc == nil then return false end
+	local abilityName = ability.GetName ~= nil and ability:GetName() or tostring(ability)
+	local targetKey = abilityName .. ':' .. GetLocationActionKey(vLoc, distance or 120)
+	if J.ShouldThrottleAction(bot, actionName or 'queue_ability_location', targetKey, interval or 0.4) then return false end
+	IncrementActionPressure(bot, 'ActionQueue_UseAbilityOnLocation')
+	bot:ActionQueue_UseAbilityOnLocation(ability, vLoc)
+	return true
+end
+
+function J.QueueAttackUnitThrottled(bot, actionName, target, once, interval)
+	if bot == nil or IsNullUnit(target) then return false end
+	local targetKey = GetUnitActionKey(target)
+	if J.ShouldThrottleAction(bot, actionName or 'queue_attack_unit', targetKey, interval or 0.4) then return false end
+	IncrementActionPressure(bot, 'ActionQueue_AttackUnit')
+	bot:ActionQueue_AttackUnit(target, once == true)
+	return true
+end
+
+function J.QueueUseAbilityOnTreeThrottled(bot, actionName, ability, treeId, interval)
+	if bot == nil or ability == nil or treeId == nil or treeId == 0 then return false end
+	local abilityName = ability.GetName ~= nil and ability:GetName() or tostring(ability)
+	local targetKey = abilityName .. ':tree:' .. tostring(treeId)
+	if J.ShouldThrottleAction(bot, actionName or 'queue_ability_tree', targetKey, interval or 0.6) then return false end
+	IncrementActionPressure(bot, 'ActionQueue_UseAbilityOnTree')
+	bot:ActionQueue_UseAbilityOnTree(ability, treeId)
+	return true
+end
+
+local function IsStickyTargetValid(target)
+	if IsNullUnit(target) then return false end
+	if target.IsAlive == nil then return false end
+	local ok, alive = pcall(function() return target:IsAlive() end)
+	return ok and alive == true
+end
+
+function J.GetStickyTarget(bot, stickyKey, candidate, holdInterval, maxDistance)
+	if bot == nil then return candidate end
+	if holdInterval == nil then holdInterval = 1.5 end
+
+	local state = GetActionThrottleState(bot)
+	local stateKey = 'sticky_target_' .. tostring(stickyKey)
+	local now = GameTime()
+	local entry = state[stateKey]
+	if entry ~= nil and entry.target ~= nil and now - entry.time < holdInterval then
+		local oldTarget = entry.target
+		if IsStickyTargetValid(oldTarget)
+		and (maxDistance == nil or GetUnitToUnitDistance(bot, oldTarget) <= maxDistance)
+		then
+			return oldTarget
+		end
+	end
+
+	if IsStickyTargetValid(candidate) then
+		state[stateKey] = { target = candidate, targetKey = GetUnitActionKey(candidate), time = now }
+		return candidate
+	end
+
+	state[stateKey] = nil
+	return nil
+end
+
+function J.ActionAttackUnit(bot, actionName, target, once, interval)
+	if IsNullUnit(target) then return false end
+	local targetKey = GetUnitActionKey(target)
+	if J.ShouldThrottleAction(bot, actionName, targetKey, interval) then return true end
+	IncrementActionPressure(bot, 'Action_AttackUnit')
+	bot:Action_AttackUnit(target, once)
+	return true
+end
+
+function J.ActionMoveToLocation(bot, actionName, vLoc, interval, distance)
+	if vLoc == nil then return false end
+	local targetKey = GetLocationActionKey(vLoc, distance)
+	if J.ShouldThrottleAction(bot, actionName, targetKey, interval) then return true end
+	IncrementActionPressure(bot, 'Action_MoveToLocation')
+	bot:Action_MoveToLocation(vLoc)
+	return true
+end
+
+function J.ActionAttackMove(bot, actionName, vLoc, interval, distance)
+	if vLoc == nil then return false end
+	local targetKey = GetLocationActionKey(vLoc, distance)
+	if J.ShouldThrottleAction(bot, actionName, targetKey, interval) then return true end
+	IncrementActionPressure(bot, 'Action_AttackMove')
+	bot:Action_AttackMove(vLoc)
+	return true
+end
 ----------------------------------------------------------------
+
 
 function J.GetSpecialModeAllies( bot, nDistance, nMode )
 

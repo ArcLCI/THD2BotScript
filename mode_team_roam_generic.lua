@@ -19,10 +19,19 @@ local specialUnits = {
 local specialTarget
 local yugi04Target
 
+local TEAM_ROAM_DESIRE_INTERVAL = 0.45
+local TEAM_ROAM_DESIRE_STAGGER = 0.07
+
 function GetDesire()
+	if not Timer.ShouldRunBotTask(bot, 'team_roam_desire', TEAM_ROAM_DESIRE_INTERVAL, TEAM_ROAM_DESIRE_STAGGER) then
+		return BOT_MODE_DESIRE_NONE
+	end
+
     IsAvoidingAbilityZone = false
 	IsAvoidingAbilityProjectile = false
 	IsAttackingSpecialUnit = false
+	IsYugi04 = false
+
     local botMode = bot:GetActiveMode()
 	local nProjectiles = GetLinearProjectiles()
 
@@ -48,6 +57,8 @@ function GetDesire()
 		print("bot to avoid some projectiles: " .. botName)
 		return BOT_ACTION_DESIRE_VERYHIGH + 0.1
 	end]]
+
+	return BOT_MODE_DESIRE_NONE
 end
 
 function HasModifierThatNeedToAvoidEffects()
@@ -65,7 +76,11 @@ end
 function HasProjectileThatNeedToAvoid(nProjectiles)
 	for _, p in pairs(nProjectiles)
 	do
-		if p ~= nil and p.caster:GetTeam() ~= bot:GetTeam() and (p.ability:GetName() == "ability_thdots_ellen03"
+		if p ~= nil
+		and p.caster ~= nil
+		and p.ability ~= nil
+		and p.caster:GetTeam() ~= bot:GetTeam()
+		and (p.ability:GetName() == "ability_thdots_ellen03"
 		or p.ability:GetName() == "ability_thdots_ellen04")
         then
 			if GetUnitToLocationDistance(bot, p.location) <= 2000 then
@@ -121,17 +136,18 @@ function Think()
     if J.CanNotUseAction(bot) then return end
 
 	if IsAttackingSpecialUnit and DotaTime() > nNextActionTime then
-		bot:Action_AttackUnit(specialTarget, false)
+		J.ActionAttackUnit(bot, 'team_roam_special_attack', specialTarget, false, 0.7)
 		nNextActionTime = DotaTime() + 0.7
 	end
 
 	if IsYugi04 and DotaTime() > nNextActionTime then
-		bot:Action_AttackUnit(yugi04Target, false)
+		J.ActionAttackUnit(bot, 'team_roam_yugi_attack', yugi04Target, false, 0.7)
 		nNextActionTime = DotaTime() + 0.7
 	end
 
     if IsAvoidingAbilityZone then
-		bot:Action_MoveToLocation(Utils.GetOffsetLocationTowardsTargetLocation(bot:GetLocation(), J.GetTeamFountain(), 600) + RandomVector(200))
+		local avoidLoc = J.GetStableRandomLocation(bot, 'team_roam_avoid_zone', Utils.GetOffsetLocationTowardsTargetLocation(bot:GetLocation(), J.GetTeamFountain(), 600), 160, 240, 0.8)
+		J.ActionMoveToLocation(bot, 'team_roam_avoid_zone', avoidLoc, 0.4, 220)
 		return
 	end
 
@@ -139,12 +155,15 @@ function Think()
 	if IsAvoidingAbilityProjectile and nProjectiles ~= nil then
 		for _, p in pairs(nProjectiles)
 		do
-			if p ~= nil and (p.ability:GetName() == "ability_thdots_ellen03"
+			if p ~= nil
+			and p.ability ~= nil
+			and (p.ability:GetName() == "ability_thdots_ellen03"
 			or p.ability:GetName() == "ability_thdots_ellen04"
 		)
         	then
 				if GetUnitToLocationDistance(bot, p.location) <= 1400 then
-					bot:Action_MoveToLocation(Utils.GetAvoidTargetLocation(bot:GetLocation(), p.location, 600) + RandomVector(200))
+					local avoidLoc = J.GetStableRandomLocation(bot, 'team_roam_avoid_projectile', Utils.GetAvoidTargetLocation(bot:GetLocation(), p.location, 600), 160, 240, 0.7)
+					J.ActionMoveToLocation(bot, 'team_roam_avoid_projectile', avoidLoc, 0.35, 220)
 					return
 				end
 			end

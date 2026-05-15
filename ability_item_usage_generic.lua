@@ -1,5 +1,7 @@
 require(GetScriptDirectory() ..  "/thd2_item_usage")
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Scheduler = require(GetScriptDirectory()..'/thd2_scheduler')
+
 
 local X = {}
 local bot = GetBot()
@@ -329,7 +331,8 @@ end
 function CourierUsageThink()
 	if bot:IsIllusion() or not bot:IsAlive() then return end
 	if bot.lastCourierFrameProcessTime == nil then bot.lastCourierFrameProcessTime = DotaTime() end
-	if DotaTime() - bot.lastCourierFrameProcessTime < bot.frameProcessTime then return end
+	local courierThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime, 2.0)
+	if DotaTime() - bot.lastCourierFrameProcessTime < courierThinkInterval then return end
 	bot.lastCourierFrameProcessTime = DotaTime()
 	CourierUsageComplement()
 end
@@ -724,16 +727,9 @@ function X.CanJuke()
 		end
 	end
 
-	local totalDamage = 0
 	local nEnemies = J.GetNearbyHeroes(bot, 1200, true, BOT_MODE_NONE )
-	for _, enemy in pairs( nEnemies )
-	do
-		local enemyDamage = enemy:GetEstimatedDamageToTarget( true, bot, 4.0, DAMAGE_TYPE_ALL )
-		totalDamage = totalDamage + enemyDamage
-		if bot:OriginalGetHealth() <= totalDamage
-		then
-			return false
-		end
+	if #nEnemies >= 2 and J.GetHP(bot) < 0.35 then
+		return false
 	end
 
 	return true
@@ -744,7 +740,10 @@ function ItemUsageThink()
 	if RefreshBotHandle() then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 	if bot.lastItemFrameProcessTime == nil then bot.lastItemFrameProcessTime = DotaTime() end
-	if DotaTime() > 30 and (DotaTime() - bot.lastItemFrameProcessTime < (bot.frameProcessTime * (1 + Customize.ThinkLess))) then return end
+
+	local itemThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25)
+	if DotaTime() > 30 and (DotaTime() - bot.lastItemFrameProcessTime < itemThinkInterval) then return end
+
 	bot.lastItemFrameProcessTime = DotaTime()
 	if not J.IsNoItemIllution(bot) then ItemUsageComplement() end
 end
@@ -753,10 +752,15 @@ function AbilityUsageThink()
 	if RefreshBotHandle() then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end
-	if DotaTime() > 30 and (DotaTime() - bot.lastAbilityFrameProcessTime < (bot.frameProcessTime * (1 + Customize.ThinkLess))) and bot.isBear == nil then return end
+
+	local abilityThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25)
+	if DotaTime() > 30 and (DotaTime() - bot.lastAbilityFrameProcessTime < abilityThinkInterval) and bot.isBear == nil then return end
+
 	bot.lastAbilityFrameProcessTime = DotaTime()
+	J.PrintActionPressureStats(300)
 	if BotBuild ~= nil and not J.IsNoAbilityIllution(bot) then BotBuild.SkillsComplement() end
 end
+
 
 X.AbilityUsageThink = AbilityUsageThink
 X.ItemUsageThink = ItemUsageThink

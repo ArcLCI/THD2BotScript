@@ -2,6 +2,8 @@ local Push = {}
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
+
+
 local pingTimeDelta = 5
 local StartToPushTime = 9 * 60 -- after x mins, start considering to push.
 local weAreStronger = false
@@ -12,14 +14,54 @@ local nInRangeAlly
 local nInRangeEnemy
 local hEnemyAncient
 local BOT_MODE_DESIRE_EXTRA_LOW = 0.02
-local PUSH_DESIRE_CACHE_INTERVAL = 0.75
-local PUSH_DESIRE_STAGGER_INTERVAL = 0.08
+local PUSH_DESIRE_CACHE_INTERVAL = 1.5
+local PUSH_DESIRE_STAGGER_INTERVAL = 0.14
+local PUSH_LANE_STICKY_SECONDS = 3.0
+
+
+local function GetActivePushLane(bot)
+    local activeMode = bot:GetActiveMode()
+    if activeMode == BOT_MODE_PUSH_TOWER_TOP then return LANE_TOP end
+    if activeMode == BOT_MODE_PUSH_TOWER_MID then return LANE_MID end
+    if activeMode == BOT_MODE_PUSH_TOWER_BOT then return LANE_BOT end
+    return nil
+end
+
+function Push.GetStablePushLane(bot, lane)
+    if bot == nil then return lane end
+
+    local now = GameTime()
+    local activePushLane = GetActivePushLane(bot)
+    if activePushLane ~= nil then
+        bot.StablePushLane = activePushLane
+        bot.StablePushLaneUntil = now + PUSH_LANE_STICKY_SECONDS
+        return activePushLane
+    end
+
+    if bot.StablePushLane ~= nil
+    and bot.StablePushLaneUntil ~= nil
+    and now < bot.StablePushLaneUntil
+    then
+        return bot.StablePushLane
+    end
+
+    local selectedLane = Push.WhichLaneToPush(bot, lane)
+    bot.StablePushLane = selectedLane
+    bot.StablePushLaneUntil = now + PUSH_LANE_STICKY_SECONDS
+    return selectedLane
+end
 
 function Push.GetPushDesire(bot, lane)
+    local stablePushLane = Push.GetStablePushLane(bot, lane)
+    if stablePushLane ~= lane then
+        return BOT_MODE_DESIRE_NONE
+    end
+
     return Timer.GetOrComputeBotLane('PushDesire', bot, lane, PUSH_DESIRE_CACHE_INTERVAL, function()
         return Push.ComputePushDesire(bot, lane)
     end, PUSH_DESIRE_STAGGER_INTERVAL)
 end
+
 
 function Push.ComputePushDesire(bot, lane)
     if bot.laneToPush == nil then bot.laneToPush = lane end
@@ -121,9 +163,10 @@ function Push.ComputePushDesire(bot, lane)
     and J.GetHP(bot) > 0.5
     and not Push.HasBackdoorProtect(hEnemyAncient)
     then
-        bot:SetTarget(hEnemyAncient)
-        bot:Action_AttackUnit(hEnemyAncient, true)
+        J.SetTargetIfChanged(bot, hEnemyAncient, 0.6)
+        J.ActionAttackUnit(bot, 'push_attack_enemy_ancient_desire', hEnemyAncient, true, 0.45)
         return BOT_ACTION_DESIRE_ABSOLUTE * 0.98
+
     end
 
     local pushLane = Push.WhichLaneToPush(bot, lane)
@@ -290,8 +333,9 @@ function Push.PushThink(bot, lane)
         or #nAllyCreeps > 2
         then
             local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
-            bot:Action_MoveToLocation(vLocation)
+            J.ActionMoveToLocation(bot, 'push_flee_tower', vLocation, 0.45)
             return
+
         end
     end
 
@@ -302,9 +346,11 @@ function Push.PushThink(bot, lane)
     then
         local hBuildingTarget = TryClearingOtherLaneHighGround(bot, targetLoc)
         if hBuildingTarget then
-            bot:Action_AttackUnit(hBuildingTarget, true)
+            hBuildingTarget = J.GetStickyTarget(bot, 'push_clear_other_high_ground', hBuildingTarget, 1.5, 2200)
+            J.ActionAttackUnit(bot, 'push_clear_other_high_ground', hBuildingTarget, true, 0.45)
             return
         end
+
     end
 
     nInRangeAlly = J.GetAlliesNearLoc(hEnemyAncient:GetLocation(), 1600)
@@ -316,9 +362,10 @@ function Push.PushThink(bot, lane)
         or hEnemyAncient:GetHealthRegen() < 20
         or #nInRangeAlly >= 4)
     then
-        bot:Action_AttackUnit(hEnemyAncient, true)
+        J.ActionAttackUnit(bot, 'push_attack_enemy_ancient', hEnemyAncient, true, 0.45)
         return
     end
+
 
     local nRange = math.min(700 + botAttackRange, 1600)
 
@@ -341,8 +388,10 @@ function Push.PushThink(bot, lane)
             or (bTowerNearby and GetUnitToLocationDistance(creep, vTeamFountain) < GetUnitToLocationDistance(nEnemyTowers[1], vTeamFountain)))
         and not J.IsRoshan(creep)
         then
-            bot:Action_AttackUnit(creep, true)
+            local targetCreep = J.GetStickyTarget(bot, 'push_creep', creep, 1.0, nRange + 300)
+            J.ActionAttackUnit(bot, 'push_attack_creep', targetCreep, true, 0.35)
             return
+
         end
     end
 
@@ -350,15 +399,19 @@ function Push.PushThink(bot, lane)
     if J.IsValidBuilding(nBarracks[1]) and J.CanBeAttacked(nBarracks[1]) then
         for _, barrack in pairs(nBarracks) do
             if J.IsValid(barrack) and string.find(barrack:GetUnitName(), 'melee') then
-                bot:Action_AttackUnit(barrack, true)
+                barrack = J.GetStickyTarget(bot, 'push_melee_barrack', barrack, 1.8, nRange + 300)
+                J.ActionAttackUnit(bot, 'push_attack_melee_barrack', barrack, true, 0.45)
                 return
             end
+
         end
         for _, barrack in pairs(nBarracks) do
             if J.IsValid(barrack) and string.find(barrack:GetUnitName(), 'range') then
-                bot:Action_AttackUnit(barrack, true)
+                barrack = J.GetStickyTarget(bot, 'push_range_barrack', barrack, 1.8, nRange + 300)
+                J.ActionAttackUnit(bot, 'push_attack_range_barrack', barrack, true, 0.45)
                 return
             end
+
         end
     end
 
@@ -376,8 +429,10 @@ function Push.PushThink(bot, lane)
         end
 
         if hTowerTarget then
-            bot:Action_AttackUnit(hTowerTarget, true)
+            hTowerTarget = J.GetStickyTarget(bot, 'push_tower', hTowerTarget, 1.8, nRange + 300)
+            J.ActionAttackUnit(bot, 'push_attack_tower', hTowerTarget, true, 0.45)
             return
+
         end
     end
 
@@ -396,19 +451,24 @@ function Push.PushThink(bot, lane)
         end
 
         if hTowerFillerTarget then
-            bot:Action_AttackUnit(hTowerFillerTarget, true)
+            hTowerFillerTarget = J.GetStickyTarget(bot, 'push_filler', hTowerFillerTarget, 1.8, nRange + 300)
+            J.ActionAttackUnit(bot, 'push_attack_filler', hTowerFillerTarget, true, 0.45)
             return
+
         end
     end
 
     if GetUnitToLocationDistance(bot, targetLoc) > 500 then
-        bot:Action_MoveToLocation(targetLoc)
+        J.ActionMoveToLocation(bot, 'push_move_lane_front', targetLoc, 0.5, 220)
         return
+
     else
         if DotaTime() >= fNextMovementTime then
-            bot:Action_AttackMove(J.GetRandomLocationWithinDist(targetLoc, 0, 400))
-            fNextMovementTime = DotaTime() + (RandomInt(5, 30)/100)
+            local attackMoveLoc = J.GetStableFormationLocation(bot, 'push_attack_move_lane_front', targetLoc, 320, 30.0)
+            J.ActionAttackMove(bot, 'push_attack_move_lane_front', attackMoveLoc, 0.5, 260)
+            fNextMovementTime = DotaTime() + 0.8
             return
+
         end
     end
 end

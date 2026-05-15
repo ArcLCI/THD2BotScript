@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local J = require(GetScriptDirectory() ..  "/THDFuncLib/thd_func")
 
 ----------------------------------------------------------------------------------------------------
 
@@ -122,7 +123,7 @@ function AbilityUsageThink()
 	cast04Desire = ConsiderAbilityCirno04()
 	if ( cast04Desire > 0 ) 
 	then
-		npcBot:ActionQueue_UseAbility( ability04)
+		J.QueueUseAbilityThrottled(npcBot, 'axe_queue_cast04', ability04, 0.8)
 		return
 	end
 

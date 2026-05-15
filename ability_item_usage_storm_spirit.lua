@@ -128,7 +128,7 @@ function AbilityUsageThink()
 	end
 
 	cast04Desire, cast04Target = ConsiderAbilityShikieiki04()
-	if ( cast04Desire > 0 )
+	if ( cast04Desire > 0 and cast04Target ~= nil )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target)
 		return
@@ -138,18 +138,33 @@ end
 
 ----------------------------------------------------------------------------------------------------
 
+local function IsValidBotTarget(npcTarget)
+	if npcTarget == nil then return false end
+	local ok, result = pcall(function()
+		if npcTarget.CanBeSeen == nil or npcTarget.IsHero == nil or npcTarget.IsMagicImmune == nil or npcTarget.IsInvulnerable == nil then
+			return false
+		end
+		return npcTarget:CanBeSeen()
+			and npcTarget:IsHero()
+			and not npcTarget:IsMagicImmune()
+			and not npcTarget:IsInvulnerable()
+			and not IsPossibleIllusion(npcTarget)
+	end)
+	return ok and result == true
+end
+
 function CanCastShikieiki01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidBotTarget(npcTarget)
 end
 
 
 function CanCastShikieiki02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidBotTarget(npcTarget)
 end
 
 
 function CanCastShikieiki04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidBotTarget(npcTarget)
 end
 ----------------------------------------------------------------------------------------------------
 

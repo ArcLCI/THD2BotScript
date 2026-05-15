@@ -33,6 +33,30 @@ ModifierNamesHighDebuff = {
 
 local RandomTimes = 10
 
+function IsValidCastTarget(npcTarget, requireHero, rejectIllusion)
+	if npcTarget == nil then return false end
+	local ok, result = pcall(function()
+		if npcTarget.CanBeSeen == nil
+		or npcTarget.IsMagicImmune == nil
+		or npcTarget.IsInvulnerable == nil then
+			return false
+		end
+		if requireHero and npcTarget.IsHero == nil then return false end
+		if not npcTarget:CanBeSeen() then return false end
+		if requireHero and not npcTarget:IsHero() then return false end
+		if npcTarget:IsMagicImmune() or npcTarget:IsInvulnerable() then return false end
+		if rejectIllusion and IsPossibleIllusion(npcTarget) then return false end
+		return true
+	end)
+	return ok and result == true
+end
+
+function SafeCanBeSeen(unit)
+	if unit == nil or unit.CanBeSeen == nil then return false end
+	local ok, result = pcall(function() return unit:CanBeSeen() end)
+	return ok and result == true
+end
+
 local function RandomChoose( tTargets, vBaseLocation, nMaxDistanceFromBase, nRadius, nMaxHealth )
 
 	local RadiusSqr = nRadius * nRadius
@@ -54,7 +78,7 @@ local function RandomChoose( tTargets, vBaseLocation, nMaxDistanceFromBase, nRad
 
 	for _,unit in pairs( tTargets )
 	do
-		if unit:CanBeSeen() and (nMaxHealth < 1 or unit:GetHealth() < nMaxHealth) then
+		if SafeCanBeSeen(unit) and (nMaxHealth < 1 or unit:GetHealth() < nMaxHealth) then
 			if GetUnitToLocationDistanceSqr( unit, vBaseLocation ) < dis_sqr_1 then
 				table.insert(tTagers_InRange1, unit)
 				table.insert(tTagers_InRange2, unit)
@@ -79,8 +103,10 @@ local function RandomChoose( tTargets, vBaseLocation, nMaxDistanceFromBase, nRad
 	if rd_best_result.count == 0 then
 		if #tTagers_InRange3 > 0 then
 			local unit = tTagers_InRange3[1]
+			local distanceToBase = GetUnitToLocationDistance( unit, vBaseLocation )
+			if distanceToBase <= 0 then return rd_best_result end
 			rd_best_result.count = 1
-			rd_best_result.targetloc = vBaseLocation + (unit:GetLocation() - vBaseLocation) * (nMaxDistanceFromBase / GetUnitToLocationDistance( unit, vBaseLocation ))
+			rd_best_result.targetloc = vBaseLocation + (unit:GetLocation() - vBaseLocation) * (nMaxDistanceFromBase / distanceToBase)
 		else
 			return rd_best_result
 		end
@@ -411,23 +437,34 @@ function GetPhysicalDamageRemain( fArmor )
 	return 1.0 - ( 0.052*fArmor ) / ( 0.9 + 0.048*math.abs(fArmor) )
 end
 
+function SafeHasModifier(Target, ModifierName)
+	if Target == nil or Target.HasModifier == nil then return false end
+	local ok, result = pcall(function() return Target:HasModifier(ModifierName) end)
+	return ok and result == true
+end
+
 function GetModifierTimeLeft( Target, ModifierName )
-	if ( not Target:HasModifier( ModifierName ) )
-	then
+	if not SafeHasModifier(Target, ModifierName) then
 		return 0.0
-	else
+	end
+
+	local ok, duration = pcall(function()
 		local mf_index = Target:GetModifierByName( ModifierName )
 		return Target:GetModifierRemainingDuration( mf_index )
-	end
+	end)
+	if ok and duration ~= nil then return duration end
+	return 0.0
 end
 
 function GetModifiersTimeLeft( Target, ModifierNames )
 	for _,ModifierName in pairs( ModifierNames )
 	do
-		if ( Target:HasModifier( ModifierName ) )
-		then
-			local mf_index = Target:GetModifierByName( ModifierName )
-			return Target:GetModifierRemainingDuration( mf_index )
+		if SafeHasModifier(Target, ModifierName) then
+			local ok, duration = pcall(function()
+				local mf_index = Target:GetModifierByName( ModifierName )
+				return Target:GetModifierRemainingDuration( mf_index )
+			end)
+			if ok and duration ~= nil then return duration end
 		end
 	end
 	return 0.0
@@ -435,8 +472,8 @@ end
 
 function IsTeleporting( Target )
 
-	if ( Target:HasModifier( ModifierNamesTeleporting[1] ) or
-			Target:HasModifier( ModifierNamesTeleporting[2] )
+	if ( SafeHasModifier(Target, ModifierNamesTeleporting[1]) or
+			SafeHasModifier(Target, ModifierNamesTeleporting[2])
 		)
 	then
 		return true
@@ -448,7 +485,7 @@ end
 
 function IsMagicBlocking( Target )
 
-	if ( Target:HasModifier( ModifierNamesMagicBlock[1] ) )
+	if ( SafeHasModifier(Target, ModifierNamesMagicBlock[1]) )
 	then
 		return true
 	end
@@ -504,20 +541,17 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastStunOnTarget( npcTarget )
-	return npcTarget:CanBeSeen()
-	and not npcTarget:IsMagicImmune()
-	and not npcTarget:IsInvulnerable()
-	and not IsPossibleIllusion( npcTarget )
+	return IsValidCastTarget(npcTarget, false, true)
 end
 
 function IsPossibleIllusion( npcTarget )
-	return npcTarget:HasModifier("modifier_flandre01_illusion_model")
-	or npcTarget:HasModifier("modifier_illusion")
+	return SafeHasModifier(npcTarget, "modifier_flandre01_illusion_model")
+	or SafeHasModifier(npcTarget, "modifier_illusion")
 end
 
 function IsSpellVulnerable( npcTarget )
-	return npcTarget:HasModifier("modifier_item_three_dimension_debuff")
-	or npcTarget:HasModifier("modifier_item_ghost_spoon")
+	return SafeHasModifier(npcTarget, "modifier_item_three_dimension_debuff")
+	or SafeHasModifier(npcTarget, "modifier_item_ghost_spoon")
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -541,10 +575,8 @@ function ConsiderItemStun( item_stun )
 	do
 		local j_time=0.2
 		if IsRocket( item_stun:GetName() ) then j_time = 0.5 end
-		if GetModifiersTimeLeft( npcEnemy, ModifierNamesStun ) < j_time then
+		if CanCastStunOnTarget( npcEnemy ) and GetModifiersTimeLeft( npcEnemy, ModifierNamesStun ) < j_time then
 			if ( npcBot:GetTarget() == npcEnemy
-			and CanCastStunOnTarget( npcEnemy )
-			and not IsPossibleIllusion( npcEnemy )
 			and not (npcEnemy:IsStunned() or npcEnemy:IsRooted()))
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy
@@ -585,7 +617,7 @@ function ConsiderItemRoot( item_root )
 	do
 		if ( npcBot:GetTarget() == npcEnemy
 		and CanCastStunOnTarget( npcEnemy )
-		and not (npcEnemy:IsStunned() or npcEnemy:IsRooted() or npcEnemy:HasModifier("modifier_item_morenjingjuan_antiblink")))
+		and not (npcEnemy:IsStunned() or npcEnemy:IsRooted() or SafeHasModifier(npcEnemy, "modifier_item_morenjingjuan_antiblink")))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy
 		end
@@ -1609,19 +1641,11 @@ function ConsiderNeutralItems(tBlacklist)
 					if locationAoE.count > 2 then
 						npcBot:Action_UseAbilityOnLocation(item,locationAoE.targetloc)
 						return
-					elseif npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH then
-						npcBot:Action_UseAbilityOnLocation(item,tableNearbyEnemyHeroes[1]:GetLocation()+RandomVector(50))
-						return
-					elseif IsSeriouslyRetreating(npcBot) then
-						local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
-						local v_target = - npcBot:GetLocation() + v_shop
-						local dis = GetUnitToLocationDistance( npcBot,v_shop)
-						local v_final = v_target/dis * nCastRange + npcBot:GetLocation()
-						npcBot:Action_UseAbilityOnLocation(item,v_final)
-						return
 					end
 				end
 			end
+			npcBot:Action_UseAbilityOnLocation(item,tableNearbyEnemyHeroes[1]:GetLocation()+RandomVector(25))
+			return
 		end
 		return
 	elseif itemName == "item_minotaur_horn" then
@@ -1648,5 +1672,5 @@ function ConsiderNeutralItems(tBlacklist)
 end
 
 function CanCastNeutralItemOnTarget(npcTarget)
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion( npcTarget )
+	return IsValidCastTarget(npcTarget, true, true)
 end

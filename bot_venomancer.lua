@@ -1,4 +1,6 @@
 
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+
 require(GetScriptDirectory() ..  "/bot_generic")
 
 ----------------------------------------------------------------------------------------------------
@@ -20,7 +22,7 @@ function MinionThink( hMinionUnit )
 
         if hMinionUnit.attack_desire > 0 then
             if IsValidUnit(hMinionUnit.attack_target) and GetUnitToUnitDistance(hMinionUnit,hMinionUnit.attack_target) < 500 then
-                hMinionUnit:Action_AttackUnit(hMinionUnit.attack_target, false)
+                J.ActionAttackUnit(hMinionUnit, 'yuuka_flower_attack', hMinionUnit.attack_target, false, 0.45)
                 return
             end
         end

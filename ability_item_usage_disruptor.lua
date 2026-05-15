@@ -128,19 +128,19 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastTojiko01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion( npcTarget )
+	return IsValidCastTarget(npcTarget, false, true)
 end
 
 function CanCastTojiko02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion( npcTarget )
+	return IsValidCastTarget(npcTarget, true, true)
 end
 
 function CanCastTojiko03OnTarget( npcTarget )
-	return npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion( npcTarget )
+	return IsValidCastTarget(npcTarget, true, true)
 end
 
 function CanCastTojiko04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:HasModifier("modifier_fountain_aura_buff") and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion( npcTarget )
+	return IsValidCastTarget(npcTarget, false, true)
 end
 ----------------------------------------------------------------------------------------------------
 
@@ -259,9 +259,9 @@ function ConsiderAbilityTojiko03()
 	end
 	if #tableAllMapEnemyHeroes > 0 and cachedCast03Location ~= 0 then
 		for _, npcEnemy in pairs(tableAllMapEnemyHeroes) do
-			if GetUnitToLocationDistance(npcEnemy,cachedCast03Location) < nRadius
-			and npcEnemy:GetHealth() < npcEnemy:GetActualIncomingDamage((abilityBaseDamage + 4*npcEnemy:GetArmor())*(1+npcBot:GetSpellAmp()),DAMAGE_TYPE_MAGICAL)
-			and CanCastTojiko03OnTarget(npcEnemy) then
+			if CanCastTojiko03OnTarget(npcEnemy)
+			and GetUnitToLocationDistance(npcEnemy,cachedCast03Location) < nRadius
+			and npcEnemy:GetHealth() < npcEnemy:GetActualIncomingDamage((abilityBaseDamage + 4*npcEnemy:GetArmor())*(1+npcBot:GetSpellAmp()),DAMAGE_TYPE_MAGICAL) then
 				return BOT_ACTION_DESIRE_HIGH, npcBot:GetLocation()
 			end
 		end
@@ -307,7 +307,8 @@ function ConsiderAbilityTojiko04()
 
 	if #tableAllMapEnemyHeroes > 0 then
 		for _, npcEnemy in pairs(tableAllMapEnemyHeroes) do
-			if npcEnemy:GetHealth() < npcEnemy:GetActualIncomingDamage(nDamage, DAMAGE_TYPE_MAGICAL) and CanCastTojiko04OnTarget(npcEnemy) then
+			if CanCastTojiko04OnTarget(npcEnemy)
+			and npcEnemy:GetHealth() < npcEnemy:GetActualIncomingDamage(nDamage, DAMAGE_TYPE_MAGICAL) then
 				if npcEnemy:GetMovementDirectionStability() >= 0.75 then
 					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(nTime)
 				else

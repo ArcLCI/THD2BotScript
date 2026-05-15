@@ -58,6 +58,7 @@ local lastrunnerSeedID = {}
 
 local last_purchase = {}
 local last_purchased = {}
+local purchase_retry_time = {}
 
 function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 
@@ -128,19 +129,27 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 	end]]--
 
 	local sNextItem = tableItemsToBuyFullList[GetNowEquipment(runnerSeed)]
+	if purchase_retry_time[runnerSeed] ~= nil and RealTime() < purchase_retry_time[runnerSeed] then
+		npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
+		return -1
+	end
 
 	if ( npcBot:GetGold() >= GetItemCost( sNextItem ) )
 	then
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchasing "..sNextItem)
-		npcBot:ActionImmediate_PurchaseItem( sNextItem )
-		nextPurchase = NextEquipment(runnerSeed)
-		sNextItem = tableItemsToBuyFullList[nextPurchase]
-		if sNextItem ~= nil then
-			npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
-			print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)
+		local purchaseResult = npcBot:ActionImmediate_PurchaseItem( sNextItem )
+		if purchaseResult == PURCHASE_ITEM_SUCCESS then
+			nextPurchase = NextEquipment(runnerSeed)
+			sNextItem = tableItemsToBuyFullList[nextPurchase]
+			if sNextItem ~= nil then
+				npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
+				print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)
+			end
+			last_purchased[runnerSeedID] = true
+		else
+			purchase_retry_time[runnerSeed] = RealTime() + 3.0
+			last_purchased[runnerSeedID] = false
 		end
-
-		last_purchased[runnerSeedID] = true
 	else
 		last_purchased[runnerSeedID] = false
 	end

@@ -12,6 +12,94 @@ local SpecialUnits = {
 	['npc_dota_rattletrap_cog'] = 0.9,
 }
 
+local MINION_ATTACK_INTERVAL = 0.45
+local MINION_MOVE_INTERVAL = 0.65
+local MINION_DEFAULT_FOLLOW_INTERVAL = 1.0
+local MINION_LOCATION_BUCKET = 260
+
+local MoveMinionToLocation
+
+local function GetMinionUnitKey(unit)
+    if unit == nil then return 'nil' end
+    if unit.IsNull ~= nil then
+        local ok, result = pcall(function() return unit:IsNull() end)
+        if ok and result == true then return 'nil' end
+    end
+    if unit.entindex ~= nil then
+        local ok, result = pcall(function() return unit:entindex() end)
+        if ok and result ~= nil then return 'ent:' .. tostring(result) end
+    end
+    if unit.GetUnitName ~= nil then
+        local ok, result = pcall(function() return unit:GetUnitName() end)
+        if ok and result ~= nil then return 'name:' .. tostring(result) end
+    end
+    return tostring(unit)
+end
+
+local function GetMinionLocationKey(vLoc, bucket)
+    if vLoc == nil then return 'nil' end
+    if bucket == nil then bucket = MINION_LOCATION_BUCKET end
+    local x = math.floor(vLoc.x / bucket + 0.5) * bucket
+    local y = math.floor(vLoc.y / bucket + 0.5) * bucket
+    return tostring(x) .. ':' .. tostring(y)
+end
+
+local function ShouldThrottleMinionAction(unit, actionName, targetKey, interval)
+    if unit == nil then return false end
+    if interval == nil then interval = MINION_MOVE_INTERVAL end
+    if unit.thdMinionActionState == nil then unit.thdMinionActionState = {} end
+
+    local now = DotaTime()
+    local last = unit.thdMinionActionState[actionName]
+    if last ~= nil and last.targetKey == targetKey and now - last.time < interval then
+        return true
+    end
+
+    unit.thdMinionActionState[actionName] = { targetKey = targetKey, time = now }
+    return false
+end
+
+local function MinionActionAttackUnit(unit, actionName, target, once, interval)
+    if not IsValidUnit(target) then return false end
+    local targetKey = GetMinionUnitKey(target)
+    if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_ATTACK_INTERVAL) then return true end
+    unit:Action_AttackUnit(target, once)
+    return true
+end
+
+local function MinionActionMoveToLocation(unit, actionName, vLoc, interval, bucket)
+    if vLoc == nil then return false end
+    local targetKey = GetMinionLocationKey(vLoc, bucket)
+    if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_MOVE_INTERVAL) then return true end
+    unit:Action_MoveToLocation(vLoc)
+    return true
+end
+
+local function MinionActionAttackMove(unit, actionName, vLoc, interval, bucket)
+    if vLoc == nil then return false end
+    local targetKey = GetMinionLocationKey(vLoc, bucket)
+    if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_MOVE_INTERVAL) then return true end
+    unit:Action_AttackMove(vLoc)
+    return true
+end
+
+local function GetStableMinionRandomLocation(unit, key, center, minRadius, maxRadius, interval)
+    if unit == nil or center == nil then return center end
+    if interval == nil then interval = MINION_DEFAULT_FOLLOW_INTERVAL end
+    if unit.thdMinionRandomState == nil then unit.thdMinionRandomState = {} end
+
+    local now = DotaTime()
+    local stateKey = 'random_' .. tostring(key)
+    local cached = unit.thdMinionRandomState[stateKey]
+    if cached ~= nil and cached.location ~= nil and now - cached.time < interval then
+        return cached.location
+    end
+
+    local location = GetRandomLocationWithinDist(center, minRadius, maxRadius)
+    unit.thdMinionRandomState[stateKey] = { location = location, time = now }
+    return location
+end
+
 function X.IllusionThink(owner, hMinionUnit)
 
 	ownerBot = owner
@@ -29,7 +117,7 @@ function X.IllusionThink(owner, hMinionUnit)
 
     if hMinionUnit.attack_desire > 0 then
         if IsValidUnit(hMinionUnit.attack_target) then
-            hMinionUnit:Action_AttackUnit(hMinionUnit.attack_target, false)
+            MinionActionAttackUnit(hMinionUnit, 'illusion_attack', hMinionUnit.attack_target, false, MINION_ATTACK_INTERVAL)
             return
         end
     end
@@ -38,26 +126,28 @@ function X.IllusionThink(owner, hMinionUnit)
         hMinionUnit.move_desire, hMinionUnit.move_location = ConsiderMove(hMinionUnit)
         if hMinionUnit.move_desire > 0 then
             if GetUnitToLocationDistance(hMinionUnit, hMinionUnit.move_location) > 400 then
-                hMinionUnit:Action_MoveToLocation(hMinionUnit.move_location)
+                MinionActionMoveToLocation(hMinionUnit, 'illusion_move', hMinionUnit.move_location, MINION_MOVE_INTERVAL, MINION_LOCATION_BUCKET)
             else
-                hMinionUnit:Action_AttackMove(GetRandomLocationWithinDist(hMinionUnit.move_location, 0, 300))
+                local attackMoveLoc = GetStableMinionRandomLocation(hMinionUnit, 'illusion_attack_move', hMinionUnit.move_location, 0, 300, MINION_DEFAULT_FOLLOW_INTERVAL)
+                MinionActionAttackMove(hMinionUnit, 'illusion_attack_move', attackMoveLoc, MINION_MOVE_INTERVAL, MINION_LOCATION_BUCKET)
             end
-            hMinionUnit.nextMoveTime = DotaTime() + 0.2
+            hMinionUnit.nextMoveTime = DotaTime() + MINION_MOVE_INTERVAL
             return
         end
 
         -- Default
         local success = pcall(function()
                 if ownerBot:IsAlive() then
-                    hMinionUnit:Action_MoveToLocation(GetRandomLocationWithinDist(ownerBot:GetLocation(), 400, 800))
+                    local followLoc = GetStableMinionRandomLocation(hMinionUnit, 'illusion_follow_owner', ownerBot:GetLocation(), 400, 800, MINION_DEFAULT_FOLLOW_INTERVAL)
+                    MinionActionMoveToLocation(hMinionUnit, 'illusion_follow_owner', followLoc, MINION_DEFAULT_FOLLOW_INTERVAL, MINION_LOCATION_BUCKET)
                 else
-                    hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
+                    MinionActionMoveToLocation(hMinionUnit, 'illusion_lane_fallback', GetClosestTeamLane(hMinionUnit), MINION_DEFAULT_FOLLOW_INTERVAL, MINION_LOCATION_BUCKET)
                 end
             end)
             if not success then
-                hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
+                MinionActionMoveToLocation(hMinionUnit, 'illusion_lane_fallback', GetClosestTeamLane(hMinionUnit), MINION_DEFAULT_FOLLOW_INTERVAL, MINION_LOCATION_BUCKET)
             end
-        hMinionUnit.nextMoveTime = DotaTime() + 0.2
+        hMinionUnit.nextMoveTime = DotaTime() + MINION_DEFAULT_FOLLOW_INTERVAL
     end
 end
 
@@ -85,7 +175,7 @@ function X.DemonThink(owner, hMinionUnit)
 
         if hMinionUnit.attack_desire > 0 then
             if IsValidUnit(hMinionUnit.attack_target) then
-                hMinionUnit:Action_AttackUnit(hMinionUnit.attack_target, false)
+                MinionActionAttackUnit(hMinionUnit, 'demon_attack', hMinionUnit.attack_target, false, MINION_ATTACK_INTERVAL)
                 return
             end
         end
@@ -94,26 +184,28 @@ function X.DemonThink(owner, hMinionUnit)
             hMinionUnit.move_desire, hMinionUnit.move_location = ConsiderMove(hMinionUnit)
             if hMinionUnit.move_desire > 0 then
                 if GetUnitToLocationDistance(hMinionUnit, hMinionUnit.move_location) > 400 then
-                    hMinionUnit:Action_MoveToLocation(hMinionUnit.move_location)
+                    MinionActionMoveToLocation(hMinionUnit, 'demon_move', hMinionUnit.move_location, MINION_MOVE_INTERVAL, MINION_LOCATION_BUCKET)
                 else
-                    hMinionUnit:Action_AttackMove(GetRandomLocationWithinDist(hMinionUnit.move_location, 0, 300))
+                    local attackMoveLoc = GetStableMinionRandomLocation(hMinionUnit, 'demon_attack_move', hMinionUnit.move_location, 0, 300, MINION_DEFAULT_FOLLOW_INTERVAL)
+                    MinionActionAttackMove(hMinionUnit, 'demon_attack_move', attackMoveLoc, MINION_MOVE_INTERVAL, MINION_LOCATION_BUCKET)
                 end
-                hMinionUnit.nextMoveTimeD = DotaTime() + 0.2
+                hMinionUnit.nextMoveTimeD = DotaTime() + MINION_MOVE_INTERVAL
                 return
             end
 
             -- Default
             local success = pcall(function()
                 if ownerBot:IsAlive() then
-                    hMinionUnit:Action_MoveToLocation(GetRandomLocationWithinDist(ownerBot:GetLocation(), 400, 800))
+                    local followLoc = GetStableMinionRandomLocation(hMinionUnit, 'demon_follow_owner', ownerBot:GetLocation(), 400, 800, MINION_DEFAULT_FOLLOW_INTERVAL)
+                    MinionActionMoveToLocation(hMinionUnit, 'demon_follow_owner', followLoc, MINION_DEFAULT_FOLLOW_INTERVAL, MINION_LOCATION_BUCKET)
                 else
-                    hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
+                    MinionActionMoveToLocation(hMinionUnit, 'demon_lane_fallback', GetClosestTeamLane(hMinionUnit), MINION_DEFAULT_FOLLOW_INTERVAL, MINION_LOCATION_BUCKET)
                 end
             end)
             if not success then
-                hMinionUnit:Action_MoveToLocation(GetClosestTeamLane(hMinionUnit))
+                MinionActionMoveToLocation(hMinionUnit, 'demon_lane_fallback', GetClosestTeamLane(hMinionUnit), MINION_DEFAULT_FOLLOW_INTERVAL, MINION_LOCATION_BUCKET)
             end
-            hMinionUnit.nextMoveTimeD = DotaTime() + 0.2
+            hMinionUnit.nextMoveTimeD = DotaTime() + MINION_DEFAULT_FOLLOW_INTERVAL
         end
     end
 end
@@ -286,7 +378,9 @@ function GetWeakest(unitList)
 end
 
 function IsNotAllowedToAttack(unit)
-	local unit_name = unit:GetUnitName()
+	if unit == nil or unit.GetUnitName == nil then return true end
+	local ok, unit_name = pcall(function() return unit:GetUnitName() end)
+	if not ok or unit_name == nil then return true end
 	return unit_name == '#DOTA_OutpostName_North'
 		or unit_name == '#DOTA_OutpostName_South'
 		or unit_name == 'npc_dota_unit_twin_gate'
@@ -436,7 +530,7 @@ function ConfuseEnemyWithIllusions(bot, hMinionUnit)
         local confuseDistance = 800 -- distance illusions will move
         local confuseLocation = hMinionUnit:GetLocation() +
             Vector(confuseDistance * math.cos(math.rad(oppositeDirection)), confuseDistance * math.sin(math.rad(oppositeDirection))) + RandomVector(50)
-        hMinionUnit:Action_MoveToLocation(confuseLocation)
+        MinionActionMoveToLocation(hMinionUnit, 'illusion_confuse', confuseLocation, 0.8, MINION_LOCATION_BUCKET)
         return 1
     end
     return 0
@@ -449,7 +543,7 @@ function ConsiderRetreat(hMinionUnit, hTarget)
     and GetHP(hMinionUnit) < 0.3
     and hMinionUnit:GetHealth() < 300
      then
-        hMinionUnit:Action_MoveToLocation(GetTeamFountain())
+        MinionActionMoveToLocation(hMinionUnit, 'minion_retreat_fountain', GetTeamFountain(), 1.0, MINION_LOCATION_BUCKET)
         return 1
     end
     return nil
@@ -542,7 +636,7 @@ end
 function ConsiderMove(hMinionUnit)
 	if CanNotUseAction(hMinionUnit) or CantMove(hMinionUnit) then return BOT_MODE_DESIRE_NONE, nil end
 
-	local bot = GetBot()
+    local bot = GetBot()
 
     if GetUnitToUnitDistance(bot, hMinionUnit) > 1600
     or not bot:IsAlive()
@@ -550,7 +644,8 @@ function ConsiderMove(hMinionUnit)
     then
         return BOT_ACTION_DESIRE_HIGH, GetClosestTeamLane(hMinionUnit)
     else
-        return BOT_ACTION_DESIRE_HIGH, GetRandomLocationWithinDist(bot:GetLocation(), 400, 800)
+        local ownerOffset = GetStableMinionRandomLocation(hMinionUnit, 'minion_owner_formation', bot:GetLocation(), 420, 760, MINION_DEFAULT_FOLLOW_INTERVAL)
+        return BOT_ACTION_DESIRE_HIGH, ownerOffset
     end
 end
 

@@ -1,5 +1,12 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_function")
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Timer = require(GetScriptDirectory()..'/thd2_timer')
+
+local ROAM_DESIRE_INTERVAL = 1.0
+local ROAM_DESIRE_LATE_INTERVAL = 5.0
+local ROAM_DESIRE_STAGGER = 0.09
+local ROAM_LATE_GAME_TIME = 25 * 60
 
 local bot = GetBot()
 
@@ -42,6 +49,22 @@ function GetDesire()
 	end
 
 	if not bot:IsAlive() or bot:GetCurrentActionType() == BOT_ACTION_TYPE_DELAY then
+		return BOT_MODE_DESIRE_NONE
+	end
+
+	local roamDesireInterval = ROAM_DESIRE_INTERVAL
+	if DotaTime() > ROAM_LATE_GAME_TIME then
+		roamDesireInterval = ROAM_DESIRE_LATE_INTERVAL
+	end
+
+	if DotaTime() > 30 * 60 and not J.IsDoingRoshan(bot) and not J.Utils.IsTeamPushingSecondTierOrHighGround(bot) then
+		local nearbyEnemies = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
+		if #nearbyEnemies == 0 then
+			roamDesireInterval = 7.0
+		end
+	end
+
+	if not Timer.ShouldRunBotTask(bot, 'roam_desire', roamDesireInterval, ROAM_DESIRE_STAGGER) then
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -115,7 +138,7 @@ function Think()
 	if pickedItem ~= nil then
 		--if not pickedItem.item:IsNull() then  print(botName.." picking up item "..pickedItem.item:GetName()) end
 		if GetUnitToLocationDistance(bot, pickedItem.location) > 500 then
-			bot:Action_MoveToLocation(pickedItem.location)
+			J.ActionMoveToLocation(bot, "roam_pick_item", pickedItem.location, 0.5)
 			return
 		else
 			if pickedItem.item:GetName() == "item_kusanagi" and GetUnitToLocationDistance(bot, pickedItem.location) <= 150 then

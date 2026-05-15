@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -108,10 +109,10 @@ function AbilityUsageThink()
 
 	cast02Desire, cast02Location, cast02BackDesire = ConsiderAbilitySagume02()
 	if cast02Desire > 0 and cast02BackDesire > 0 then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnLocation(ability02, cast02Location)
+		if not J.ClearActionsThrottled(npcBot, 'queenofpain_cast02_back', false, 0.8) then return end
+		J.QueueUseAbilityOnLocationThrottled(npcBot, 'queenofpain_queue_cast02_back_loc', ability02, cast02Location, 0.8, 160)
 		npcBot:ActionQueue_Delay(0.4)
-		npcBot:ActionQueue_UseAbility(ability02)
+		J.QueueUseAbilityThrottled(npcBot, 'queenofpain_queue_cast02_back', ability02, 0.8)
 		return
 	elseif cast02Desire > 0 then
 		npcBot:Action_UseAbilityOnLocation(ability02, cast02Location)

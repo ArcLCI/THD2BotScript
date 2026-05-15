@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -116,7 +117,7 @@ function AbilityUsageThink()
 
     DQERDesire,QERDesire,ERDesire,theWorldtarget = ConsiderTHEWORLD()
     if DQERDesire > 0 and theWorldtarget ~= nil then
-        npcBot:Action_ClearActions(false)
+        if not J.ClearActionsThrottled(npcBot, 'sakuya_combo_dqer', false, 1.0) then return end
         npcBot:ActionQueue_UseAbility(abilityEx)
         npcBot:ActionQueue_Delay(0.1)
         npcBot:ActionQueue_UseAbilityOnLocation(ability01,theWorldtarget:GetLocation())
@@ -137,7 +138,7 @@ function AbilityUsageThink()
         return
     end
     if QERDesire > 0 and theWorldtarget ~= nil then
-        npcBot:Action_ClearActions(false)
+        if not J.ClearActionsThrottled(npcBot, 'sakuya_combo_qer', false, 1.0) then return end
         npcBot:ActionQueue_UseAbilityOnLocation(ability01,theWorldtarget:GetLocation())
         npcBot:ActionQueue_Delay(0.1)
         if (item_dragon_star~=nil and item_dragon_star:IsFullyCastable()) then
@@ -156,7 +157,7 @@ function AbilityUsageThink()
         return
     end
     if ERDesire > 0 and theWorldtarget ~= nil then
-        npcBot:Action_ClearActions(false)
+        if not J.ClearActionsThrottled(npcBot, 'sakuya_combo_er', false, 1.0) then return end
         if (item_dragon_star~=nil and item_dragon_star:IsFullyCastable()) then
             npcBot:ActionQueue_UseAbility(item_dragon_star)
             npcBot:ActionQueue_Delay(0.1)
@@ -196,7 +197,7 @@ function AbilityUsageThink()
     cast04Desire = ConsiderAbilitySakuya04()
 	if ( cast04Desire > 0 )
 	then
-        npcBot:Action_ClearActions(false)
+        if not J.ClearActionsThrottled(npcBot, 'sakuya_cast04', false, 0.8) then return end
 		npcBot:Action_UseAbility( ability04 )
         theWorldTime = DotaTime()
         theWorldLocation = npcBot:GetLocation()
@@ -206,7 +207,7 @@ function AbilityUsageThink()
     castExDesire = ConsiderAbilitySakuyaEx()
 	if ( castExDesire > 0 and not theWorldStatus)
 	then
-        npcBot:Action_ClearActions(false)
+        if not J.ClearActionsThrottled(npcBot, 'sakuya_cast_ex', false, 0.8) then return end
 		npcBot:Action_UseAbility( abilityEx )
 		return
 	end
@@ -214,7 +215,7 @@ function AbilityUsageThink()
     cast01Desire, cast01Location = ConsiderAbilitySakuya01()
 	if ( cast01Desire > 0 and cast01Location ~= nil and not theWorldStatus)
 	then
-        npcBot:Action_ClearActions(false)
+        if not J.ClearActionsThrottled(npcBot, 'sakuya_cast01', false, 0.8) then return end
 		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location )
 		return
 	end
@@ -222,7 +223,7 @@ function AbilityUsageThink()
     cast03Desire, cast03Location = ConsiderAbilitySakuya03()
 	if ( cast03Desire > 0 and cast03Location ~= nil)
 	then
-        npcBot:Action_ClearActions(false)
+        if not J.ClearActionsThrottled(npcBot, 'sakuya_cast03', false, 0.8) then return end
 		npcBot:Action_UseAbilityOnLocation( ability03, cast03Location )
 		return
 	end
@@ -230,7 +231,7 @@ function AbilityUsageThink()
     cast02Desire, cast02Location = ConsiderAbilitySakuya02()
 	if ( cast02Desire > 0 and cast02Location ~= nil and not theWorldStatus)
 	then
-        npcBot:Action_ClearActions(false)
+        if not J.ClearActionsThrottled(npcBot, 'sakuya_cast02', false, 0.8) then return end
 		npcBot:Action_UseAbilityOnLocation( ability02, cast02Location )
 		return
 	end
@@ -239,15 +240,15 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastSakuya01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, false, true)
 end
 
 function CanCastSakuya02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, false, true)
 end
 
 function CanCastSakuya03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, false, true)
 end
 
 ----------------------------------------------------------------------------------------------------

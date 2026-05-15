@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -67,25 +68,25 @@ function AbilityUsageThink()
 	cast01Desire, cast01Target = ConsiderAbilityDaiyousei01()
 	if ( cast01Desire > 0 )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnEntity( ability01 , cast01Target)
-		npcBot:ActionQueue_AttackUnit(cast01Target, true)
+		J.ClearActionsThrottled(npcBot, 'nyx_cast01', false, 0.6)
+		J.QueueUseAbilityOnEntityThrottled(npcBot, 'nyx_queue_cast01', ability01, cast01Target, 0.6)
+		J.QueueAttackUnitThrottled(npcBot, 'nyx_queue_attack01', cast01Target, true, 0.6)
 		return
 	end
 
 	cast02Desire = ConsiderAbilityDaiyousei02()
 	if ( cast02Desire > 0 )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbility( ability02 )
+		J.ClearActionsThrottled(npcBot, 'nyx_cast02', false, 0.6)
+		J.QueueUseAbilityThrottled(npcBot, 'nyx_queue_cast02', ability02, 0.6)
 		return
 	end
 
 	cast03Desire, cast03Target = ConsiderAbilityDaiyousei03()
 	if ( cast03Desire > 0 )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbilityOnEntity( ability03, cast03Target)
+		J.ClearActionsThrottled(npcBot, 'nyx_cast03', false, 0.6)
+		J.QueueUseAbilityOnEntityThrottled(npcBot, 'nyx_queue_cast03', ability03, cast03Target, 0.6)
 		return
 	end
 
@@ -93,8 +94,8 @@ function AbilityUsageThink()
 
 	if ( cast04Desire > 0 )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbility( ability04)
+		J.ClearActionsThrottled(npcBot, 'nyx_cast04', false, 0.6)
+		J.QueueUseAbilityThrottled(npcBot, 'nyx_queue_cast04', ability04, 0.6)
 		return
 	end
 
@@ -153,8 +154,8 @@ function ConsiderAbilityDaiyousei01()
 				end
 			end
 			if treeid ~= 0 then
-				npcBot:Action_ClearActions(false)
-				npcBot:ActionQueue_UseAbilityOnTree( ability01, treeid )
+				J.ClearActionsThrottled(npcBot, 'nyx_tree_cast_fight', false, 1.0)
+				J.QueueUseAbilityOnTreeThrottled(npcBot, 'nyx_queue_tree_fight', ability01, treeid, 1.0)
 				return BOT_ACTION_DESIRE_NONE, nil
 			end
 		end
@@ -187,8 +188,8 @@ function ConsiderAbilityDaiyousei01()
 			end
 		end
 		if treeid ~= 0 then
-			npcBot:Action_ClearActions(false)
-			npcBot:ActionQueue_UseAbilityOnTree( ability01, treeid )
+			J.ClearActionsThrottled(npcBot, 'nyx_tree_cast_retreat', false, 1.0)
+			J.QueueUseAbilityOnTreeThrottled(npcBot, 'nyx_queue_tree_retreat', ability01, treeid, 1.0)
 			return BOT_ACTION_DESIRE_NONE, nil
 		end
 	end

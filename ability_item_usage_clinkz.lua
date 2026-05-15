@@ -85,7 +85,7 @@ end
 
 ----------------------------------------------------------------------------------------------------
 function CanCastWriggle01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 ----------------------------------------------------------------------------------------------------
 
@@ -116,25 +116,8 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function ConsiderAbilityWriggle02()
-
-	local npcBot = GetBot()
-
-	-- Make sure it's castable
-	if ( not ability02:IsFullyCastable() )
-	then
-		return BOT_ACTION_DESIRE_NONE
-	end
-
-	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 400 , true, BOT_MODE_NONE )
-	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
-	do
-		if ( npcEnemy ~= nil )
-		then
-			return BOT_ACTION_DESIRE_HIGH
-		end
-
-	end
-
+	-- Wriggle uses native death_prophet_exorcism here. In THI it can spawn
+	-- dota_death_prophet_exorcism_spirit entities outside map bounds, so bots
+	-- should not cast it until the ability is replaced with a safe custom implementation.
 	return BOT_ACTION_DESIRE_NONE
-
 end

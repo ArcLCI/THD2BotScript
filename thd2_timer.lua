@@ -76,6 +76,38 @@ function Timer.GetOrComputeBotLane(prefix, bot, lane, interval, computeFn, stagg
     return Timer.GetOrCompute(key, effectiveInterval, computeFn)
 end
 
+function Timer.ShouldRunBotTask(bot, taskName, interval, staggerInterval)
+    if bot == nil then
+        return true
+    end
+
+    if interval == nil then
+        interval = 1.0
+    end
+
+    local key = 'timer-task-' .. taskName .. '-' .. tostring(Timer.GetPlayerId(bot))
+    local now = Timer.Now()
+    local entry = cacheStore[key]
+    if entry == nil then
+        cacheStore[key] = {
+            value = true,
+            time = now + interval + Timer.GetStaggerOffset(bot, nil, staggerInterval),
+        }
+        return true
+    end
+
+    if now < entry.time then
+        return false
+    end
+
+    entry.time = now + interval
+    return true
+end
+
+function Timer.ShouldRunBotLaneTask(bot, taskName, lane, interval, staggerInterval)
+    return Timer.ShouldRunBotTask(bot, taskName .. '-' .. tostring(lane), interval, staggerInterval)
+end
+
 function Timer.RoundLocationKey(vLoc, bucketSize)
     if bucketSize == nil then
         bucketSize = 500

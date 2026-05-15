@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -65,16 +66,16 @@ function AbilityUsageThink()
 	cast02Desire = ConsiderAbilityReisen02()
 	if ( cast02Desire > 0 )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbility( ability02 )
+		J.ClearActionsThrottled(npcBot, 'mirana_cast', false, 0.6)
+		J.QueueUseAbilityThrottled(npcBot, 'mirana_queue_cast02', ability02, 0.6)
 		return
 	end
 
 	cast03Desire, cast03Location = ConsiderAbilityReisen03()
 	if ( cast03Desire > 0 )
 	then
-		npcBot:Action_ClearActions(true)
-		npcBot:ActionQueue_UseAbilityOnLocation( ability03, cast03Location)
+		J.ClearActionsThrottled(npcBot, 'mirana_cast_location', true, 0.6)
+		J.QueueUseAbilityOnLocationThrottled(npcBot, 'mirana_queue_cast03', ability03, cast03Location, 0.6, 180)
 		return
 	end
 
@@ -82,8 +83,8 @@ function AbilityUsageThink()
 
 	if ( cast04Desire > 0 )
 	then
-		npcBot:Action_ClearActions(false)
-		npcBot:ActionQueue_UseAbility( ability04 )
+		J.ClearActionsThrottled(npcBot, 'mirana_cast', false, 0.6)
+		J.QueueUseAbilityThrottled(npcBot, 'mirana_queue_cast04', ability04, 0.6)
 		return
 	end
 

@@ -37,6 +37,7 @@ local tableItemsToBuy = {
 ----------------------------------------------------------------------------------------------------
 
 local need_courier = true
+local next_purchase_retry_time = 0
 
 function ItemPurchaseThink()
 
@@ -59,17 +60,22 @@ function ItemPurchaseThink()
 	end
 
 	npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
+	if RealTime() < next_purchase_retry_time then return end
 
 	if ( npcBot:GetGold() >= GetItemCost( sNextItem ) )
 	then
 		print(npcBot:GetPlayerID().."[ItemPurchase] purchasing "..sNextItem)
-		npcBot:ActionImmediate_PurchaseItem( sNextItem )
-		if (sNextItem == "item_courier") then
-			need_courier = false
+		local purchaseResult = npcBot:ActionImmediate_PurchaseItem( sNextItem )
+		if purchaseResult == PURCHASE_ITEM_SUCCESS then
+			if (sNextItem == "item_courier") then
+				need_courier = false
+			else
+				table.remove( tableItemsToBuy, 1 )
+			end
+			print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)
 		else
-			table.remove( tableItemsToBuy, 1 )
+			next_purchase_retry_time = RealTime() + 3.0
 		end
-		print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)
 	end
 
 end

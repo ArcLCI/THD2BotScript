@@ -114,15 +114,15 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastKomachi01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastKomachi03OnTarget( npcTarget )
-	return not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastKomachi04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false)
 end
 ----------------------------------------------------------------------------------------------------
 
@@ -265,7 +265,7 @@ function ConsiderAbilityKomachi04()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if (npcEnemy:GetHealth() < npcEnemy:GetMaxHealth()*kill_coef and not IsPossibleIllusion( npcEnemy ))
+		if (CanCastKomachi04OnTarget( npcEnemy ) and npcEnemy:GetHealth() < npcEnemy:GetMaxHealth()*kill_coef and not IsPossibleIllusion( npcEnemy ))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy
 		end
