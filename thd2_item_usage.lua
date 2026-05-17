@@ -34,18 +34,25 @@ ModifierNamesHighDebuff = {
 
 local RandomTimes = 10
 
-function IsValidCastTarget(npcTarget, requireHero, rejectIllusion)
+function IsValidCastTarget(npcTarget, requireHero, rejectIllusion, options)
 	if npcTarget == nil then return false end
+	local requireVisible = true
+	local allowMagicImmune = false
+	if type(options) == "table" then
+		if options.requireVisible ~= nil then requireVisible = options.requireVisible end
+		allowMagicImmune = options.allowMagicImmune == true
+	end
 	local ok, result = pcall(function()
-		if npcTarget.CanBeSeen == nil
+		if (requireVisible and npcTarget.CanBeSeen == nil)
 		or npcTarget.IsMagicImmune == nil
 		or npcTarget.IsInvulnerable == nil then
 			return false
 		end
 		if requireHero and npcTarget.IsHero == nil then return false end
-		if not npcTarget:CanBeSeen() then return false end
+		if requireVisible and not npcTarget:CanBeSeen() then return false end
 		if requireHero and not npcTarget:IsHero() then return false end
-		if npcTarget:IsMagicImmune() or npcTarget:IsInvulnerable() then return false end
+		if not allowMagicImmune and npcTarget:IsMagicImmune() then return false end
+		if npcTarget:IsInvulnerable() then return false end
 		if rejectIllusion and IsPossibleIllusion(npcTarget) then return false end
 		return true
 	end)

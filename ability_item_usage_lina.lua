@@ -128,21 +128,21 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastReimu01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, false, true)
 end
 
 
 function CanCastReimu02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, false, true)
 end
 
 
 function CanCastReimu03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and ( GetBot():HasScepter() or not npcTarget:IsMagicImmune() ) and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false, { allowMagicImmune = GetBot():HasScepter() })
 end
 
 function CanCastReimu04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false)
 end
 ----------------------------------------------------------------------------------------------------
 

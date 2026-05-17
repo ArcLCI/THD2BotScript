@@ -137,17 +137,15 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastYoumu01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false, { allowMagicImmune = true })
 end
 
 function CanCastYoumu03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false, { allowMagicImmune = true })
 end
 
 function CanCastYoumu04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and
-	not npcTarget:IsMagicImmune() and
-	not npcTarget:IsInvulnerable() and
+	return IsValidCastTarget(npcTarget, false, false) and
 	npcTarget:GetArmor() < 200.0
 end
 

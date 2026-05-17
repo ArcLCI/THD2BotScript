@@ -100,15 +100,15 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastAya01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, false, true, { allowMagicImmune = true })
 end
 
 function CanCastAya02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, false, true)
 end
 
 function CanCastAya04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false, { allowMagicImmune = true })
 end
 
 ----------------------------------------------------------------------------------------------------

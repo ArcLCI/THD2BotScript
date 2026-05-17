@@ -103,7 +103,7 @@ function CanCastSunny02OnTarget( npcTarget )
 end
 
 function CanCastSunny03OnTarget( npcTarget )
-	return IsValidCastTarget(npcTarget, false, false) and npcTarget:IsHero()
+	return IsValidCastTarget(npcTarget, true, false)
 end
 
 function CanCastSunny04OnTarget( npcTarget )
@@ -111,7 +111,7 @@ function CanCastSunny04OnTarget( npcTarget )
 end
 
 function CanCastSunny05OnTarget( npcTarget )
-	return IsValidCastTarget(npcTarget, false, false) and npcTarget:IsHero()
+	return IsValidCastTarget(npcTarget, true, false)
 end
 ----------------------------------------------------------------------------------------------------
 

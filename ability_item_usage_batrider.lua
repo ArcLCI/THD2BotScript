@@ -117,25 +117,25 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastSeija01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 
 function CanCastSeija02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 
 function CanCastSeija03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and ( GetBot():HasScepter() or not npcTarget:IsMagicImmune() ) and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false, { allowMagicImmune = GetBot():HasScepter() })
 end
 
 function CanCastSeija04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastSeijaExOnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and ( GetBot():HasScepter() or not npcTarget:IsMagicImmune() ) and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false, { allowMagicImmune = GetBot():HasScepter() })
 end
 ----------------------------------------------------------------------------------------------------
 

@@ -134,7 +134,7 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastReisen_2_01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, true, true)
 end
 
 ----------------------------------------------------------------------------------------------------

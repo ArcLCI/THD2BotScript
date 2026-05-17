@@ -124,7 +124,7 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastAbilityOnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 ----------------------------------------------------------------------------------------------------

@@ -140,17 +140,17 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastShikieiki01OnTarget( npcTarget )
-	return J.IsValidBotTarget(npcTarget)
+	return IsValidCastTarget(npcTarget, true, false)
 end
 
 
 function CanCastShikieiki02OnTarget( npcTarget )
-	return J.IsValidBotTarget(npcTarget)
+	return IsValidCastTarget(npcTarget, true, false)
 end
 
 
 function CanCastShikieiki04OnTarget( npcTarget )
-	return J.IsValidBotTarget(npcTarget)
+	return IsValidCastTarget(npcTarget, true, false)
 end
 ----------------------------------------------------------------------------------------------------
 

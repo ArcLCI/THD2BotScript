@@ -108,7 +108,7 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastLuna01OnTarget( npcTarget )
-	return IsValidCastTarget(npcTarget, false, false) and npcTarget:IsHero()
+	return IsValidCastTarget(npcTarget, true, false)
 end
 
 function CanCastLuna02OnTarget( npcTarget )

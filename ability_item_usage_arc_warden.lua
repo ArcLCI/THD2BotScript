@@ -161,25 +161,25 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastEllen01OnTarget( npcTarget )
-	return npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, true, true, { requireVisible = false })
 end
 
 
 function CanCastEllen02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false)
 end
 
 
 function CanCastEllen03OnTarget( npcTarget )
-	return not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false, { requireVisible = false })
 end
 
 function CanCastEllen04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, true, true)
 end
 
 function CanCastEllen05OnTarget( npcTarget )
-	return npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false, { requireVisible = false })
 end
 ----------------------------------------------------------------------------------------------------
 

@@ -130,11 +130,11 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastFlandrev201OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false)
 end
 
 function CanCastFlandrev204OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false, { allowMagicImmune = true })
 end
 ----------------------------------------------------------------------------------------------------
 

@@ -93,7 +93,7 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastReisen03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 ----------------------------------------------------------------------------------------------------
