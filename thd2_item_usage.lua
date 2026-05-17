@@ -34,6 +34,44 @@ ModifierNamesHighDebuff = {
 
 local RandomTimes = 10
 
+--[[
+	IsValidCastTarget(npcTarget, requireHero, rejectIllusion, options)
+
+	用于统一 CanCast*OnTarget() 里的目标合法性判断，默认等价于：
+	npcTarget ~= nil
+		and npcTarget:CanBeSeen()
+		and not npcTarget:IsMagicImmune()
+		and not npcTarget:IsInvulnerable()
+
+	参数说明：
+	requireHero:
+		true  = 目标必须满足 npcTarget:IsHero()
+		false = 不要求目标是英雄
+
+	rejectIllusion:
+		true  = 排除 IsPossibleIllusion(npcTarget)
+		false = 不额外排除幻象
+
+	options 可不传；只有旧判断需要特殊语义时才传 table：
+	{ allowMagicImmune = true }
+		保留旧代码“没有检查 IsMagicImmune()”的效果。
+
+	{ allowMagicImmune = GetBot():HasScepter() }
+		保留旧代码“有神杖时允许魔免目标”的效果。
+
+	{ requireVisible = false }
+		保留旧代码“没有检查 CanBeSeen()”的效果。
+
+	常见用法：
+	IsValidCastTarget(npcTarget, false, false)
+		等价于可见、非魔免、非无敌，不要求英雄，不排除幻象。
+
+	IsValidCastTarget(npcTarget, true, false)
+		在上面基础上要求 npcTarget:IsHero()。
+
+	IsValidCastTarget(npcTarget, true, true)
+		在上面基础上要求英雄，并排除疑似幻象。
+]]
 function IsValidCastTarget(npcTarget, requireHero, rejectIllusion, options)
 	if npcTarget == nil then return false end
 	local requireVisible = true

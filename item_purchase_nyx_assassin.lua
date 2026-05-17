@@ -6,7 +6,7 @@ local tableItemsToBuy = {
 	"item_horse_red",
 	"item_wind_gun",
 	"item_cirno_claymore",
-	"iteme_laevateinn",
+	"item_laevateinn",
 	"item_horse_king_compressor",
 	"item_recipe_horse_king",
 	"item_sampan",
