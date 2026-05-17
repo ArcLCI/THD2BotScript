@@ -9,7 +9,7 @@ local tableItemsToBuy = {
 	"item_anchor",
 	"item_bagua",
 	"item_ganggenier",
-	"item_frozen"
+	"item_frozen_frog"
 }
 
 ----------------------------------------------------------------------------------------------------

@@ -14,7 +14,7 @@ local tableItemsToBuy = {
 	"item_ice_block",
 	"item_recipe_wanmeitiaoyuezhuangzhi",
 	"item_wanbaochui2",
-	"item_frozen",
+	"item_frozen_frog",
 }
 
 ----------------------------------------------------------------------------------------------------

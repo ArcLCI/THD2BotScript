@@ -14,7 +14,7 @@ local tableItemsToBuy = {
 	"item_ganggenier",
 	"item_loneliness",
 	"item_wanbaochui2",
-	"item_frozen",
+	"item_frozen_frog",
 }
 
 ----------------------------------------------------------------------------------------------------

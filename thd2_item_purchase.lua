@@ -17,14 +17,6 @@ function GetEquipmentMaxNum(tPurchaseList)
 	return #GetFullPurchaseList(tPurchaseList)
 end
 
-local invalid_item_aliases = {
-	item_frozen = "item_frozen_frog",
-}
-
-local function NormalizePurchaseItemName(itemName)
-	return invalid_item_aliases[itemName] or itemName
-end
-
 local run_checker = {}
 local now_equip = {}
 
@@ -188,7 +180,7 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 		return -1
 	end]]--
 
-	local sNextItem = NormalizePurchaseItemName(tableItemsToBuyFullList[GetNowEquipment(runnerSeed)])
+	local sNextItem = tableItemsToBuyFullList[GetNowEquipment(runnerSeed)]
 	if not CanPurchaseEdibleImmediate(runnerSeed, sNextItem) then
 		npcBot:SetNextItemPurchaseValue( 0 )
 		return -1
@@ -208,7 +200,7 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 				THD_BOT_EDIBLE_PURCHASE_STATS.allowed = (THD_BOT_EDIBLE_PURCHASE_STATS.allowed or 0) + 1
 			end
 			nextPurchase = NextEquipment(runnerSeed)
-			sNextItem = NormalizePurchaseItemName(tableItemsToBuyFullList[nextPurchase])
+			sNextItem = tableItemsToBuyFullList[nextPurchase]
 			if sNextItem ~= nil then
 				npcBot:SetNextItemPurchaseValue( GetItemCost( sNextItem ) )
 				print(npcBot:GetPlayerID().."[ItemPurchase] purchased "..sNextItem)

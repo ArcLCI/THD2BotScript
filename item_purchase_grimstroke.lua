@@ -10,7 +10,7 @@ local tableItemsToBuy = {
 	"item_horse_king_compressor",
 	"item_recipe_horse_king",
 	"item_camera",
-	"item_frozen",
+	"item_frozen_frog",
 }
 
 ----------------------------------------------------------------------------------------------------
