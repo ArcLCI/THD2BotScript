@@ -1,3 +1,4 @@
+local Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 local Push = require( GetScriptDirectory()..'/THDFuncLib/aba_push')
 local bot = GetBot()
 local botName = bot:GetUnitName()
@@ -5,7 +6,10 @@ if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() o
 if bot.PushLaneDesire == nil then bot.PushLaneDesire = {0, 0, 0} end
 
 function GetDesire()
-    bot.PushLaneDesire[LANE_TOP] = Push.GetPushDesire(bot, LANE_TOP)
-    return bot.PushLaneDesire[LANE_TOP]
+    return Utils.GetCachedModeDesire(bot, 'push_top', function()
+        bot.PushLaneDesire[LANE_TOP] = Push.GetPushDesire(bot, LANE_TOP)
+        return bot.PushLaneDesire[LANE_TOP]
+    end)
 end
+function OnStart() Utils.NoteModeStart(bot, 'push_top') end
 function Think() Push.PushThink(bot, LANE_TOP) end

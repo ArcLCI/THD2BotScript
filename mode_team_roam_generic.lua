@@ -22,7 +22,8 @@ local yugi04Target
 local TEAM_ROAM_DESIRE_INTERVAL = 0.45
 local TEAM_ROAM_DESIRE_STAGGER = 0.07
 
-function GetDesire()
+local function ComputeDesire()
+	if not Utils.AllowModeDesire(bot, 'team_roam') then return BOT_MODE_DESIRE_NONE end
 	if not Timer.ShouldRunBotTask(bot, 'team_roam_desire', TEAM_ROAM_DESIRE_INTERVAL, TEAM_ROAM_DESIRE_STAGGER) then
 		return BOT_MODE_DESIRE_NONE
 	end
@@ -119,7 +120,7 @@ function SpecialYugi04()
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcEnemy ~= nil
-			and npcEnemy:HasModifier( "modifier_thdots_yugi04_think_interval" ))
+			and SafeHasModifier(npcEnemy, "modifier_thdots_yugi04_think_interval" ))
 			then
 				yugi04Target = npcEnemy
 				return true
@@ -129,10 +130,15 @@ function SpecialYugi04()
 	return false
 end
 
-function OnStart() end
+function GetDesire()
+	return Utils.GetCachedModeDesire(bot, 'team_roam', ComputeDesire)
+end
+
+function OnStart() Utils.NoteModeStart(bot, 'team_roam') end
 function OnEnd() end
 
 function Think()
+    if not Timer.ShouldRunBotTask(bot, 'team_roam_think', 0.20, 0.03) then return end
     if J.CanNotUseAction(bot) then return end
 
 	if IsAttackingSpecialUnit and DotaTime() > nNextActionTime then

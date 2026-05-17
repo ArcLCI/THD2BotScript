@@ -1,3 +1,4 @@
+local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
 ModifierNamesTeleporting = {
 	"modifier_teleporting",
@@ -192,7 +193,17 @@ function CachedFindAoELocation( bot, nTag, bEnemies, bHeroes, vBaseLocation, nMa
 	--if nMaxDistanceFromBase > 1500 and nMaxDistanceFromBase < 3000 then nMaxDistanceFromBase = 1500 end
 	--if nRadius > 500 then nRadius = 500 end
 
-	local tag = bot:GetPlayerID()*65536 + nTag
+	local botPlayerId = -1
+	if bot == nil or bot.GetPlayerID == nil then
+		return {}
+	end
+	local okPlayerId, playerId = pcall(function() return bot:GetPlayerID() end)
+	if not okPlayerId or playerId == nil then
+		return {}
+	end
+	botPlayerId = playerId
+
+	local tag = botPlayerId*65536 + nTag
 
 	if LastFindAoEDotaTime[tag] == nil then
 		LastFindAoEDotaTime[tag] = -6000
@@ -253,7 +264,17 @@ function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 
 	local RadiusSqr = nRadius*nRadius
 
-	local tag = bot:GetPlayerID()*2048 + nRadius
+	local botPlayerId = -1
+	if bot == nil or bot.GetPlayerID == nil then
+		return {}
+	end
+	local okPlayerId, playerId = pcall(function() return bot:GetPlayerID() end)
+	if not okPlayerId or playerId == nil then
+		return {}
+	end
+	botPlayerId = playerId
+
+	local tag = botPlayerId*2048 + nRadius
 	tag = tag*2
 	if bEnemies then tag = tag + 1 end
 	tag = tag*64+nMode
@@ -300,6 +321,8 @@ end
 function IsBotAwake( bot )
 
 	if bot == nil then bot = GetBot() end
+	if bot == nil then return false end
+	if DotaTime() > 0 and not Timer.ShouldRunBotTask(bot, 'ability_usage_think_global', 0.25, 0.03) then return false end
 	return not ( bot:IsIllusion() or bot:IsHexed() or bot:IsStunned() )
 
 end
@@ -495,11 +518,21 @@ function IsMagicBlocking( Target )
 end
 
 function IsUnderAttack( Target , HeroOnly )
+	if Target == nil then return false end
 	--添加参数默认值以兼容旧代码
 	if nil == HeroOnly then
 		HeroOnly = false
 	end
-	local tableIncomingProjectiles = Target:GetIncomingTrackingProjectiles()
+
+	local tableIncomingProjectiles = {}
+	local okProjectiles, incomingProjectiles = pcall(function()
+		if Target.GetIncomingTrackingProjectiles == nil then return {} end
+		return Target:GetIncomingTrackingProjectiles()
+	end)
+	if okProjectiles and incomingProjectiles ~= nil then
+		tableIncomingProjectiles = incomingProjectiles
+	end
+
 	for _,p in pairs( tableIncomingProjectiles )
 	do
 		if ( p.is_attack
@@ -520,8 +553,11 @@ function IsUnderAttack( Target , HeroOnly )
 	if( tableNearbyEnemyHeroes == nil) then tableNearbyEnemyHeroes = { } end
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( npcEnemy:GetAttackTarget() == Target )
-		then
+		local okAttackTarget, attackTarget = pcall(function()
+			if npcEnemy == nil or npcEnemy.GetAttackTarget == nil then return nil end
+			return npcEnemy:GetAttackTarget()
+		end)
+		if okAttackTarget and attackTarget == Target then
 			return true
 		end
 

@@ -3,6 +3,7 @@ local botName = bot:GetUnitName();
 if bot == nil or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 local X = {}
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
 local RUNE_DESIRE_EARLY_INTERVAL = 0.35
@@ -38,7 +39,8 @@ local timeInMin = 0
 local Bottle = nil
 local lastMin = 0
 
-function GetDesire()
+local function ComputeDesire()
+	if not Utils.AllowModeDesire(bot, 'rune') then return BOT_MODE_DESIRE_NONE end
 	if not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() or bot.isBear then return BOT_MODE_DESIRE_NONE end
     if DotaTime() > 2 * 60 and DotaTime() < 6 * 60 and GetUnitToLocationDistance(bot, GetRuneSpawnLocation(RUNE_POWERUP_2)) < 150
 	then
@@ -232,8 +234,12 @@ function ConsiderWisdomRune()
 	return 0
 end
 
-function OnStart()
+function GetDesire()
+	return Utils.GetCachedModeDesire(bot, 'rune', ComputeDesire)
+end
 
+function OnStart()
+	Utils.NoteModeStart(bot, 'rune')
 end
 
 function OnEnd()
@@ -241,6 +247,7 @@ function OnEnd()
 end
 
 function Think()
+    if not Timer.ShouldRunBotTask(bot, 'rune_think', 0.25, 0.04) then return end
     if bot:IsInvulnerable()
     and J.GetHP(bot) > 0.95
     and bot:DistanceFromFountain() < 100 then

@@ -2270,4 +2270,48 @@ function ____exports.MoveBotSafely(bot, targetPos)
     end
     bot:Action_MoveToLocation(safeDestination)
 end
+--- Minimum time a custom bot mode should remain preferred after it becomes active.
+____exports.BOT_MODE_SWITCH_LOCK_INTERVAL = 1.0
+function ____exports.NoteModeStart(bot, modeName)
+    if bot == nil then
+        return
+    end
+    bot.THD_ModeSwitchLock = {
+        mode = modeName,
+        time = DotaTime()
+    }
+end
+function ____exports.AllowModeDesire(bot, modeName)
+    if bot == nil or bot.THD_ModeSwitchLock == nil then
+        return true
+    end
+    local lock = bot.THD_ModeSwitchLock
+    local lockTime = lock.time or -9999
+    if DotaTime() - lockTime >= ____exports.BOT_MODE_SWITCH_LOCK_INTERVAL then
+        return true
+    end
+    return lock.mode == modeName
+end
+____exports.BOT_MODE_DESIRE_RECALC_INTERVAL = 1.0
+function ____exports.GetCachedModeDesire(bot, modeName, computeFn, interval)
+    if bot == nil then
+        return BOT_MODE_DESIRE_NONE
+    end
+    interval = interval or ____exports.BOT_MODE_DESIRE_RECALC_INTERVAL
+    bot.THD_ModeDesireCache = bot.THD_ModeDesireCache or {}
+    local cache = bot.THD_ModeDesireCache[modeName]
+    local now = DotaTime()
+    if cache ~= nil and now - (cache.time or -9999) < interval then
+        return cache.value or BOT_MODE_DESIRE_NONE
+    end
+    if not ____exports.AllowModeDesire(bot, modeName) then
+        return BOT_MODE_DESIRE_NONE
+    end
+    local value = computeFn()
+    bot.THD_ModeDesireCache[modeName] = {
+        time = now,
+        value = value or BOT_MODE_DESIRE_NONE
+    }
+    return bot.THD_ModeDesireCache[modeName].value
+end
 return ____exports

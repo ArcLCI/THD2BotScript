@@ -3,6 +3,7 @@ local botName = bot:GetUnitName()
 if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
 local OUTPOST_DESIRE_INTERVAL = 1.8
@@ -19,8 +20,9 @@ local ClosestOutpostDist = 10000
 local IsEnemyTier2Down = false
 local hAbilityCapture = bot:GetAbilityByName('ability_capture')
 
-function GetDesire()
+local function ComputeDesire()
 
+	if not Utils.AllowModeDesire(bot, 'outpost') then return BOT_MODE_DESIRE_NONE end
 	if not IsEnemyTier2Down
 	then
 		if GetTower(GetOpposingTeam(), TOWER_TOP_2) == nil
@@ -96,8 +98,12 @@ function GetDesire()
 	return BOT_ACTION_DESIRE_NONE
 end
 
-function OnStart()
+function GetDesire()
+	return Utils.GetCachedModeDesire(bot, 'outpost', ComputeDesire)
+end
 
+function OnStart()
+	Utils.NoteModeStart(bot, 'outpost')
 end
 
 function OnEnd()
@@ -107,6 +113,7 @@ function OnEnd()
 end
 
 function Think()
+	if not Timer.ShouldRunBotTask(bot, 'outpost_think', 0.50, 0.05) then return end
 	if J.CanNotUseAction(bot) then return end
 
 	if ClosestOutpost ~= nil

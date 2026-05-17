@@ -95,23 +95,23 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastSunny01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastSunny02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastSunny03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false) and npcTarget:IsHero()
 end
 
 function CanCastSunny04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastSunny05OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false) and npcTarget:IsHero()
 end
 ----------------------------------------------------------------------------------------------------
 

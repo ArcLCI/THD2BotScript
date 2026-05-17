@@ -1,5 +1,6 @@
 local Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
 local bot = GetBot()
 local botName = bot:GetUnitName()
@@ -20,7 +21,8 @@ local skipLaningState = {
 	checkGap = 3,
 }
 
-function GetDesire()
+local function ComputeDesire()
+	if not Utils.AllowModeDesire(bot, 'laning') then return BOT_MODE_DESIRE_NONE end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return BOT_MODE_DESIRE_NONE end
 	local botLV = bot:GetLevel()
 	local currentTime = DotaTime()
@@ -87,7 +89,12 @@ function GetDesire()
 	return BOT_MODE_DESIRE_NONE
 end
 
+function GetDesire()
+	return Utils.GetCachedModeDesire(bot, 'laning', ComputeDesire)
+end
+
 function OnStart()
+	Utils.NoteModeStart(bot, 'laning')
 	skipLaningState.count = skipLaningState.count + 1
 end
 
@@ -144,6 +151,7 @@ end
 
 if local_mode_laning_generic then
 	function Think()
+		if not Timer.ShouldRunBotTask(bot, 'laning_think', 0.15, 0.02) then return end
 		local hitCreep, moveToCreep = GetBestLastHitCreep(nEnemyCreeps)
 		if J.IsValid(hitCreep) then
 			J.SetTargetIfChanged(bot, hitCreep, 0.3)

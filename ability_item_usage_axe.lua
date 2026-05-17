@@ -132,19 +132,19 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastCirno01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastCirno02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastCirno03OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastCirno04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 ----------------------------------------------------------------------------------------------------
 

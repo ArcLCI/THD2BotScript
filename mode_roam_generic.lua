@@ -1,6 +1,7 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_function")
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 
 local ROAM_DESIRE_INTERVAL = 1.0
@@ -25,7 +26,8 @@ local edibleItemSlot = -1
 
 local item_edible_name = {"item_mushroom_kebab_immediate","item_mushroom_pie_immediate","item_mushroom_soup_immediate"}
 
-function GetDesire()
+local function ComputeDesire()
+	if not Utils.AllowModeDesire(bot, 'roam') then return BOT_MODE_DESIRE_NONE end
 	botName = bot:GetUnitName()
 
 	if not debug_printed then
@@ -121,13 +123,20 @@ function GetDesire()
 
 end
 
+function GetDesire()
+	return Utils.GetCachedModeDesire(bot, 'roam', ComputeDesire)
+end
+
 function OnEnd()
 
 	pickedItem = nil
 
 end
 
+function OnStart() Utils.NoteModeStart(bot, 'roam') end
+
 function Think()
+	if not Timer.ShouldRunBotTask(bot, 'roam_think', 0.25, 0.04) then return end
 	if edibleItem ~= nil then
 		local lessValItem = GetMainInvLessValItemSlot(bot)
 		if lessValItem ~= -1 and edibleItemSlot ~= -1 and bot:HasModifier("modifier_fountain_aura_buff") then

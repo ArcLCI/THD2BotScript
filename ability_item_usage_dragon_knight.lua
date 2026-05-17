@@ -98,19 +98,19 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastMeirin01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastMeirin02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and npcTarget:IsHero() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, true, false)
 end
 
 function CanCastMeirinExOnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 function CanCastMeirin04OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 ----------------------------------------------------------------------------------------------------
 
@@ -143,14 +143,14 @@ function ConsiderAbilityMeirin01()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if ( nDamage > npcEnemy:GetHealth() and not IsPossibleIllusion( npcEnemy )) 
+		if ( CanCastMeirin01OnTarget( npcEnemy ) and nDamage > npcEnemy:GetHealth() and not IsPossibleIllusion( npcEnemy ))
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
 		end
 		if ((npcBot:GetActiveMode() == BOT_MODE_ATTACK and 
 		GetUnitToLocationDistance(npcBot:GetTarget(),GetShopLocation(npcBot:GetTeam(),SHOP_HOME))<
 		GetUnitToLocationDistance(npcBot,GetShopLocation(npcBot:GetTeam(),SHOP_HOME))) or
-			npcEnemy:HasModifier("modifier_imba_puck_dream_coil"))
+			SafeHasModifier(npcEnemy, "modifier_imba_puck_dream_coil"))
 		then 
 			local v = npcBot:GetLocation() + 10*(npcEnemy:GetLocation()-npcBot:GetLocation())
 			return BOT_ACTION_DESIRE_HIGH, v

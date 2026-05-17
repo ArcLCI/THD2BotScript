@@ -262,6 +262,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 end
 
 function Defend.DefendThink(bot, lane)
+    if not Timer.ShouldRunBotTask(bot, 'defend_think_'..tostring(lane), 0.25, 0.03) then return end
     if J.CanNotUseAction(bot) then return end
 	local state = GetLaneState(bot, lane)
 	local nSearchRange = 1800
@@ -310,7 +311,7 @@ function Defend.DefendThink(bot, lane)
 	end
 
 
-	local nEnemyLaneCreeps = bot:GetNearbyCreeps(900, true)
+	local nEnemyLaneCreeps = bot:GetNearbyLaneCreeps(900, true)
 	if (nEnemyHeroes_real == nil or #nEnemyHeroes_real <= 0)
 	and nEnemyLaneCreeps ~= nil and #nEnemyLaneCreeps > 0
 	then

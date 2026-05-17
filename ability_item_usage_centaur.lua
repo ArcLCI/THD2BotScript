@@ -79,7 +79,7 @@ function MyItemUsageThink()
 		if ( npcEnemy ~= nil
 		and item_yuemianjidongzhuangzhi~=nil
 		and item_yuemianjidongzhuangzhi:IsFullyCastable()
-		and npcEnemy:HasModifier( "modifier_thdots_yugi04_think_interval" ))
+		and SafeHasModifier(npcEnemy, "modifier_thdots_yugi04_think_interval" ))
 		then
 			npcBot:Action_UseAbilityOnEntity( item_yuemianjidongzhuangzhi, npcEnemy )
 			return
@@ -150,7 +150,7 @@ function AbilityUsageThink()
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if ( npcEnemy ~= nil
-		and npcEnemy:HasModifier( "modifier_thdots_yugi04_think_interval" ))
+		and SafeHasModifier(npcEnemy, "modifier_thdots_yugi04_think_interval" ))
 		then
 			J.SetTargetIfChanged(npcBot, npcEnemy, 0.8)
 			return

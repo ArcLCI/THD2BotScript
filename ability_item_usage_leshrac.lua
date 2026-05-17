@@ -145,11 +145,11 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function CanCastLily01OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable() and not IsPossibleIllusion(npcTarget)
+	return IsValidCastTarget(npcTarget, false, true)
 end
 
 function CanCastLily02OnTarget( npcTarget )
-	return npcTarget:CanBeSeen() and not npcTarget:IsMagicImmune() and not npcTarget:IsInvulnerable()
+	return IsValidCastTarget(npcTarget, false, false)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -186,7 +186,7 @@ function ConsiderAbilityLily01()
             local lowestHPTarget
             for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		    do
-			    if CanCastLily01OnTarget(npcEnemy) and npcEnemy:GetHealth() <= lowestHP then
+                if CanCastLily01OnTarget(npcEnemy) and npcEnemy:GetHealth() <= lowestHP then
                     lowestHP = npcEnemy:GetHealth()
                     lowestHPTarget = npcEnemy
 			    end
@@ -200,7 +200,7 @@ function ConsiderAbilityLily01()
             local lowestHPTarget
 		    for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 		    do
-                if not IsPossibleIllusion(npcFriend) and npcFriend:GetHealth() <= lowestHP then
+                if CanCastLily02OnTarget(npcFriend) and not IsPossibleIllusion(npcFriend) and npcFriend:GetHealth() <= lowestHP then
                     lowestHP = npcFriend:GetHealth()
                     lowestHPTarget = npcFriend
                 end

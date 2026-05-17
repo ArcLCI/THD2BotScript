@@ -302,6 +302,7 @@ end
 
 local fNextMovementTime = 0
 function Push.PushThink(bot, lane)
+    if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
     if J.CanNotUseAction(bot) then return end
 
     local botAttackRange = bot:GetAttackRange()
@@ -369,11 +370,12 @@ function Push.PushThink(bot, lane)
 
     local nRange = math.min(700 + botAttackRange, 1600)
 
+    -- 原逻辑在 bot 12 级后会从 GetNearbyLaneCreeps 扩大到 GetNearbyCreeps，
+    -- 目的是推进时顺手清理召唤物、支配怪、陈怪等非兵线单位。
+    -- 但 THI/当前 Dota 环境里存在隐藏中立、特殊 creep、缓存池中立等大量非兵线单位，
+    -- 这个 all-creeps 扫描会把它们纳入 push 目标评估，放大原生 bot/NextBotCombat 开销。
+    -- 因此这里强制只扫描兵线小兵，避免后期/满级 bot 推进时扫描中立或特殊单位。
     local nCreeps = bot:GetNearbyLaneCreeps(nRange, true)
-    if bot:GetLevel() >= 12 then
-        nCreeps = bot:GetNearbyCreeps(nRange, true)
-    end
-    nCreeps = Push.GetSpecialUnitsNearby(bot, nCreeps, nRange)
 
     local vTeamFountain = J.GetTeamFountain()
     local bTowerNearby = false

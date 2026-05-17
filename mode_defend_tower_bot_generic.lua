@@ -1,3 +1,4 @@
+local Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Defend = require( GetScriptDirectory()..'/THDFuncLib/aba_defend')
 
@@ -8,5 +9,10 @@ if bot:IsInvulnerable() or not bot:IsHero() or not string.find(botName, "hero") 
 	return
 end
 
-function GetDesire() return Defend.GetDefendDesire(bot, LANE_BOT) end
+function GetDesire()
+	return Utils.GetCachedModeDesire(bot, 'defend_bot', function()
+		return Defend.GetDefendDesire(bot, LANE_BOT)
+	end)
+end
+function OnStart() Utils.NoteModeStart(bot, 'defend_bot') end
 function Think() Defend.DefendThink(bot, LANE_BOT) end
