@@ -123,7 +123,7 @@ function AbilityUsageThink()
 	cast04Desire = ConsiderAbilityCirno04()
 	if ( cast04Desire > 0 ) 
 	then
-		J.QueueUseAbilityThrottled(npcBot, 'axe_queue_cast04', ability04, 0.8)
+		J.QueueUseAbilityThrottled(npcBot, 'cirno_queue_cast04', ability04, 0.8)
 		return
 	end
 

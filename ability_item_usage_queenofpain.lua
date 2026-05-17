@@ -109,10 +109,10 @@ function AbilityUsageThink()
 
 	cast02Desire, cast02Location, cast02BackDesire = ConsiderAbilitySagume02()
 	if cast02Desire > 0 and cast02BackDesire > 0 then
-		if not J.ClearActionsThrottled(npcBot, 'queenofpain_cast02_back', false, 0.8) then return end
-		J.QueueUseAbilityOnLocationThrottled(npcBot, 'queenofpain_queue_cast02_back_loc', ability02, cast02Location, 0.8, 160)
+		if not J.ClearActionsThrottled(npcBot, 'sagume_cast02_back', false, 0.8) then return end
+		J.QueueUseAbilityOnLocationThrottled(npcBot, 'sagume_queue_cast02_back_loc', ability02, cast02Location, 0.8, 160)
 		npcBot:ActionQueue_Delay(0.4)
-		J.QueueUseAbilityThrottled(npcBot, 'queenofpain_queue_cast02_back', ability02, 0.8)
+		J.QueueUseAbilityThrottled(npcBot, 'sagume_queue_cast02_back', ability02, 0.8)
 		return
 	elseif cast02Desire > 0 then
 		npcBot:Action_UseAbilityOnLocation(ability02, cast02Location)
