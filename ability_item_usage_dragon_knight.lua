@@ -102,7 +102,7 @@ function CanCastMeirin01OnTarget( npcTarget )
 end
 
 function CanCastMeirin02OnTarget( npcTarget )
-	return IsValidCastTarget(npcTarget, true, false)
+	return IsValidCastTarget(npcTarget, true, false) and npcTarget:IsHero()
 end
 
 function CanCastMeirinExOnTarget( npcTarget )
