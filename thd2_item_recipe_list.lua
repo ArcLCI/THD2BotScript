@@ -67,8 +67,7 @@ Item['item_picnic_basket'] = {
 Item['item_eyunzhifu'] = {
     "item_frog",
 	"item_juice",
-	"item_magic_guide_book",
-	"item_recipe_eyunzhifu"
+	"item_magic_guide_book"
 }
 --历史教科书
 Item['item_jiaokeshu'] = {
@@ -169,7 +168,7 @@ Item['item_qijizhixing'] = {
 Item['item_tuzhushen'] = {
     "item_zun_glasses",
     "item_qijizhixing",
-    "item_tuzhushen_ticket_recipe"
+    "item_recipe_tuzhushen"
 }
 --真澄之镜
 Item['item_green_dam'] = {
@@ -733,8 +732,7 @@ Item['item_sss'] = {
 --饕餮叉勺
 Item['item_glutton_spork'] = {
     "item_hoshiguma_cup",
-    "item_naginata",
-    "item_recipe_glutton_spork"
+    "item_naginata"
 }
 --三位一体
 Item['item_trinity'] = {

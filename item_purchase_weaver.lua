@@ -10,7 +10,7 @@ local tableItemsToBuy = {
 	"item_qijizhixing",
 	"item_zaiezhizhurenxing",
 	"item_zun_glasses",
-    "item_tuzhushen_ticket_recipe",
+    "item_recipe_tuzhushen",
 	"item_bone_flute",
 	"item_wanbaochui2",
 }
