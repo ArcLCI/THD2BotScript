@@ -720,14 +720,12 @@ Item['item_cht'] = {
 --八辐法轮
 Item['item_esdw'] = {
     "item_hoshiguma_cup",
-    "item_cht",
-    "item_recipe_esdw"
+    "item_cht"
 }
 --七星剑
 Item['item_sss'] = {
     "item_naginata",
-    "item_cht",
-    "item_recipe_sss"
+    "item_cht"
 }
 --饕餮叉勺
 Item['item_glutton_spork'] = {
