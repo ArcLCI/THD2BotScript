@@ -617,7 +617,6 @@ Item['item_diary'] = {
     "item_sailor_suit",
 	"item_touhou_banana",
     "item_jiaokeshu",
-    "item_recipe_diary"
 }
 --替身人偶
 Item['item_dummy_doll1'] = {

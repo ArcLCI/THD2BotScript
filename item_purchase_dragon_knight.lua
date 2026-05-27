@@ -9,7 +9,6 @@ local tableItemsToBuy = {
 	"item_recipe_gap_creator",
 	"item_sailor_suit",
 	"item_pant",
-	"item_recipe_diary",
 	"item_anchor",
 	"item_ganggenier",
 	"item_loneliness",
