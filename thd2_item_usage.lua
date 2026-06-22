@@ -103,6 +103,82 @@ function SafeCanBeSeen(unit)
 	return ok and result == true
 end
 
+local FALLEN_SKY_ENEMY_EXCLUSION_RADIUS = 50
+local FALLEN_SKY_SAFE_ENEMY_DISTANCE = 55
+local FALLEN_SKY_SAFE_LOCATION_SAMPLES = 36
+
+local function IsFallenSkySafeCastLocation(npcBot, vLocation, tEnemies, nCastRange)
+	if GetUnitToLocationDistance(npcBot, vLocation) > nCastRange then return false end
+	for _, npcEnemy in pairs(tEnemies) do
+		if npcEnemy ~= nil
+		and GetUnitToLocationDistance(npcEnemy, vLocation) <= FALLEN_SKY_ENEMY_EXCLUSION_RADIUS
+		then
+			return false
+		end
+	end
+	return true
+end
+
+local function GetFallenSkySafeCastLocation(npcBot, vPreferredLocation, tEnemies, nCastRange)
+	if IsFallenSkySafeCastLocation(npcBot, vPreferredLocation, tEnemies, nCastRange) then
+		return vPreferredLocation
+	end
+
+	local vBestLocation = nil
+	local nBestDistance = math.huge
+	for _, npcEnemy in pairs(tEnemies) do
+		if npcEnemy ~= nil
+		and GetUnitToLocationDistance(npcEnemy, vPreferredLocation) <= FALLEN_SKY_ENEMY_EXCLUSION_RADIUS
+		then
+			local vEnemyLocation = npcEnemy:GetLocation()
+			for sample = 0, FALLEN_SKY_SAFE_LOCATION_SAMPLES - 1 do
+				local angle = sample * 2 * math.pi / FALLEN_SKY_SAFE_LOCATION_SAMPLES
+				local vCandidate = vEnemyLocation
+					+ Vector(math.cos(angle), math.sin(angle), 0) * FALLEN_SKY_SAFE_ENEMY_DISTANCE
+				if IsFallenSkySafeCastLocation(npcBot, vCandidate, tEnemies, nCastRange) then
+					local nDistance = math.sqrt(
+						(vCandidate.x - vPreferredLocation.x) * (vCandidate.x - vPreferredLocation.x)
+						+ (vCandidate.y - vPreferredLocation.y) * (vCandidate.y - vPreferredLocation.y)
+					)
+					if nDistance < nBestDistance then
+						vBestLocation = vCandidate
+						nBestDistance = nDistance
+					end
+				end
+			end
+		end
+	end
+
+	if vBestLocation ~= nil then
+		return vBestLocation
+	end
+
+	for nRadius = FALLEN_SKY_SAFE_ENEMY_DISTANCE, math.min(nCastRange, 400), 5 do
+		for sample = 0, FALLEN_SKY_SAFE_LOCATION_SAMPLES - 1 do
+			local angle = sample * 2 * math.pi / FALLEN_SKY_SAFE_LOCATION_SAMPLES
+			local vCandidate = vPreferredLocation
+				+ Vector(math.cos(angle), math.sin(angle), 0) * nRadius
+			if IsFallenSkySafeCastLocation(npcBot, vCandidate, tEnemies, nCastRange) then
+				return vCandidate
+			end
+		end
+	end
+
+	local vBotLocation = npcBot:GetLocation()
+	for nRadius = 0, nCastRange, 25 do
+		for sample = 0, FALLEN_SKY_SAFE_LOCATION_SAMPLES - 1 do
+			local angle = sample * 2 * math.pi / FALLEN_SKY_SAFE_LOCATION_SAMPLES
+			local vCandidate = vBotLocation
+				+ Vector(math.cos(angle), math.sin(angle), 0) * nRadius
+			if IsFallenSkySafeCastLocation(npcBot, vCandidate, tEnemies, nCastRange) then
+				return vCandidate
+			end
+		end
+	end
+
+	return nil
+end
+
 local function RandomChoose( tTargets, vBaseLocation, nMaxDistanceFromBase, nRadius, nMaxHealth )
 
 	local RadiusSqr = nRadius * nRadius
@@ -1198,7 +1274,7 @@ function ConsiderItemJump( item_jump, delta_min, delta_max)
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not item_jump:IsFullyCastable() )
+	if ( not item_jump:IsFullyCastable() or SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval" ) )
 	then
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
@@ -1626,7 +1702,7 @@ function ConsiderNeutralItems(tBlacklist)
 		end
 		return
 	elseif itemName == "item_pogo_stick" then
-		if IsSeriouslyRetreating(npcBot) then
+		if IsSeriouslyRetreating(npcBot) and not SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval") then
 			npcBot:Action_UseAbility(item)
 			return
 		end
@@ -1720,11 +1796,17 @@ function ConsiderNeutralItems(tBlacklist)
 				if CanCastNeutralItemOnTarget(npcEnemy) then
 					local locationAoE = CachedFindAoELocation( npcBot, 60006, true, true, npcEnemy:GetLocation(), nCastRange, nRadius, 0, 0 )
 					if locationAoE.count > 2 then
-						npcBot:Action_UseAbilityOnLocation(item,locationAoE.targetloc)
-						return
+						local vCastLocation = GetFallenSkySafeCastLocation(npcBot, locationAoE.targetloc, tableNearbyEnemyHeroes, nCastRange)
+						if vCastLocation ~= nil then
+							npcBot:Action_UseAbilityOnLocation(item,vCastLocation)
+							return
+						end
 					elseif npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH then
-						npcBot:Action_UseAbilityOnLocation(item,tableNearbyEnemyHeroes[1]:GetLocation()+RandomVector(50))
-						return
+						local vCastLocation = GetFallenSkySafeCastLocation(npcBot, npcEnemy:GetLocation(), tableNearbyEnemyHeroes, nCastRange)
+						if vCastLocation ~= nil then
+							npcBot:Action_UseAbilityOnLocation(item,vCastLocation)
+							return
+						end
 					elseif IsSeriouslyRetreating(npcBot) then
 						local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 						local v_target = - npcBot:GetLocation() + v_shop

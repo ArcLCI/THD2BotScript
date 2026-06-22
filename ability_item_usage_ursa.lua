@@ -128,7 +128,7 @@ function ConsiderAbilityNazrin01()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() ) 
+	if ( not ability01:IsFullyCastable() or SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval" )) 
 	then 
 		return BOT_ACTION_DESIRE_NONE
 	end

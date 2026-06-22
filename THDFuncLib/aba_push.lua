@@ -17,6 +17,12 @@ local BOT_MODE_DESIRE_EXTRA_LOW = 0.02
 local PUSH_DESIRE_CACHE_INTERVAL = 1.5
 local PUSH_DESIRE_STAGGER_INTERVAL = 0.14
 local PUSH_LANE_STICKY_SECONDS = 3.0
+local PUSH_BACKDOOR_SCAN_CACHE_INTERVAL = 0.75
+local PUSH_HIGH_GROUND_TARGET_CACHE_INTERVAL = 0.75
+local PUSH_LOCAL_ENEMY_ADVANTAGE_TOLERANCE = 1
+local PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE = 1
+local PUSH_MIN_LOCAL_ALLIES_WHEN_OUTNUMBERED = 2
+local PUSH_OUTNUMBERED_MAX_DESIRE = 0.72
 
 
 local function GetActivePushLane(bot)
@@ -62,6 +68,13 @@ function Push.GetPushDesire(bot, lane)
     end, PUSH_DESIRE_STAGGER_INTERVAL)
 end
 
+local function CanPushWithLocalNumbers()
+    local allyCount = #nInRangeAlly
+    local enemyCount = #nInRangeEnemy
+    if enemyCount == 0 then return true end
+    if allyCount < PUSH_MIN_LOCAL_ALLIES_WHEN_OUTNUMBERED then return false end
+    return enemyCount - allyCount <= PUSH_LOCAL_ENEMY_ADVANTAGE_TOLERANCE
+end
 
 function Push.ComputePushDesire(bot, lane)
     if bot.laneToPush == nil then bot.laneToPush = lane end
@@ -108,9 +121,7 @@ function Push.ComputePushDesire(bot, lane)
     teamAveLvl = J.GetAverageLevel( false )
     enemyTeamAveLvl = J.GetAverageLevel( true )
 
-    if #nInRangeAlly < #nInRangeEnemy
-    or #nInRangeAlly <= 1 and #nInRangeEnemy > 0
-    then
+    if not CanPushWithLocalNumbers() then
         return BOT_MODE_DESIRE_EXTRA_LOW
     end
 
@@ -126,6 +137,14 @@ function Push.ComputePushDesire(bot, lane)
     local allyKills = J.GetNumOfTeamTotalKills(false) + 1
     local enemyKills = J.GetNumOfTeamTotalKills(true) + 1
     local teamKillsRatio = allyKills / enemyKills
+    local canPushWithAliveNumbers = eAliveCount == 0
+        or aAliveCount >= eAliveCount
+        or (aAliveCount >= PUSH_MIN_LOCAL_ALLIES_WHEN_OUTNUMBERED
+            and eAliveCount - aAliveCount <= PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE)
+
+    if eAliveCount > aAliveCount then
+        nMaxDesire = math.min(nMaxDesire, PUSH_OUTNUMBERED_MAX_DESIRE)
+    end
 
     local distanceToEnemyAncient = GetUnitToUnitDistance(bot, hEnemyAncient)
     local ancientDefenseState = J.GetAncientDefenseState(4500)
@@ -142,7 +161,7 @@ function Push.ComputePushDesire(bot, lane)
     -- 如果有重要物品或技能在cd，且敌人英雄数量大于我方英雄数量，则不上高
     local vEnemyLaneFrontLocation = GetLaneFrontLocation(GetOpposingTeam(), lane, 0)
     if Push.ShouldWaitForImportantItemsSpells(vEnemyLaneFrontLocation)
-    and eAliveCount >= aAliveCount then
+    and eAliveCount > aAliveCount + PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE then
         return BOT_MODE_DESIRE_VERYLOW
     end
 
@@ -176,11 +195,13 @@ function Push.ComputePushDesire(bot, lane)
     if isCurrentLanePushLane
     or ((J.IsLateGame() and isCurrentLanePushLane) or isMidOrEarlyGame)
     then
-        if eAliveCount == 0
-        or aAliveCount >= eAliveCount
+        if canPushWithAliveNumbers
         then
             if J.DoesTeamHaveAegis() then
                 nPushDesire = nPushDesire + 0.3
+            end
+            if eAliveCount > aAliveCount then
+                nPushDesire = nPushDesire + 0.12
             end
             return RemapValClamped(nPushDesire, 0, 1, 0, nMaxDesire)
         end
@@ -328,6 +349,23 @@ function Push.PushThink(bot, lane)
 
     local targetLoc = GetLaneFrontLocation(GetTeam(), lane, fDeltaFromFront)
 
+    if J.IsValidBuilding(nEnemyTowers[1])
+    and Push.HasDefenseGlyphBuff(nEnemyTowers[1])
+    and #J.GetEnemiesNearLoc(nEnemyTowers[1]:GetLocation(), 1600) == 0
+    then
+        local vRetreatLocation = GetLaneFrontLocation(GetTeam(), lane, -1800)
+        J.ActionMoveToLocation(bot, 'push_retreat_glyphed_tower', vRetreatLocation, 0.45, 260)
+        return
+    end
+
+    if J.IsValidBuilding(nEnemyTowers[1])
+    and Push.HasBackdoorProtect(nEnemyTowers[1])
+    then
+        local vWaitLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
+        J.ActionMoveToLocation(bot, 'push_wait_for_creeps', vWaitLocation, 0.45, 220)
+        return
+    end
+
     if J.IsValidBuilding(nEnemyTowers[1]) and (nEnemyTowers[1]:GetAttackTarget() == bot or (nEnemyTowers[1]:GetAttackTarget() ~= bot and bot:WasRecentlyDamagedByTower(#nAllyCreeps <= 2 and 4.0 or 2.0))) then
         local nDamage = nEnemyTowers[1]:GetAttackDamage() * nEnemyTowers[1]:GetAttackSpeed() * 5.0 - bot:GetHealthRegen() * 5.0
         if (bot:GetActualIncomingDamage(nDamage, DAMAGE_TYPE_PHYSICAL) / bot:GetHealth() > 0.15)
@@ -398,9 +436,9 @@ function Push.PushThink(bot, lane)
     end
 
     local nBarracks = bot:GetNearbyBarracks(nRange, true)
-    if J.IsValidBuilding(nBarracks[1]) and J.CanBeAttacked(nBarracks[1]) then
+    if J.IsValidBuilding(nBarracks[1]) and J.CanBeAttacked(nBarracks[1]) and not Push.HasBackdoorProtect(nBarracks[1]) then
         for _, barrack in pairs(nBarracks) do
-            if J.IsValid(barrack) and string.find(barrack:GetUnitName(), 'melee') then
+            if J.IsValid(barrack) and not Push.HasBackdoorProtect(barrack) and string.find(barrack:GetUnitName(), 'melee') then
                 barrack = J.GetStickyTarget(bot, 'push_melee_barrack', barrack, 1.8, nRange + 300)
                 J.ActionAttackUnit(bot, 'push_attack_melee_barrack', barrack, true, 0.45)
                 return
@@ -408,7 +446,7 @@ function Push.PushThink(bot, lane)
 
         end
         for _, barrack in pairs(nBarracks) do
-            if J.IsValid(barrack) and string.find(barrack:GetUnitName(), 'range') then
+            if J.IsValid(barrack) and not Push.HasBackdoorProtect(barrack) and string.find(barrack:GetUnitName(), 'range') then
                 barrack = J.GetStickyTarget(bot, 'push_range_barrack', barrack, 1.8, nRange + 300)
                 J.ActionAttackUnit(bot, 'push_attack_range_barrack', barrack, true, 0.45)
                 return
@@ -417,11 +455,11 @@ function Push.PushThink(bot, lane)
         end
     end
 
-    if J.IsValidBuilding(nEnemyTowers[1]) and J.CanBeAttacked(nEnemyTowers[1]) then
+    if J.IsValidBuilding(nEnemyTowers[1]) and J.CanBeAttacked(nEnemyTowers[1]) and not Push.HasBackdoorProtect(nEnemyTowers[1]) then
         local hTowerTarget = nil
         local hTowerTargetDistance = math.huge
         for _, tower in pairs(nEnemyTowers) do
-            if J.IsValidBuilding(tower) and J.CanBeAttacked(tower) then
+            if J.IsValidBuilding(tower) and J.CanBeAttacked(tower) and not Push.HasBackdoorProtect(tower) then
                 local towerDistance = GetUnitToLocationDistance(tower, targetLoc)
                 if towerDistance < hTowerTargetDistance then
                     hTowerTarget = tower
@@ -439,11 +477,11 @@ function Push.PushThink(bot, lane)
     end
 
     local nEnemyFillers = bot:GetNearbyFillers(nRange, true)
-    if J.IsValidBuilding(nEnemyFillers[1]) and J.CanBeAttacked(nEnemyFillers[1]) then
+    if J.IsValidBuilding(nEnemyFillers[1]) and J.CanBeAttacked(nEnemyFillers[1]) and not Push.HasBackdoorProtect(nEnemyFillers[1]) then
         local hTowerFillerTarget = nil
         local hTowerFillerTargetDistance = math.huge
         for _, filler in pairs(nEnemyFillers) do
-            if J.CanBeAttacked(filler) then
+            if J.CanBeAttacked(filler) and not Push.HasBackdoorProtect(filler) then
                 local fillerTowerDistance = GetUnitToLocationDistance(filler, targetLoc)
                 if fillerTowerDistance < hTowerFillerTargetDistance then
                     hTowerFillerTarget = filler
@@ -476,49 +514,59 @@ function Push.PushThink(bot, lane)
 end
 
 function TryClearingOtherLaneHighGround(bot, vLocation)
-    local unitList = GetUnitList(UNIT_LIST_ENEMY_BUILDINGS)
-    local function IsValid(building)
-        return J.IsValidBuilding(building)
-            and J.CanBeAttacked(building)
-            and not (Push.HasBackdoorProtect(building))
-    end
+    if vLocation == nil then return nil end
 
-    local hBarrackTarget = nil
-    local hBarrackTargetDistance = math.huge
-    for _, barrack in pairs(unitList) do
-        if IsValid(barrack)
-        and (  barrack == GetBarracks(GetOpposingTeam(), BARRACKS_TOP_MELEE)
-            or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_TOP_RANGED)
-            or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_MID_MELEE)
-            or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_MID_RANGED)
-            or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_BOT_MELEE)
-            or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_BOT_RANGED))
-        then
-            local barrackDistance = GetUnitToLocationDistance(barrack, vLocation)
-            if barrackDistance < hBarrackTargetDistance then
-                hBarrackTarget = barrack
-                hBarrackTargetDistance = barrackDistance
+    local cacheKey = 'PushClearOtherHighGround-'..tostring(GetTeam())..'-'..Timer.RoundLocationKey(vLocation, 800)
+    local cachedTarget = J.Utils.GetCachedOrCompute(cacheKey, PUSH_HIGH_GROUND_TARGET_CACHE_INTERVAL, function()
+        local unitList = GetUnitList(UNIT_LIST_ENEMY_BUILDINGS)
+        local function IsValid(building)
+            return J.IsValidBuilding(building)
+                and J.CanBeAttacked(building)
+                and not (Push.HasBackdoorProtect(building))
+        end
+
+        local hBarrackTarget = nil
+        local hBarrackTargetDistance = math.huge
+        for _, barrack in pairs(unitList) do
+            if IsValid(barrack)
+            and (  barrack == GetBarracks(GetOpposingTeam(), BARRACKS_TOP_MELEE)
+                or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_TOP_RANGED)
+                or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_MID_MELEE)
+                or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_MID_RANGED)
+                or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_BOT_MELEE)
+                or barrack == GetBarracks(GetOpposingTeam(), BARRACKS_BOT_RANGED))
+            then
+                local barrackDistance = GetUnitToLocationDistance(barrack, vLocation)
+                if barrackDistance < hBarrackTargetDistance then
+                    hBarrackTarget = barrack
+                    hBarrackTargetDistance = barrackDistance
+                end
             end
         end
-    end
-    if hBarrackTarget then
-        return hBarrackTarget
-    end
+        if hBarrackTarget then
+            return hBarrackTarget
+        end
 
-    local hTowerTarget = nil
-    local hTowerTargetDistance = math.huge
-    for _, tower in pairs(unitList) do
-        if IsValid(tower) and (tower == GetTower(GetOpposingTeam(), TOWER_TOP_3) or tower == GetTower(GetOpposingTeam(), TOWER_MID_3) or tower == GetTower(GetOpposingTeam(), TOWER_BOT_3)) then
-            local towerDistance = GetUnitToLocationDistance(tower, vLocation)
-            if towerDistance < hTowerTargetDistance then
-                hTowerTarget = tower
-                hTowerTargetDistance = towerDistance
+        local hTowerTarget = nil
+        local hTowerTargetDistance = math.huge
+        for _, tower in pairs(unitList) do
+            if IsValid(tower) and (tower == GetTower(GetOpposingTeam(), TOWER_TOP_3) or tower == GetTower(GetOpposingTeam(), TOWER_MID_3) or tower == GetTower(GetOpposingTeam(), TOWER_BOT_3)) then
+                local towerDistance = GetUnitToLocationDistance(tower, vLocation)
+                if towerDistance < hTowerTargetDistance then
+                    hTowerTarget = tower
+                    hTowerTargetDistance = towerDistance
+                end
             end
         end
-    end
-    if hTowerTarget then
-        return hTowerTarget
-    end
+        if hTowerTarget then
+            return hTowerTarget
+        end
+
+        return false
+    end)
+
+    if cachedTarget == false then return nil end
+    return cachedTarget
 end
 
 function Push.CanBeAttacked(building)
@@ -592,16 +640,19 @@ function Push.IsHealthyInsideFountain(hUnit)
 end
 
 function Push.IsBuildingGlyphedBackdoor()
-    local unitList = GetUnitList(UNIT_LIST_ENEMY_BUILDINGS)
-    for _, building in pairs(unitList) do
-        if J.IsValidBuilding(building)
-        and Push.HasBackdoorProtect(building)
-        then
-            return true
+    local cacheKey = 'PushIsBuildingGlyphedBackdoor-'..tostring(GetTeam())
+    return J.Utils.GetCachedOrCompute(cacheKey, PUSH_BACKDOOR_SCAN_CACHE_INTERVAL, function()
+        local unitList = GetUnitList(UNIT_LIST_ENEMY_BUILDINGS)
+        for _, building in pairs(unitList) do
+            if J.IsValidBuilding(building)
+            and Push.HasBackdoorProtect(building)
+            then
+                return true
+            end
         end
-    end
 
-    return false
+        return false
+    end)
 end
 
 function Push.GetAllyHeroesAttackingUnit(hUnit)
@@ -683,12 +734,45 @@ function Push.ShouldWaitForImportantItemsSpells(vLocation)
     return false
 end
 
-function Push.HasBackdoorProtect(target)
+function Push.IsAntiBackdoorStopBuilding(target)
+    local enemyTeam = GetOpposingTeam()
+    return target == GetTower(enemyTeam, TOWER_TOP_2)
+        or target == GetTower(enemyTeam, TOWER_MID_2)
+        or target == GetTower(enemyTeam, TOWER_BOT_2)
+        or target == GetTower(enemyTeam, TOWER_TOP_3)
+        or target == GetTower(enemyTeam, TOWER_MID_3)
+        or target == GetTower(enemyTeam, TOWER_BOT_3)
+        or (TOWER_BASE_1 ~= nil and target == GetTower(enemyTeam, TOWER_BASE_1))
+        or (TOWER_BASE_2 ~= nil and target == GetTower(enemyTeam, TOWER_BASE_2))
+        or target == GetAncient(enemyTeam)
+        or target == GetBarracks(enemyTeam, BARRACKS_TOP_MELEE)
+        or target == GetBarracks(enemyTeam, BARRACKS_TOP_RANGED)
+        or target == GetBarracks(enemyTeam, BARRACKS_MID_MELEE)
+        or target == GetBarracks(enemyTeam, BARRACKS_MID_RANGED)
+        or target == GetBarracks(enemyTeam, BARRACKS_BOT_MELEE)
+        or target == GetBarracks(enemyTeam, BARRACKS_BOT_RANGED)
+end
+
+function Push.HasDefenseGlyphBuff(target)
+    if target == nil then return false end
     return target:HasModifier('modifier_fountain_glyph')
+end
+
+function Push.HasBackdoorProtect(target)
+    if target == nil then return false end
+    if Push.HasDefenseGlyphBuff(target)
         or target:HasModifier('modifier_backdoor_protection')
         or target:HasModifier('modifier_backdoor_protection_in_base')
         or target:HasModifier('modifier_backdoor_protection_active')
-        or not target:HasModifier('modifier_thdots_anti_bd_stop')
+    then
+        return true
+    end
+
+    if Push.IsAntiBackdoorStopBuilding(target) then
+        return not target:HasModifier('modifier_thdots_anti_bd_stop')
+    end
+
+    return false
 end
 
 return Push

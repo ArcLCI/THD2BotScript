@@ -145,7 +145,7 @@ function ConsiderAbilityYumemi02()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability02:IsFullyCastable() )
+	if ( not ability02:IsFullyCastable() or SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval" ) )
 	then
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
