@@ -254,7 +254,7 @@ function ConsiderAbilitySeigaEx()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not abilityEx:IsFullyCastable() or SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval" ))
+	if ( not abilityEx:IsFullyCastable() or IsYugi04NoDisplacementActive(npcBot) )
 	then
 		return BOT_ACTION_DESIRE_NONE, 0
 	end

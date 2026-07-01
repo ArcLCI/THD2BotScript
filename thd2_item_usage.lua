@@ -587,6 +587,12 @@ function SafeHasModifier(Target, ModifierName)
 	return ok and result == true
 end
 
+function IsYugi04NoDisplacementActive(Target)
+	-- 勇仪4期间禁止 bot 主动使用位移/突进，优先使用游戏侧给 bot 决策用的标记。
+	return SafeHasModifier(Target, "modifier_thdots_yugi04_bot_no_displacement")
+		or SafeHasModifier(Target, "modifier_thdots_yugi04_think_interval")
+end
+
 function GetModifierTimeLeft( Target, ModifierName )
 	if not SafeHasModifier(Target, ModifierName) then
 		return 0.0
@@ -1274,7 +1280,7 @@ function ConsiderItemJump( item_jump, delta_min, delta_max)
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not item_jump:IsFullyCastable() or SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval" ) )
+	if ( not item_jump:IsFullyCastable() or IsYugi04NoDisplacementActive(npcBot) )
 	then
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
@@ -1702,7 +1708,7 @@ function ConsiderNeutralItems(tBlacklist)
 		end
 		return
 	elseif itemName == "item_pogo_stick" then
-		if IsSeriouslyRetreating(npcBot) and not SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval") then
+		if IsSeriouslyRetreating(npcBot) and not IsYugi04NoDisplacementActive(npcBot) then
 			npcBot:Action_UseAbility(item)
 			return
 		end

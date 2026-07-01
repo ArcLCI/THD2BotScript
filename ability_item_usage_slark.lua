@@ -117,7 +117,7 @@ function ConsiderAbilityAya01()
 
 	local npcBot = GetBot()
 
-	if not ability01:IsFullyCastable() or SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval") then
+	if not ability01:IsFullyCastable() or IsYugi04NoDisplacementActive(npcBot) then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
 

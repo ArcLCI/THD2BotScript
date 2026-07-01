@@ -193,7 +193,7 @@ function ConsiderAbilityYugi02WithJump(item_jump)
 
 	local npcBot = GetBot()
 
-	if (not ability02:IsFullyCastable())
+	if (not ability02:IsFullyCastable() or IsYugi04NoDisplacementActive(npcBot))
 	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
@@ -245,7 +245,7 @@ function ConsiderAbilityYugi04WithJump(item_jump)
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if (ability02:IsFullyCastable() or not ability04:IsFullyCastable())
+	if (ability02:IsFullyCastable() or not ability04:IsFullyCastable() or IsYugi04NoDisplacementActive(npcBot))
 	then
 		return BOT_ACTION_DESIRE_NONE, nil, nil
 	end

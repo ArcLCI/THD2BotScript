@@ -13,6 +13,250 @@ local nCourierLastActionTime = -90
 local nCourierState = -1
 local nCourierReturnTime = -90
 local nCourierDeliverTime = -90
+
+local TERRAIN_STUCK_SAMPLE_INTERVAL = 0.6
+local TERRAIN_STUCK_MIN_TIME = 4.0
+local TERRAIN_STUCK_MOVE_DISTANCE = 90
+local TERRAIN_STUCK_ESCAPE_COOLDOWN = 3.0
+local TERRAIN_STUCK_TP_COOLDOWN = 8.0
+local TERRAIN_STUCK_FOUNTAIN_RESET_DISTANCE = 1200
+local TERRAIN_STUCK_NO_COMBAT_TIME = 6.0
+local TERRAIN_STUCK_ENEMY_NEARBY_RANGE = 1200
+
+local TerrainEscapePointItems = {
+	item_wanmeitiaoyuezhuangzhi = 499,
+	item_nb9ball = 999,
+	item_blink = 1200,
+	item_arcane_blink = 1200,
+	item_swift_blink = 1200,
+	item_overwhelming_blink = 1200,
+	item_fallen_sky = 1200,
+}
+
+local function GetTerrainStuckState()
+	if bot.THD_TerrainStuckState == nil then
+		bot.THD_TerrainStuckState = {
+			lastLocation = nil,
+			lastSampleTime = -90,
+			stuckStartTime = nil,
+			isStuck = false,
+			lastEscapeTime = -90,
+			lastTpTime = -90,
+		}
+	end
+	return bot.THD_TerrainStuckState
+end
+
+local function ResetTerrainStuckState()
+	local state = GetTerrainStuckState()
+	state.lastLocation = nil
+	state.lastSampleTime = DotaTime()
+	state.stuckStartTime = nil
+	state.isStuck = false
+end
+
+local function IsBotBusyForTerrainCheck()
+	return bot:IsStunned()
+		or bot:IsRooted()
+		or bot:IsHexed()
+		or bot:IsChanneling()
+		or bot:IsInvulnerable()
+		or bot:HasModifier('modifier_teleporting')
+		or bot:HasModifier('modifier_fountain_aura_buff')
+end
+
+local function IsCurrentAttackUseful()
+	local ok, attackTarget = pcall(function() return bot:GetAttackTarget() end)
+	if not ok or attackTarget == nil then return false end
+	if attackTarget.IsNull ~= nil and attackTarget:IsNull() then return false end
+	if attackTarget.IsAlive ~= nil and not attackTarget:IsAlive() then return false end
+	return GetUnitToUnitDistance(bot, attackTarget) <= bot:GetAttackRange() + 180
+end
+
+local function HasRecentEnemyHeroNearBot(nRange, nTime)
+	for _, playerId in pairs(GetTeamPlayers(GetOpposingTeam())) do
+		if IsHeroAlive(playerId) then
+			local info = GetHeroLastSeenInfo(playerId)
+			if info ~= nil then
+				local dInfo = info[1]
+				if dInfo ~= nil
+					and dInfo.time_since_seen <= nTime
+					and GetUnitToLocationDistance(bot, dInfo.location) <= nRange
+				then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function HasRecentCombatForTerrainCheck()
+	return bot:GetActiveMode() == BOT_MODE_ATTACK
+		or IsCurrentAttackUseful()
+		or bot:WasRecentlyDamagedByAnyHero(TERRAIN_STUCK_NO_COMBAT_TIME)
+		or bot:WasRecentlyDamagedByTower(TERRAIN_STUCK_NO_COMBAT_TIME)
+		or bot:WasRecentlyDamagedByCreep(TERRAIN_STUCK_NO_COMBAT_TIME)
+		or HasRecentEnemyHeroNearBot(TERRAIN_STUCK_ENEMY_NEARBY_RANGE, TERRAIN_STUCK_NO_COMBAT_TIME)
+end
+
+local function HasMovementIntent()
+	local mode = bot:GetActiveMode()
+	local desire = bot:GetActiveModeDesire()
+	local ok, actionType = pcall(function() return bot:GetCurrentActionType() end)
+	if ok and (actionType == BOT_ACTION_TYPE_IDLE or actionType == BOT_ACTION_TYPE_DELAY) then
+		return false
+	end
+
+	if mode == BOT_MODE_ATTACK and IsCurrentAttackUseful() then
+		return false
+	end
+
+	return desire >= BOT_MODE_DESIRE_MODERATE
+		or mode == BOT_MODE_RETREAT
+		or mode == BOT_MODE_RUNE
+		or J.IsPushing(bot)
+		or J.IsDefending(bot)
+end
+
+local function IsPassableLocation(vLoc)
+	if vLoc == nil then return false end
+	local ok, result = pcall(function() return IsLocationPassable(vLoc) end)
+	return ok and result == true
+end
+
+local function IsTerrainConstrained(vLoc)
+	if not IsPassableLocation(vLoc) then return true end
+
+	local passableCount = 0
+	for i = 0, 7 do
+		local angle = i * math.pi / 4
+		local sample = vLoc + Vector(math.cos(angle), math.sin(angle), 0) * 180
+		if IsPassableLocation(sample) then
+			passableCount = passableCount + 1
+		end
+	end
+
+	return passableCount <= 1
+end
+
+local function GetSafeCurrentMovementSpeed()
+	local ok, speed = pcall(function() return bot:GetCurrentMovementSpeed() end)
+	if ok and speed ~= nil then return speed end
+	return 0
+end
+
+function X.UpdateTerrainStuckState()
+	if not bot:IsAlive()
+		or bot:DistanceFromFountain() < TERRAIN_STUCK_FOUNTAIN_RESET_DISTANCE
+		or IsBotBusyForTerrainCheck()
+		or HasRecentCombatForTerrainCheck()
+		or not HasMovementIntent()
+	then
+		ResetTerrainStuckState()
+		return false
+	end
+
+	local state = GetTerrainStuckState()
+	local now = DotaTime()
+	if now - state.lastSampleTime < TERRAIN_STUCK_SAMPLE_INTERVAL then
+		return state.isStuck == true
+	end
+
+	local currentLocation = bot:GetLocation()
+	if state.lastLocation == nil then
+		state.lastLocation = currentLocation
+		state.lastSampleTime = now
+		return false
+	end
+
+	local movedDistance = J.GetLocationToLocationDistance(currentLocation, state.lastLocation)
+	state.lastLocation = currentLocation
+	state.lastSampleTime = now
+
+	if movedDistance >= TERRAIN_STUCK_MOVE_DISTANCE then
+		state.stuckStartTime = nil
+		state.isStuck = false
+		return false
+	end
+
+	if state.stuckStartTime == nil then
+		state.stuckStartTime = now
+		return false
+	end
+
+	if now - state.stuckStartTime >= TERRAIN_STUCK_MIN_TIME
+		and (GetSafeCurrentMovementSpeed() > 200 or IsTerrainConstrained(currentLocation))
+	then
+		state.isStuck = true
+		return true
+	end
+
+	return false
+end
+
+function X.IsTerrainStuck()
+	local state = GetTerrainStuckState()
+	return state.isStuck == true
+end
+
+local function GetTerrainEscapeLocation(nCastRange)
+	local botLocation = bot:GetLocation()
+	local fountainLocation = J.GetTeamFountain()
+	local direction = fountainLocation - botLocation
+	local distance = J.GetLocationToLocationDistance(botLocation, fountainLocation)
+	if distance <= 1 then
+		direction = RandomVector(1)
+	else
+		direction = direction / distance
+	end
+
+	local angleOffsets = { 0, math.rad(30), -math.rad(30), math.rad(60), -math.rad(60), math.rad(90), -math.rad(90), math.pi }
+	local rangeSteps = { nCastRange, nCastRange * 0.75, nCastRange * 0.5, nCastRange * 0.25 }
+	for _, range in pairs(rangeSteps) do
+		for _, angle in pairs(angleOffsets) do
+			local rotated = Vector(
+				direction.x * math.cos(angle) - direction.y * math.sin(angle),
+				direction.x * math.sin(angle) + direction.y * math.cos(angle),
+				0
+			)
+			local candidate = botLocation + rotated * range
+			if IsPassableLocation(candidate) then
+				return candidate
+			end
+		end
+	end
+
+	return fountainLocation
+end
+
+function X.TryTerrainEscapeItem()
+	if not X.IsTerrainStuck() or IsYugi04NoDisplacementActive(bot) then return false end
+
+	local state = GetTerrainStuckState()
+	local now = DotaTime()
+	if now - state.lastEscapeTime < TERRAIN_STUCK_ESCAPE_COOLDOWN then return false end
+
+	local nItemSlot = { 16, 5, 4, 3, 2, 1, 0, 15 }
+	for _, nSlot in pairs(nItemSlot) do
+		local item = bot:GetItemInSlot(nSlot)
+		if J.CanCastAbility(item) then
+			local itemName = item:GetName()
+			local castRange = TerrainEscapePointItems[itemName]
+			if castRange ~= nil then
+				local escapeLocation = GetTerrainEscapeLocation(castRange)
+				if escapeLocation ~= nil then
+					state.lastEscapeTime = now
+					bot:Action_ClearActions(false)
+					bot:Action_UseAbilityOnLocation(item, escapeLocation)
+					return true
+				end
+			end
+		end
+	end
+
+	return false
+end
 local function CourierUsageComplement()
 
 	if GetGameMode() == 23
@@ -349,9 +593,12 @@ local function ItemUsageComplement()
 		or bot:IsInvulnerable()
 		or bot:IsUsingAbility()
 		or bot:IsCastingAbility()
-		or bot:NumQueuedActions() > 0
 		or bot:HasModifier( 'modifier_teleporting' )
 	then return	BOT_ACTION_DESIRE_NONE end
+
+	local bTerrainStuck = X.UpdateTerrainStuckState()
+	if bot:NumQueuedActions() > 0 and not bTerrainStuck then return BOT_ACTION_DESIRE_NONE end
+	if bTerrainStuck and X.TryTerrainEscapeItem() then return BOT_ACTION_DESIRE_ABSOLUTE end
 
 	hNearbyEnemyHeroList = J.GetNearbyHeroes(bot, 1000, true, BOT_MODE_NONE )
 	hNearbyEnemyTowerList = bot:GetNearbyTowers( 888, true )
@@ -436,6 +683,18 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local nAllyCount = J.GetAllyCount( bot, 1600 )
 
 	if bot:GetLevel() > 12 and bot:DistanceFromFountain() < 600 then nMinTPDistance = nMinTPDistance + 600 end
+
+	if X.IsTerrainStuck()
+		and bot:DistanceFromFountain() > TERRAIN_STUCK_FOUNTAIN_RESET_DISTANCE
+	then
+		local state = GetTerrainStuckState()
+		local now = DotaTime()
+		if now - state.lastTpTime > TERRAIN_STUCK_TP_COOLDOWN then
+			state.lastTpTime = now
+			sCastMotive = 'terrain_stuck_tp'
+			return BOT_ACTION_DESIRE_ABSOLUTE, J.GetTeamFountain(), sCastType, sCastMotive
+		end
+	end
 
 	if nMode == BOT_MODE_LANING
 	then

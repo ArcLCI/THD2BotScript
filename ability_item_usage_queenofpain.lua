@@ -180,7 +180,7 @@ function ConsiderAbilitySagume02()
 
 	local npcBot = GetBot()
 
-	if not ability02:IsFullyCastable() or SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval") then
+	if not ability02:IsFullyCastable() or IsYugi04NoDisplacementActive(npcBot) then
 		return BOT_ACTION_DESIRE_NONE, 0, BOT_ACTION_DESIRE_NONE
 	end
 

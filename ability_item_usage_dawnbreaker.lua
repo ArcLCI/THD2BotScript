@@ -126,7 +126,7 @@ function ConsiderAbilityMiko01()
 	local npcBot = GetBot()
 
 	-- Make sure it's castable
-	if ( not ability01:IsFullyCastable() or SafeHasModifier(npcBot, "modifier_thdots_yugi04_think_interval" )) 
+	if ( not ability01:IsFullyCastable() or IsYugi04NoDisplacementActive(npcBot) )
 	then 
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
