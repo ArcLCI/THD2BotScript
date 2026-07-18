@@ -3,17 +3,18 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 
 
 local tableItemsToBuy = {
-	"item_broom",
-	"item_tentacle",
-	"item_recipe_gap_creator",
-	"item_bloodthirstiest",
-	"item_yuemianzhinu",
-	"item_sampan",
-	"item_wanbaochui2",
-	"item_tengu_fan",
-	"item_ice_block",
-	"item_recipe_laevateinn",
-	"item_ganggenier",
+	"item_horse_red",
+	"item_leiyunzhiyuchuan",
+	"item_verity",
+	"item_zuzhoumujian",
+	"item_recipe_feixiangjian",
+	"item_camera",
+	"item_wanbaochui",
+	"item_horse_king_compressor",
+	"item_recipe_horse_king",
+	"item_frozen_frog",
+	"item_recipe_wanbaochui2",
+	"item_ganggenier"
 }
 
 ----------------------------------------------------------------------------------------------------

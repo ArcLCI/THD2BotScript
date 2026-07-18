@@ -47,19 +47,19 @@ cast04Desire = 0
 function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
+	local npcBot = GetBot()
+	ability03 = npcBot:GetAbilityByName( "ability_thdots_reisenOld03" )
+	if J.IsAbilityInChannelPhase(ability03) then return end
 
 	MyItemUsageThink()
 	ConsiderNeutralItems()
 
 	
-	local npcBot = GetBot()
-
 	-- Check if we're already using an ability
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
 	--ability01 = npcBot:GetAbilityByName( "ability_thdots_reisenOld01" )
 	ability02 = npcBot:GetAbilityByName( "ability_thdots_reisenOld02" )
-	ability03 = npcBot:GetAbilityByName( "ability_thdots_reisenOld03" )
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_reisenOld04" )
 
 	-- Consider using each ability

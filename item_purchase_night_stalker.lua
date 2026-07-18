@@ -7,8 +7,10 @@ local tableItemsToBuy = {
 	"item_tentacle",
 	"item_recipe_gap_creator",
 	"item_bone_flute",
-	"item_feixiangjian",
-	"item_frock",
+	"item_eyunzhifu",
+	"item_recipe_morenjingjuan",
+	"item_yuetufensuijvren",
+	"item_ganggenier",
 	"item_wanbaochui2",
 	"item_loneliness",
 }

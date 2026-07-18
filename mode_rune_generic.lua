@@ -23,10 +23,17 @@ local RUNE_ACTIVE_STICKY_NEAR_DESIRE = 0.82
 local RUNE_PICKUP_DISTANCE = 150
 local RUNE_CHAIN_PICKUP_DISTANCE = 900
 local RUNE_RECENT_PICKUP_IGNORE_SECONDS = 1.5
+local RUNE_SAFE_ABORT_RADIUS = 900
+local RUNE_DANGER_ABORT_RADIUS = 1700
+local RUNE_POWER_ABORT_RADIUS = 700
+local RUNE_POWER_ENEMY_NEAR_RUNE_RADIUS = 450
+local RUNE_SAFE_ABANDON_SECONDS = 12
+local RUNE_DANGER_ABANDON_SECONDS = 35
 local WISDOM_RUNE_CLEAR_RADIUS = 650
 local WISDOM_RUNE_PICKUP_RADIUS = 360
 local WISDOM_RUNE_CONFIRM_SECONDS = 2.6
 local WISDOM_RUNE_BACKUP_DISTANCE = 5200
+local WISDOM_RUNE_ENEMY_ABORT_RADIUS = 1400
 local MAX_DIST = 1600
 local minute = 0
 local second = 0
@@ -76,10 +83,27 @@ local function MarkWisdomRunePicked()
 	ClearWisdomRuneMode()
 end
 
+local function MarkWisdomRuneAbandoned()
+	if timeInMin > 0 and wisdomRuneInfo[2] ~= nil then
+		-- 智慧符被敌人拦截时不等同于确认已拾取，只让当前 bot 放弃本轮尝试。
+		bot.wisdomAbandoned = bot.wisdomAbandoned or {}
+		bot.wisdomAbandoned[timeInMin] = bot.wisdomAbandoned[timeInMin] or {}
+		bot.wisdomAbandoned[timeInMin][wisdomRuneInfo[2]] = true
+	end
+
+	ClearWisdomRuneMode()
+end
+
 local function IsRecentlyPickedRuneLocation(vLoc)
 	return lastRunePickupLocation ~= nil
 		and DotaTime() - lastRunePickupTime <= RUNE_RECENT_PICKUP_IGNORE_SECONDS
 		and J.GetDistance(vLoc, lastRunePickupLocation) <= RUNE_PICKUP_DISTANCE
+end
+
+local function ClearActiveRuneTarget()
+	ClosestRune = -1
+	ClosestDistance = -1
+	nRuneStatus = -1
 end
 
 local function GetActiveRuneDesire()
@@ -94,6 +118,11 @@ local function GetActiveRuneDesire()
 		end
 
 		local wisdomLoc = wisdomRuneSpots[wisdomRuneInfo[2]]
+		if wisdomLoc ~= nil and X.ShouldAbortWisdomRune(wisdomLoc) then
+			MarkWisdomRuneAbandoned()
+			return BOT_MODE_DESIRE_NONE
+		end
+
 		if wisdomLoc ~= nil
 		and GetUnitToLocationDistance(bot, wisdomLoc) <= WISDOM_RUNE_PICKUP_RADIUS
 		then
@@ -120,6 +149,12 @@ local function GetActiveRuneDesire()
 
 	ClosestDistance = GetUnitToLocationDistance(bot, runeLoc)
 	if ClosestDistance > 6000 then
+		return BOT_MODE_DESIRE_NONE
+	end
+
+	if X.ShouldAbortRune(ClosestRune, runeLoc, ClosestDistance) then
+		X.MarkRuneAbandoned(ClosestRune)
+		ClearActiveRuneTarget()
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -232,7 +267,15 @@ local function ComputeDesire()
 		local nRuneType = GetRuneType(ClosestRune)
         nRuneStatus = GetRuneStatus(ClosestRune)
 
-		if X.IsEnemyPickRune(ClosestRune) then return 0 end
+		if X.ShouldAbortRune(ClosestRune, GetRuneSpawnLocation(ClosestRune), ClosestDistance) then
+			X.MarkRuneAbandoned(ClosestRune)
+			return 0
+		end
+
+		if X.IsEnemyPickRune(ClosestRune) then
+			X.MarkRuneAbandoned(ClosestRune)
+			return 0
+		end
 
         if ClosestRune == RUNE_BOUNTY_1 or ClosestRune == RUNE_BOUNTY_2 then
             if nRuneStatus == RUNE_STATUS_AVAILABLE then
@@ -342,7 +385,9 @@ function ConsiderWisdomRune()
 			and bot.wisdom[timeInMin] ~= nil
 			and wisdomRuneSpots[runeSpot] ~= nil
 			and bot.wisdom[timeInMin][runeSpot] == false
+			and not X.IsWisdomRuneAbandoned(runeSpot)
 			and X.ShouldTryWisdomRune(wisdomRuneSpots[runeSpot]) then
+				wisdomRuneInfo[1] = DotaTime()
 				wisdomRuneInfo[2] = runeSpot
 				wisdomRuneInfo[3] = true
 				wisdomRuneEnterTime = -9999
@@ -452,6 +497,13 @@ function Think()
 		end
 
 		if ClosestDistance > RUNE_PICKUP_DISTANCE then
+			if X.ShouldAbortRune(ClosestRune, closestRuneLoc, ClosestDistance) then
+				X.MarkRuneAbandoned(ClosestRune)
+				ClearActiveRuneTarget()
+				J.ClearActionsThrottled(bot, 'rune_abort_enemy', false, 0.2)
+				return
+			end
+
 			if J.IsValidHero(nEnemyHeroes[1])
             and J.GetHP(bot) > 0.65
             and J.GetHP(nEnemyHeroes[1]) < 0.45
@@ -465,6 +517,13 @@ function Think()
 			return
 		end
 	else
+		if X.ShouldAbortRune(ClosestRune, closestRuneLoc, ClosestDistance) then
+			X.MarkRuneAbandoned(ClosestRune)
+			ClearActiveRuneTarget()
+			J.ClearActionsThrottled(bot, 'rune_abort_enemy_missing', false, 0.2)
+			return
+		end
+
         if J.IsValidHero(nEnemyHeroes[1])
         and J.GetHP(bot) > 0.65
         and J.GetHP(nEnemyHeroes[1]) < 0.45
@@ -503,11 +562,9 @@ function PickWisdomRune()
 		return 0
 	end
 
-	if distance < 1800
-	and bot:WasRecentlyDamagedByAnyHero(2)
-	and (wisdomRuneInfo[2] + 1) ~= GetTeam() -- if encountered an enemy on the way, assume enemy had noticed and would go pick it.
-	then
-		MarkWisdomRunePicked()
+	if X.ShouldAbortWisdomRune(wisdomLoc) then
+		MarkWisdomRuneAbandoned()
+		J.ClearActionsThrottled(bot, 'rune_wisdom_abort_enemy', false, 0.2)
 		return 0
 	end
 
@@ -560,6 +617,93 @@ function X.IsNearRune(hUnit, nDistance)
 	return false
 end
 
+function X.IsBountyRune(nRune)
+	return nRune == RUNE_BOUNTY_1 or nRune == RUNE_BOUNTY_2
+end
+
+function X.IsOwnBountyRune(nRune)
+	if not X.IsBountyRune(nRune) then return false end
+
+	local runeLoc = GetRuneSpawnLocation(nRune)
+	if runeLoc == nil then return false end
+
+	return GetUnitToLocationDistance(GetAncient(GetTeam()), runeLoc)
+		<= GetUnitToLocationDistance(GetAncient(GetOpposingTeam()), runeLoc)
+end
+
+function X.GetRuneAbortRadius(nRune)
+	if X.IsBountyRune(nRune) and not X.IsOwnBountyRune(nRune) then
+		return RUNE_DANGER_ABORT_RADIUS
+	end
+
+	if not X.IsBountyRune(nRune) then
+		return RUNE_POWER_ABORT_RADIUS
+	end
+
+	return RUNE_SAFE_ABORT_RADIUS
+end
+
+function X.GetRuneAbandonSeconds(nRune)
+	if X.IsBountyRune(nRune) and not X.IsOwnBountyRune(nRune) then
+		return RUNE_DANGER_ABANDON_SECONDS
+	end
+
+	return RUNE_SAFE_ABANDON_SECONDS
+end
+
+function X.MarkRuneAbandoned(nRune)
+	if nRune == nil or nRune == -1 then return end
+
+	-- 普通符文遭遇拦截时只短期放弃，避免把未知符点误判为永久已拾取。
+	bot.runeAbandonedUntil = bot.runeAbandonedUntil or {}
+	bot.runeAbandonedUntil[nRune] = DotaTime() + X.GetRuneAbandonSeconds(nRune)
+end
+
+function X.IsRuneAbandoned(nRune)
+	return bot.runeAbandonedUntil ~= nil
+		and bot.runeAbandonedUntil[nRune] ~= nil
+		and bot.runeAbandonedUntil[nRune] > DotaTime()
+end
+
+function X.ShouldAbortRune(nRune, runeLoc, runeDistance)
+	if nRune == nil or nRune == -1 or runeLoc == nil then return true end
+	if runeDistance == nil then runeDistance = GetUnitToLocationDistance(bot, runeLoc) end
+	if runeDistance <= RUNE_PICKUP_DISTANCE then return false end
+
+	local nEnemyHeroes = J.GetEnemiesNearLoc(bot:GetLocation(), X.GetRuneAbortRadius(nRune))
+	if #nEnemyHeroes >= 2 then
+		return true
+	end
+
+	if not X.IsBountyRune(nRune) then
+		-- 河道符靠近中路线，单个可见线上敌人不应直接阻止 bot 拿符。
+		local nEnemyHeroesNearRune = J.GetEnemiesNearLoc(runeLoc, RUNE_POWER_ENEMY_NEAR_RUNE_RADIUS)
+		if J.IsValidHero(nEnemyHeroesNearRune[1])
+		and GetUnitToLocationDistance(nEnemyHeroesNearRune[1], runeLoc) + 150 < runeDistance
+		then
+			return true
+		end
+
+		if X.IsIBecameTheTarget(nEnemyHeroes) then
+			return true
+		end
+	elseif J.IsValidHero(nEnemyHeroes[1]) then
+		return true
+	end
+
+	if bot:WasRecentlyDamagedByAnyHero(4.0)
+	and runeDistance > RUNE_PICKUP_DISTANCE * 2
+	then
+		return true
+	end
+
+	if X.IsSuitableToPickRune() == false then
+		return true
+	end
+
+	return false
+end
+
 function X.IsIBecameTheTarget(hUnitList)
 	for _, unit in pairs(hUnitList) do
         if J.IsValid(unit)
@@ -599,6 +743,39 @@ function X.GetWisdomRuneBlocker(vWisdomLoc)
 	return blocker
 end
 
+function X.IsWisdomRuneAbandoned(runeSpot)
+	return bot.wisdomAbandoned ~= nil
+		and bot.wisdomAbandoned[timeInMin] ~= nil
+		and bot.wisdomAbandoned[timeInMin][runeSpot] == true
+end
+
+function X.ShouldAbortWisdomRune(vWisdomLoc)
+	if vWisdomLoc == nil then return true end
+
+	local distance = GetUnitToLocationDistance(bot, vWisdomLoc)
+	local nEnemyHeroes = J.GetEnemiesNearLoc(bot:GetLocation(), WISDOM_RUNE_ENEMY_ABORT_RADIUS)
+
+	if #nEnemyHeroes >= 2 then
+		return true
+	end
+
+	if J.IsValidHero(nEnemyHeroes[1]) then
+		return true
+	end
+
+	if distance > WISDOM_RUNE_PICKUP_RADIUS
+	and bot:WasRecentlyDamagedByAnyHero(4.0)
+	then
+		return true
+	end
+
+	if X.IsSuitableToPickRune() == false then
+		return true
+	end
+
+	return false
+end
+
 function X.IsUnitAroundLocation(vLoc, nRadius)
     for _, id in pairs(GetTeamPlayers(GetOpposingTeam())) do
 		if IsHeroAlive(id) then
@@ -623,6 +800,7 @@ function X.GetBotClosestRune()
 
         if X.IsTheClosestOne(rLoc, rune)
 		and not X.IsMissing(rune)
+		and not X.IsRuneAbandoned(rune)
         then
             local dist = GetUnitToLocationDistance(bot, rLoc)
             if dist < cDist then
@@ -645,6 +823,7 @@ function X.GetBestRuneForThink()
 		local rLoc = GetRuneSpawnLocation(rune)
 		if rLoc ~= nil
 		and X.IsTheClosestOne(rLoc, rune)
+		and not X.IsRuneAbandoned(rune)
 		then
 			local dist = GetUnitToLocationDistance(bot, rLoc)
 			local status = GetRuneStatus(rune)

@@ -124,6 +124,14 @@ local function ComputeDesire()
 end
 
 function GetDesire()
+	local channelDesire = ConsiderHeroSpecificRoaming[bot:GetUnitName()]
+	if channelDesire ~= nil then
+		local desire = channelDesire()
+		if desire ~= nil and desire > 0 then
+			return desire
+		end
+	end
+
 	return Utils.GetCachedModeDesire(bot, 'roam', ComputeDesire)
 end
 
@@ -136,7 +144,9 @@ end
 function OnStart() Utils.NoteModeStart(bot, 'roam') end
 
 function Think()
+	if CheckHighPriorityChannelAbility("ability_thdots_reisenOld03") > 0 then return end
 	if not Timer.ShouldRunBotTask(bot, 'roam_think', 0.25, 0.04) then return end
+	if J.CanNotUseAction(bot) then return end
 	if edibleItem ~= nil then
 		local lessValItem = GetMainInvLessValItemSlot(bot)
 		if lessValItem ~= -1 and edibleItemSlot ~= -1 and bot:HasModifier("modifier_fountain_aura_buff") then
@@ -171,7 +181,7 @@ end
 
 function CheckHighPriorityChannelAbility(abilityName)
 	if cAbility == nil then cAbility = bot:GetAbilityByName(abilityName) end
-	if cAbility:IsTrained() and (cAbility:IsInAbilityPhase() or bot:IsChanneling()) then
+	if J.IsAbilityInChannelPhase(cAbility) then
 		print("now channeling:"..abilityName)
 		return BOT_MODE_DESIRE_ABSOLUTE
 	end

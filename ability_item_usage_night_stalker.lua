@@ -18,7 +18,7 @@ function MyItemUsageThink()
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 	
 	local item_frock = IsItemAvailable( "item_frock" )
-	local item_root = IsItemAvailable( "item_tentacle" )
+	local item_root = IsItemAvailable( "item_tentacle" ) or IsItemAvailable( "item_morenjingjuan" )
 	local item_feixiangjian = IsItemAvailable( "item_feixiangjian" )
 	local item_speed = IsItemAvailable( "item_mystia_wings" ) or
 					IsItemAvailable( "item_brother_sharp" ) or

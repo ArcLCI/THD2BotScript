@@ -1427,6 +1427,16 @@ function J.CanNotUseAction( bot )
 			or bot:IsNightmared()
 end
 
+-- 检查指定技能的前摇和持续施法，避免仅依赖单位状态漏掉前摇窗口。
+function J.IsAbilityInChannelPhase(ability)
+	if ability == nil then return false end
+	if ability.IsNull ~= nil and ability:IsNull() then return false end
+	if ability.IsTrained ~= nil and not ability:IsTrained() then return false end
+
+	return (ability.IsInAbilityPhase ~= nil and ability:IsInAbilityPhase())
+		or (ability.IsChanneling ~= nil and ability:IsChanneling())
+end
+
 function J.GetHeroesTargetingUnit(tUnits, hUnit)
     local tAttackingUnits = {}
     for _, enemyHero in pairs(tUnits) do
