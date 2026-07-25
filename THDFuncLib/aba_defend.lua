@@ -10,6 +10,152 @@ local DEFEND_DESIRE_CACHE_INTERVAL = 1.5
 local DEFEND_DESIRE_STAGGER_INTERVAL = 0.14
 local DEFEND_LANE_STICKY_SECONDS = 3.0
 local DEFEND_LANES = {LANE_TOP, LANE_MID, LANE_BOT}
+local BASE_TOWER_DEFENSE_RADIUS = 700
+local ANCIENT_DEFENSE_RADIUS = 1200
+local BASE_DEFENSE_SETTLED_RADIUS = 1000
+local ENEMY_HIGH_GROUND_RADIUS = 3500
+local QUICK_HIGH_GROUND_TOWER_HP = 0.3
+local GLYPH_TOWER_HP = 0.36
+local GLYPH_CRITICAL_BUILDING_HP = 0.5
+local baseDefenseLocations = {}
+
+
+local function GetBaseDefenseLocation(team)
+	if baseDefenseLocations[team] ~= nil then
+		return baseDefenseLocations[team]
+	end
+
+	local tower1 = GetTower(team, TOWER_BASE_1)
+	local tower2 = GetTower(team, TOWER_BASE_2)
+	if tower1 ~= nil and tower2 ~= nil then
+		local loc1 = tower1:GetLocation()
+		local loc2 = tower2:GetLocation()
+		baseDefenseLocations[team] = Vector(
+			(loc1.x + loc2.x) * 0.5,
+			(loc1.y + loc2.y) * 0.5,
+			(loc1.z + loc2.z) * 0.5
+		)
+	elseif tower1 ~= nil then
+		baseDefenseLocations[team] = tower1:GetLocation()
+	elseif tower2 ~= nil then
+		baseDefenseLocations[team] = tower2:GetLocation()
+	else
+		baseDefenseLocations[team] = GetAncient(team):GetLocation()
+	end
+
+	return baseDefenseLocations[team]
+end
+
+
+local function IsGlyphController(bot)
+	for i = 1, #GetTeamPlayers(bot:GetTeam()) do
+		local member = GetTeamMember(i)
+		if member ~= nil and member:IsAlive() and not member:IsIllusion() then
+			return member == bot
+		end
+	end
+	return false
+end
+
+local function ShouldGlyphBuilding(building, hpThreshold)
+	return J.IsValidBuilding(building)
+		and J.GetHP(building) < hpThreshold
+		and J.Utils.IsBuildingAttackedByEnemy(building) ~= nil
+end
+
+function Defend.TryUseGlyph(bot)
+	-- 纯 Bot 队伍由一名存活 Bot 统一判断，避免同一帧重复使用塔防。
+	if bot == nil
+	or J.Utils.IsHumanPlayerInTeam(bot:GetTeam())
+	or not IsGlyphController(bot)
+	or (bot.THDLastGlyphAttemptTime ~= nil and GameTime() - bot.THDLastGlyphAttemptTime < 0.5)
+	or DotaTime() < 60
+	or GetGlyphCooldown() > 0
+	then
+		return
+	end
+
+	local towerIds = {
+		TOWER_TOP_1, TOWER_MID_1, TOWER_BOT_1,
+		TOWER_TOP_2, TOWER_MID_2, TOWER_BOT_2,
+		TOWER_TOP_3, TOWER_MID_3, TOWER_BOT_3,
+		TOWER_BASE_1, TOWER_BASE_2,
+	}
+	for _, towerId in pairs(towerIds) do
+		if ShouldGlyphBuilding(GetTower(bot:GetTeam(), towerId), GLYPH_TOWER_HP) then
+			bot.THDLastGlyphAttemptTime = GameTime()
+			bot:ActionImmediate_Glyph()
+			return
+		end
+	end
+
+	local meleeBarracksIds = {
+		BARRACKS_TOP_MELEE,
+		BARRACKS_MID_MELEE,
+		BARRACKS_BOT_MELEE,
+	}
+	for _, barracksId in pairs(meleeBarracksIds) do
+		if ShouldGlyphBuilding(GetBarracks(bot:GetTeam(), barracksId), GLYPH_CRITICAL_BUILDING_HP) then
+			bot.THDLastGlyphAttemptTime = GameTime()
+			bot:ActionImmediate_Glyph()
+			return
+		end
+	end
+
+	if ShouldGlyphBuilding(GetAncient(bot:GetTeam()), GLYPH_CRITICAL_BUILDING_HP) then
+		bot.THDLastGlyphAttemptTime = GameTime()
+		bot:ActionImmediate_Glyph()
+	end
+end
+
+local function IsEnemyHighGroundQuicklyBreakable()
+	local enemyTeam = GetOpposingTeam()
+	local enemyAncient = GetAncient(enemyTeam)
+	local alliesNearHighGround = J.GetAlliesNearLoc(enemyAncient:GetLocation(), ENEMY_HIGH_GROUND_RADIUS)
+	if #alliesNearHighGround < 2 then return false end
+	if J.CanBeAttacked(enemyAncient) then return true end
+
+	local tierThreeIds = {TOWER_TOP_3, TOWER_MID_3, TOWER_BOT_3}
+	for _, towerId in pairs(tierThreeIds) do
+		local tower = GetTower(enemyTeam, towerId)
+		if not J.IsValidBuilding(tower) then
+			return true
+		end
+		if J.GetHP(tower) <= QUICK_HIGH_GROUND_TOWER_HP
+		and #J.GetAlliesNearLoc(tower:GetLocation(), 2000) >= 2
+		then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function GetBaseTowerEnemyPressure()
+	local team = GetTeam()
+	local anchors = {
+		{building = GetTower(team, TOWER_BASE_1), radius = BASE_TOWER_DEFENSE_RADIUS},
+		{building = GetTower(team, TOWER_BASE_2), radius = BASE_TOWER_DEFENSE_RADIUS},
+		{building = GetAncient(team), radius = ANCIENT_DEFENSE_RADIUS},
+	}
+
+	for _, anchor in pairs(anchors) do
+		local building = anchor.building
+		if J.IsValidBuilding(building)
+		and #J.GetLastSeenEnemiesNearLoc(building:GetLocation(), anchor.radius) > 0
+		then
+			local pressure = J.GetEnemiesAroundLoc(building:GetLocation(), anchor.radius)
+			if pressure > 0 then return pressure end
+		end
+	end
+
+	return 0
+end
+
+local function IsBaseDefenseEmergency()
+	local enemyPressure = GetBaseTowerEnemyPressure()
+	return enemyPressure > 0 and not IsEnemyHighGroundQuicklyBreakable(), enemyPressure
+end
 
 
 local function GetLaneState(bot, lane)
@@ -72,6 +218,8 @@ function Defend.GetStableDefendLane(bot, requestedLane)
 end
 
 function Defend.GetDefendDesire(bot, lane)
+	Defend.TryUseGlyph(bot)
+	GetBaseDefenseLocation(bot:GetTeam())
 	local stableLane = Defend.GetStableDefendLane(bot, lane)
 	if stableLane ~= lane then
 		return BOT_MODE_DESIRE_NONE
@@ -138,13 +286,27 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 	state.lEnemyHeroesAroundLoc = J.GetLastSeenEnemiesNearLoc(defendLoc, nSearchRange)
 	state.aliveAllyHeroes = J.GetNumOfAliveHeroes(false)
 
+	-- 敌人已压到四塔区域时，除非我方正在迅速攻破一路高地，否则全队立即回防基地。
+	local isBaseDefenseEmergency, baseEnemyPressure = IsBaseDefenseEmergency()
+	if isBaseDefenseEmergency then
+		state.defendLoc = GetBaseDefenseLocation(team)
+		state.distanceToLane = GetUnitToLocationDistance(bot, state.defendLoc)
+		state.nEnemyUnitsAroundAncient = baseEnemyPressure
+		bot.laneToDefend = lane
+		-- 已到四塔中点后释放紧急权重，让攻击、撤退等模式正常接管。
+		if state.distanceToLane <= BASE_DEFENSE_SETTLED_RADIUS then
+			return BOT_MODE_DESIRE_MODERATE
+		end
+		return BOT_MODE_DESIRE_ABSOLUTE * 0.98
+	end
+
 	-- 如果基地附近有敌人，则重点防御基地
 	if state.nEnemyUnitsAroundAncient > 0
 	then
 		nSearchRange = 1800
 		local ancientHp = J.GetHP(ancient)
 
-		defendLoc = ancient:GetLocation()
+		defendLoc = GetBaseDefenseLocation(team)
 		state.defendLoc = defendLoc
 		nDefendAllyHeroes = J.GetAlliesNearLoc(defendLoc, nSearchRange)
 		state.nEffctiveAllyHeroesNearPingedDefendLoc = #nDefendAllyHeroes + #J.Utils.GetAllyIdsInTpToLocation(defendLoc, nSearchRange)
@@ -293,9 +455,9 @@ function Defend.DefendThink(bot, lane)
 
 
 	if nEnemyUnitsAroundAncient > 0 then
-		local ancient = GetAncient(GetTeam())
-		if GetUnitToLocationDistance(ancient, defendLoc) < 100 then
-			if GetUnitToUnitDistance(bot, ancient) > 3000 then
+		local baseDefenseLoc = GetBaseDefenseLocation(GetTeam())
+		if J.GetLocationToLocationDistance(baseDefenseLoc, defendLoc) < 100 then
+			if GetUnitToLocationDistance(bot, baseDefenseLoc) > 3000 then
 				local moveLoc = J.GetStableFormationLocation(bot, 'defend_move_ancient_'..tostring(lane), defendLoc, 300, 30.0)
 				J.ActionMoveToLocation(bot, 'defend_move_ancient', moveLoc, 0.5, 240)
 				return

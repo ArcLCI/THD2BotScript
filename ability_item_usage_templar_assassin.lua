@@ -83,16 +83,18 @@ function MyItemUsageThink()
 end
 
 function AbilityUsageThink()
-    if not IsBotAwake() then return end
-
-	MyItemUsageThink()
-	ConsiderNeutralItems()
-
-
     local npcBot = GetBot()
-    local item_dragon_star = IsItemAvailable( "item_dragon_star" )
+    -- 咲夜大招期间需要按0.2秒技能前摇连续利用冷却重置，不能受IsBotAwake的0.25秒全局门控限制。
+    if npcBot == nil
+    or not npcBot:IsAlive()
+    or npcBot:IsIllusion()
+    or npcBot:IsHexed()
+    or npcBot:IsStunned()
+    then
+        return
+    end
 
-    if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
+    local item_dragon_star = IsItemAvailable( "item_dragon_star" )
 
 	ability01 = npcBot:GetAbilityByName( "ability_thdots_sakuya01" )
     ability02 = npcBot:GetAbilityByName( "ability_thdots_sakuya02" )
@@ -113,6 +115,14 @@ function AbilityUsageThink()
         theWorldStatus = true
     else
         theWorldStatus = false
+    end
+
+    if npcBot:IsSilenced() or npcBot:IsCastingAbility() or npcBot:IsChanneling() then return end
+    -- 大招区域内的技能均无视后摇；前摇结束后允许继续决策，由0.2秒连发时钟防止指令互相覆盖。
+    if npcBot:IsUsingAbility() and not theWorldStatus then return end
+    if not theWorldStatus then
+        MyItemUsageThink()
+        ConsiderNeutralItems()
     end
 
     DQERDesire,QERDesire,ERDesire,theWorldtarget = ConsiderTHEWORLD()

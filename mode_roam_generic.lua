@@ -91,7 +91,7 @@ local function ComputeDesire()
     	end
 		edibleItem = item
 		edibleCheck = DotaTime()
-		return 0
+		-- 后期游走欲望检查频率较低，食物扫描后仍需继续检查地上的天丛云剑。
 	end
 
 	if edibleItem ~= nil and bot:HasModifier("modifier_fountain_aura_buff") then
