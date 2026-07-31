@@ -211,7 +211,7 @@ function ConsiderAbilitySagume02()
 			end
 		end
 
-		if IsSeriouslyRetreating(npcBot) then
+		if IsSeriouslyRetreating(npcBot, 'ability_thdots_sagume_2') then
 			return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME), BOT_ACTION_DESIRE_NONE
 		end
 	end

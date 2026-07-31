@@ -228,7 +228,7 @@ function ConsiderAbilityEllen02()
 	end
 
 	-- Fighting or Retreating with hero
-	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT)
+	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or IsRetreating(npcBot, 'ability_thdots_ellen02'))
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 450, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -261,7 +261,7 @@ function ConsiderAbilityEllen03()
 	local nCastRange = ability03:GetCastRange()
 	local nRadius = 275
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1600, true, BOT_MODE_NONE )
-	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT then
+	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or IsRetreating(npcBot, 'ability_thdots_ellen03') then
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy ) then
@@ -324,7 +324,7 @@ function ConsiderAbilityEllen04()
 	local nCastPoint = 0.3
     local nSpeed = 1200
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange*1.1, true, BOT_MODE_NONE )
-	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or  npcBot:GetActiveMode() == BOT_MODE_RETREAT then
+	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or IsRetreating(npcBot, 'ability_thdots_ellen04') then
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( npcBot:GetTarget() == npcEnemy and CanCastEllen04OnTarget(npcEnemy)) then

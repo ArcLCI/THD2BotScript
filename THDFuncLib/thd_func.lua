@@ -5,6 +5,7 @@ local DireFountain = Vector( 6928, 6372, 392 )
 
 J.Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 J.Site = require( GetScriptDirectory()..'/THDFuncLib/aba_site')
+J.Retreat = require( GetScriptDirectory()..'/THDFuncLib/aba_retreat')
 
 local IsModeTurbo = J.Utils.IsModeTurbo
 
@@ -471,7 +472,11 @@ function J.IsAttacking( bot )
 	return false
 end
 
-function J.IsRetreating( bot )
+function J.IsRetreating( bot, abilityName, options )
+
+	if abilityName ~= nil then
+		return J.Retreat.ShouldUseAbility(bot, abilityName, options)
+	end
 
 	local mode = bot:GetActiveMode()
 	local modeDesire = bot:GetActiveModeDesire()
@@ -479,7 +484,7 @@ function J.IsRetreating( bot )
 
 	return ( mode == BOT_MODE_RETREAT and modeDesire > BOT_MODE_DESIRE_MODERATE and bot:DistanceFromFountain() > 0 )
 		 or ( mode == BOT_MODE_EVASIVE_MANEUVERS and bDamagedByAnyHero )
-		 or ( mode == BOT_MODE_FARM and modeDesire > BOT_MODE_DESIRE_ABSOLUTE )
+		 or J.Retreat.ShouldYield( bot, J.Retreat.HIGH )
 		
 end
 
@@ -1460,11 +1465,22 @@ function J.CanKillTarget( npcTarget, dmg, dmgType )
 
 end
 
-function J.IsSeriouslyRetreating( npcBot )
-	return (npcBot:GetActiveMode() == BOT_MODE_RETREAT
+function J.IsSeriouslyRetreating( npcBot, abilityName )
+	if abilityName ~= nil then
+		return J.Retreat.ShouldUseAbility(npcBot, abilityName, {
+			severity = J.Retreat.CRITICAL,
+			legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH,
+			legacyRequireAwayFromFountain = true,
+		})
+		or (not npcBot:HasModifier("modifier_fountain_aura_buff")
+			and npcBot:GetHealth()/npcBot:GetMaxHealth() < 0.1)
+	end
+	return J.Retreat.ShouldYield(npcBot, J.Retreat.CRITICAL)
+	or (npcBot:GetActiveMode() == BOT_MODE_RETREAT
 	and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH
 	and not npcBot:HasModifier("modifier_fountain_aura_buff"))
-	or npcBot:GetHealth()/npcBot:GetMaxHealth() < 0.1
+	or (not npcBot:HasModifier("modifier_fountain_aura_buff")
+		and npcBot:GetHealth()/npcBot:GetMaxHealth() < 0.1)
 end
 
 function J.IsPushing( bot )

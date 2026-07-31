@@ -126,7 +126,7 @@ function ConsiderAbilityKoishiEx()
 		return BOT_ACTION_DESIRE_NONE
 	end
 
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT )
+	if IsRetreating(npcBot, 'phantom_assassin_blur')
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -167,7 +167,7 @@ function ConsiderAbilityKoishi04()
 		end
 	end
 
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT )
+	if IsRetreating(npcBot, 'ability_thdots_koishi04')
 	then
 		if npcBot:GetHealth() > npcBot:GetMaxHealth() * 0.3 then
 			if #TableNearbyEnemyHeroes800 >= 3 then

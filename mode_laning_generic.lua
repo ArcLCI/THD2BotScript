@@ -90,6 +90,7 @@ local function ComputeDesire()
 end
 
 function GetDesire()
+	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then return BOT_MODE_DESIRE_NONE end
 	return Utils.GetCachedModeDesire(bot, 'laning', ComputeDesire)
 end
 
@@ -153,6 +154,7 @@ if local_mode_laning_generic then
 	function Think()
 		if not Timer.ShouldRunBotTask(bot, 'laning_think', 0.15, 0.02) then return end
 		if J.CanNotUseAction(bot) then return end
+		if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then return end
 		local hitCreep, moveToCreep = GetBestLastHitCreep(nEnemyCreeps)
 		if J.IsValid(hitCreep) then
 			J.SetTargetIfChanged(bot, hitCreep, 0.3)

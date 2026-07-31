@@ -318,7 +318,7 @@ function ConsiderAbilitySeija04()
 	if #tableNearbyEnemyHeroes > 0 and (
 			npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH and(
 				(npcBot:GetActiveMode() == BOT_MODE_ATTACK and #tableNearbyEnemyHeroes > 1) or
-				npcBot:GetActiveMode() == BOT_MODE_RETREAT
+				IsRetreating(npcBot, 'ability_thdots_seija04')
 			) 
 		) then
 		return BOT_ACTION_DESIRE_MODERATE, mxTarget

@@ -155,7 +155,7 @@ function ConsiderAbilityKomachi01()
 		end
 	end
 	--撤退
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and
+	if ( IsRetreating(npcBot, 'ability_thdots_komachi01') and
 		npcBot:GetHealth() < npcBot:GetMaxHealth() * 0.3 and
 		npcBot:IsFacingLocation(GetShopLocation(npcBot:GetTeam(),SHOP_HOME), 90))
 	then
@@ -212,7 +212,7 @@ function ConsiderAbilityKomachi03()
 			then
 				return BOT_ACTION_DESIRE_MODERATE
 			end
-			if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and
+			if (IsRetreating(npcBot, 'ability_thdots_komachi03') and
 				npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
 				return BOT_ACTION_DESIRE_HIGH
 			end

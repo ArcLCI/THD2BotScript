@@ -45,7 +45,7 @@ function MyItemUsageThink()
 	end
 
     if (item_dragon_star~=nil and item_dragon_star:IsFullyCastable()) then
-        if IsSeriouslyRetreating(npcBot) then
+	if IsSeriouslyRetreating(npcBot) then
             npcBot:Action_UseAbility(item_dragon_star)
             return
         end
@@ -517,7 +517,7 @@ function ConsiderAbilitySakuya03()
 		end
 	end
     -- 撤退
-    if IsSeriouslyRetreating(npcBot) then
+    if IsSeriouslyRetreating(npcBot, 'ability_thdots_sakuya03') then
 		local v_home = GetAncient(npcBot:GetTeam()):GetLocation()
 		local v_target = ( v_home - npcBot:GetLocation() ) / GetUnitToLocationDistance( npcBot, v_home)
 		local v_final = npcBot:GetLocation() + v_target * nCastRange

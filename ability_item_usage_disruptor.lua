@@ -291,7 +291,7 @@ function ConsiderAbilityTojiko04()
 	if ( locationAoELowHP.count > 1 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoELowHP.targetloc
 	end
-	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT)
+	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or IsRetreating(npcBot, 'ability_thdots_tojiko04'))
 	then
 		local locationAoE = CachedFindAoELocation( npcBot, 5, true, true, npcBot:GetLocation(), 1000, nRadius, nTime, 0 )
 		if #tableNearbyEnemyHeroes > 1 then

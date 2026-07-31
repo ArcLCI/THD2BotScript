@@ -1,9 +1,17 @@
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
+local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
 
 local WOLF_UNIT_NAME = "ability_momiji_Spawn_unit"
 local MOMIJI03_MIN_ACQUIRE_RANGE = 700
 local MOMIJI03_EXTRA_ACQUIRE_RANGE = 550
+
+local function GetBuildProfile(bot)
+	local profile = BotProfile.GetProfile(bot)
+	if profile ~= nil then return profile end
+	-- 新物理加点与前排加点会出现相同技能等级组合，不能再靠技能等级可靠反推定位。
+	return BotProfile.FRONTLINE
+end
 
 local function IsAbilityReady(ability)
 	if ability == nil then return false end
@@ -37,6 +45,16 @@ local function GetVisibleEnemyHeroes()
 		end
 	end
 	return enemies
+end
+
+local function CountNearbyEnemies(bot, enemies, radius)
+	local count = 0
+	for _, enemy in pairs(enemies) do
+		if GetUnitToUnitDistance(bot, enemy) <= radius then
+			count = count + 1
+		end
+	end
+	return count
 end
 
 local function GetProperEnemyHero(bot)
@@ -135,13 +153,13 @@ local function ConsiderMomiji03Emergency(bot, ability, enemies)
 
 	-- 回城和传送不一定稳定表现为 IsChanneling，显式检查两个传送 modifier。
 	for _, enemy in pairs(enemies) do
-		if IsInCastRange(bot, enemy, acquireRange) and IsTeleporting(enemy) then
+		if IsInCastRange(bot, enemy, castRange + 50) and IsTeleporting(enemy) then
 			return BOT_ACTION_DESIRE_ABSOLUTE, enemy
 		end
 	end
 
 	for _, enemy in pairs(enemies) do
-		if IsInCastRange(bot, enemy, acquireRange) and enemy:IsChanneling() then
+		if IsInCastRange(bot, enemy, castRange + 50) and enemy:IsChanneling() then
 			return BOT_ACTION_DESIRE_ABSOLUTE, enemy
 		end
 	end
@@ -174,7 +192,7 @@ local function ConsiderMomiji03Emergency(bot, ability, enemies)
 		end
 	end
 
-	if J.IsSeriouslyRetreating(bot) then
+	if J.IsSeriouslyRetreating(bot, 'ability_thdots_momiji03') then
 		local closest = nil
 		local closestDistance = math.huge
 		for _, enemy in pairs(enemies) do
@@ -241,7 +259,7 @@ local function ConsiderMomiji04(bot, ability, enemies)
 		return BOT_ACTION_DESIRE_VERYHIGH
 	end
 
-	if J.IsSeriouslyRetreating(bot) and nearbyEnemies >= 1 then
+	if J.IsSeriouslyRetreating(bot, 'ability_thdots_momiji04') and nearbyEnemies >= 1 then
 		return BOT_ACTION_DESIRE_VERYHIGH
 	end
 
@@ -350,10 +368,131 @@ local function ConsiderMomiji01(bot, ability)
 	return BOT_ACTION_DESIRE_NONE
 end
 
-local function TryUseTrinity(bot)
-	local item = IsItemAvailable("item_trinity")
-	if item ~= nil and item:IsFullyCastable() and ConsiderItemShield(item) > BOT_ACTION_DESIRE_NONE then
+local function TryUseTsundere(bot, enemies)
+	local item = IsItemAvailable("item_tsundere")
+	if item == nil or not item:IsFullyCastable() then return false end
+
+	local underPressure = bot:WasRecentlyDamagedByAnyHero(1.5)
+	local nearbyEnemies = CountNearbyEnemies(bot, enemies, 850)
+	if underPressure
+	and nearbyEnemies > 0
+	and (J.GetHP(bot) < 0.35 or (J.IsSeriouslyRetreating(bot) and J.GetHP(bot) < 0.55))
+	then
 		bot:Action_UseAbility(item)
+		return true
+	end
+	return false
+end
+
+local function TryUseTrinity(bot, enemies)
+	local item = IsItemAvailable("item_trinity") or IsItemAvailable("item_esdw")
+	if item == nil or not item:IsFullyCastable() then return false end
+	local shouldPreShield = CountNearbyEnemies(bot, enemies, 1200) >= 2
+		and (J.IsGoingOnSomeone(bot) or J.IsInTeamFight(bot, 1200))
+	if shouldPreShield or ConsiderItemShield(item) > BOT_ACTION_DESIRE_NONE then
+		bot:Action_UseAbility(item)
+		return true
+	end
+	return false
+end
+
+local function TryUseFlowerUmbrella(bot, enemies, profile)
+	if profile ~= BotProfile.FRONTLINE then return false end
+	local item = IsItemAvailable("item_flower_umbrella")
+	if item == nil or not item:IsFullyCastable() then return false end
+
+	local nearbyEnemies = CountNearbyEnemies(bot, enemies, 1200)
+	local isCommittedFight = nearbyEnemies >= 2 and J.IsInTeamFight(bot, 1200)
+	local isCommittedAttack = nearbyEnemies >= 1
+		and J.IsGoingOnSomeone(bot)
+		and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
+	local isUnderPressure = nearbyEnemies >= 1
+		and bot:WasRecentlyDamagedByAnyHero(2.0)
+		and (J.GetHP(bot) < 0.7 or J.IsSeriouslyRetreating(bot))
+
+	-- 花伞护盾按每名友军的力量逐次格挡物理伤害，开团前或承压时提前覆盖队伍。
+	if isCommittedFight or isCommittedAttack or isUnderPressure then
+		bot:Action_UseAbility(item)
+		return true
+	end
+	return false
+end
+
+local function TryUseDragonStar(bot, enemies, profile)
+	local item = IsItemAvailable("item_dragon_star")
+	if item == nil or not item:IsFullyCastable() then return false end
+
+	if J.IsSeriouslyRetreating(bot)
+	and bot:WasRecentlyDamagedByAnyHero(2.0)
+	and CountNearbyEnemies(bot, enemies, 1000) > 0
+	then
+		bot:Action_UseAbility(item)
+		return true
+	end
+
+	local isEngaging = J.IsGoingOnSomeone(bot) or J.IsInTeamFight(bot, 1200)
+	local engageRange = profile == BotProfile.FRONTLINE and 950 or 800
+	if isEngaging
+	and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
+	and CountNearbyEnemies(bot, enemies, engageRange) > 0
+	then
+		bot:Action_UseAbility(item)
+		return true
+	end
+	return false
+end
+
+local function IsAlreadyHardDisabled(enemy)
+	return enemy:IsStunned() or enemy:IsHexed()
+end
+
+local function TryUseYukkuri(bot, enemies, profile, interruptOnly)
+	if profile ~= BotProfile.FRONTLINE then return false end
+	local item = IsItemAvailable("item_yukkuri_stick")
+	if item == nil or not item:IsFullyCastable() then return false end
+	local castRange = item:GetCastRange()
+
+	for _, enemy in pairs(enemies) do
+		if GetUnitToUnitDistance(bot, enemy) <= castRange
+		and CanCastStunOnTarget(enemy)
+		and not IsAlreadyHardDisabled(enemy)
+		and (enemy:IsChanneling() or IsTeleporting(enemy))
+		then
+			bot:Action_UseAbilityOnEntity(item, enemy)
+			return true
+		end
+	end
+	if interruptOnly then return false end
+
+	if J.IsSeriouslyRetreating(bot) then
+		local closest = nil
+		local closestDistance = math.huge
+		for _, enemy in pairs(enemies) do
+			local distance = GetUnitToUnitDistance(bot, enemy)
+			if distance <= castRange
+			and distance < closestDistance
+			and not IsAlreadyHardDisabled(enemy)
+			and bot:WasRecentlyDamagedByHero(enemy, 2.0)
+			then
+				closest = enemy
+				closestDistance = distance
+			end
+		end
+		if closest ~= nil then
+			bot:Action_UseAbilityOnEntity(item, closest)
+			return true
+		end
+	end
+
+	local target = GetProperEnemyHero(bot)
+	if target ~= nil
+	and J.IsGoingOnSomeone(bot)
+	and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
+	and GetUnitToUnitDistance(bot, target) <= castRange
+	and CanCastStunOnTarget(target)
+	and not IsAlreadyHardDisabled(target)
+	then
+		bot:Action_UseAbilityOnEntity(item, target)
 		return true
 	end
 	return false
@@ -405,17 +544,24 @@ function AbilityUsageThink()
 	local ability03 = bot:GetAbilityByName("ability_thdots_momiji03")
 	local ability04 = bot:GetAbilityByName("ability_thdots_momiji04")
 	local enemies = GetVisibleEnemyHeroes()
+	local profile = GetBuildProfile(bot)
 
 	local desire, target = ConsiderMomiji03Emergency(bot, ability03, enemies)
 	if desire > BOT_ACTION_DESIRE_NONE and target ~= nil then
 		bot:Action_UseAbilityOnEntity(ability03, target)
 		return
 	end
+	-- 三技能够不到时，前排路线再用800距离油库里处理持续施法和传送。
+	if TryUseYukkuri(bot, enemies, profile, true) then return end
 
-	if TryUseTrinity(bot) then return end
+	if TryUseTsundere(bot, enemies) then return end
+	if TryUseTrinity(bot, enemies) then return end
 	if TryUseRetreatHorseKing(bot) then return end
+	if TryUseDragonStar(bot, enemies, profile) then return end
+	if TryUseFlowerUmbrella(bot, enemies, profile) then return end
 	-- 红马仅在共享 helper 判定脱战恢复安全时抢在进攻技能前使用。
 	if TryUseHorseRed(bot) then return end
+	if TryUseYukkuri(bot, enemies, profile, false) then return end
 
 	desire = ConsiderMomiji04(bot, ability04, enemies)
 	if desire > BOT_ACTION_DESIRE_NONE then

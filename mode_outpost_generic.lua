@@ -99,6 +99,11 @@ local function ComputeDesire()
 end
 
 function GetDesire()
+	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+		ClosestOutpost = nil
+		ClosestOutpostDist = 10000
+		return BOT_MODE_DESIRE_NONE
+	end
 	return Utils.GetCachedModeDesire(bot, 'outpost', ComputeDesire)
 end
 
@@ -115,6 +120,11 @@ end
 function Think()
 	if not Timer.ShouldRunBotTask(bot, 'outpost_think', 0.50, 0.05) then return end
 	if J.CanNotUseAction(bot) then return end
+	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+		ClosestOutpost = nil
+		ClosestOutpostDist = 10000
+		return
+	end
 
 	if ClosestOutpost ~= nil
 	then

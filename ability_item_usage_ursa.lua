@@ -136,7 +136,7 @@ function ConsiderAbilityNazrin01()
 	local nCastRange = 800
 	
 	if ((npcBot:GetActiveMode() == BOT_MODE_ATTACK or 
-			npcBot:GetActiveMode() == BOT_MODE_RETREAT )
+			IsRetreating(npcBot, 'ability_thdotsr_Nazrin01') )
 			and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) then
 		return BOT_ACTION_DESIRE_HIGH
 	end

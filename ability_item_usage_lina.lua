@@ -178,7 +178,7 @@ function ConsiderAbilityReimu01()
 		end
 	end
 
-	if (IsSeriouslyRetreating(npcBot)) then
+	if IsSeriouslyRetreating(npcBot, 'ability_dota2x_reimu01') then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if (CanCastReimu01OnTarget(npcEnemy)) then
@@ -240,7 +240,7 @@ function ConsiderAbilityReimu02()
 		return BOT_ACTION_DESIRE_HIGH
 	end
 	if (tableNearbyEnemyHeroes~=nil and #tableNearbyEnemyHeroes > 0
-	and npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) then
+	and IsRetreating(npcBot, 'ability_dota2x_reimu02', { legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH }) ) then
 		return BOT_ACTION_DESIRE_HIGH
 	end
 
@@ -299,7 +299,7 @@ function ConsiderAbilityReimu03()
 	end
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH )
+	if IsRetreating(npcBot, 'ability_dota2x_reimu03', { legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH })
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
@@ -347,7 +347,7 @@ function ConsiderAbilityReimu04()
 	end
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH )
+	if IsRetreating(npcBot, 'ability_dota2x_reimu04', { legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH })
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do

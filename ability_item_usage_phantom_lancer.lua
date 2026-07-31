@@ -152,7 +152,7 @@ function ConsiderAbilityReisen_2_01()
 	local nCastRange = ability01:GetCastRange() + 50
 
 	if ( (npcBot:GetActiveMode() == BOT_MODE_ATTACK or
-			npcBot:GetActiveMode() == BOT_MODE_RETREAT )
+			IsRetreating(npcBot, 'ability_thdots_reisen_2_01') )
 			and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) then
 		return BOT_ACTION_DESIRE_HIGH, npcBot
 	end

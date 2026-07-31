@@ -1,5 +1,6 @@
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
+local FlandreUltimate = require(GetScriptDirectory() .. "/THDFuncLib/flandre_ultimate")
 
 local MIRROR_ABILITY = "naga_siren_mirror_image"
 local ULTIMATE_ABILITY = "ability_thdots_flandre04"
@@ -101,16 +102,28 @@ local function GetOwnedIllusions(bot, radius)
 	local playerID = GetPlayerID(bot)
 	for _, unit in pairs(GetUnitList(UNIT_LIST_ALLIES)) do
 		local unitPlayerID = GetPlayerID(unit)
+		local sameOwner = unitPlayerID == playerID
+		if unitPlayerID < 0 or playerID < 0 then
+			sameOwner = unit:GetUnitName() == bot:GetUnitName()
+		end
 		if IsValidVisibleUnit(unit)
 		and unit:IsIllusion()
-		and unit:GetUnitName() == bot:GetUnitName()
-		and (unitPlayerID == playerID or unitPlayerID < 0 or playerID < 0)
+		and sameOwner
 		and GetUnitToUnitDistance(bot, unit) <= radius
 		then
 			table.insert(illusions, unit)
 		end
 	end
 	return illusions
+end
+
+local function GetExpectedUltimateAttackCount(bot, ability)
+	local baseCount = 1
+	if ability ~= nil and ability.GetSpecialValueInt ~= nil then
+		local ok, value = pcall(function() return ability:GetSpecialValueInt("attack_count") end)
+		if ok and value ~= nil and value > 0 then baseCount = value end
+	end
+	return baseCount + #GetOwnedIllusions(bot, ULTIMATE_ILLUSION_RANGE)
 end
 
 local function IsTeleporting(enemy)
@@ -226,6 +239,14 @@ end
 local function ConsiderDragonStar(bot, enemies)
 	local item = IsItemAvailable("item_dragon_star")
 	if item == nil or not item:IsFullyCastable() then return false end
+	local ultimateTarget = FlandreUltimate.GetLockedTarget(bot)
+	if FlandreUltimate.IsActive(bot)
+	and IsValidEnemyHero(ultimateTarget)
+	and GetUnitToUnitDistance(bot, ultimateTarget) <= 950
+	then
+		bot:Action_UseAbility(item)
+		return true
+	end
 
 	if J.IsSeriouslyRetreating(bot)
 	and bot:WasRecentlyDamagedByAnyHero(2.0)
@@ -330,7 +351,7 @@ local function ConsiderMirrorImage(bot, ability, enemies)
 
 	if bot:WasRecentlyDamagedByAnyHero(1.5)
 	and CountNearbyEnemies(bot, enemies, MIRROR_RETREAT_RANGE) > 0
-	and (J.IsSeriouslyRetreating(bot) or J.GetHP(bot) < 0.45)
+	and (J.IsSeriouslyRetreating(bot, 'naga_siren_mirror_image') or J.GetHP(bot) < 0.45)
 	then
 		return BOT_ACTION_DESIRE_VERYHIGH
 	end
@@ -350,11 +371,22 @@ local function ConsiderMirrorImage(bot, ability, enemies)
 	return BOT_ACTION_DESIRE_NONE
 end
 
-local function GetUltimateTarget(bot)
+local function GetUltimateTarget(bot, enemies)
 	local target = GetProperEnemyHero(bot)
-	if target == nil then return nil end
-	if target:IsInvulnerable() or target:IsAttackImmune() then return nil end
-	return target
+	if target ~= nil and not target:IsInvulnerable() and not target:IsAttackImmune() then return target end
+
+	local bestTarget = nil
+	for _, enemy in pairs(enemies or {}) do
+		if IsValidEnemyHero(enemy)
+		and (bestTarget == nil
+			or J.GetHP(enemy) < J.GetHP(bestTarget)
+			or (J.GetHP(enemy) == J.GetHP(bestTarget)
+				and GetUnitToUnitDistance(bot, enemy) < GetUnitToUnitDistance(bot, bestTarget)))
+		then
+			bestTarget = enemy
+		end
+	end
+	return bestTarget
 end
 
 local function ConsiderUltimateEmergency(bot, ability, enemies)
@@ -362,35 +394,35 @@ local function ConsiderUltimateEmergency(bot, ability, enemies)
 	or not IsAbilityReady(ability)
 	or bot:HasModifier("modifier_thdots_flandre_04_multi")
 	then
-		return BOT_ACTION_DESIRE_NONE
+		return BOT_ACTION_DESIRE_NONE, nil, nil
 	end
 	-- 至少回收两个分身才值得消耗大招，紧急分支也不能绕过此限制。
 	if #GetOwnedIllusions(bot, ULTIMATE_ILLUSION_RANGE) < MIN_ULTIMATE_ILLUSIONS then
-		return BOT_ACTION_DESIRE_NONE
+		return BOT_ACTION_DESIRE_NONE, nil, nil
 	end
 
-	if J.GetHP(bot) < 0.35 and J.IsSeriouslyRetreating(bot) then
+	if J.GetHP(bot) < 0.35 and J.IsSeriouslyRetreating(bot, 'ability_thdots_flandre04') then
 		for _, enemy in pairs(enemies) do
 			if GetUnitToUnitDistance(bot, enemy) <= 800
 			and bot:WasRecentlyDamagedByHero(enemy, 2.0)
 			then
-				return BOT_ACTION_DESIRE_ABSOLUTE
+				return BOT_ACTION_DESIRE_ABSOLUTE, enemy, "retreat"
 			end
 		end
 	end
 
-	local target = GetUltimateTarget(bot)
+	local target = GetUltimateTarget(bot, enemies)
 	if target ~= nil and J.IsGoingOnSomeone(bot) then
 		local distance = GetUnitToUnitDistance(bot, target)
 		local escaping = distance > bot:GetAttackRange() + 100
 			and distance <= 900
 			and not target:IsFacingLocation(bot:GetLocation(), 120)
 		if J.GetHP(target) <= 0.25 or escaping then
-			return BOT_ACTION_DESIRE_ABSOLUTE
+			return BOT_ACTION_DESIRE_ABSOLUTE, target, J.GetHP(target) <= 0.25 and "finish" or "chase"
 		end
 	end
 
-	return BOT_ACTION_DESIRE_NONE
+	return BOT_ACTION_DESIRE_NONE, nil, nil
 end
 
 local function ConsiderUltimateNormal(bot, ability, enemies)
@@ -398,41 +430,41 @@ local function ConsiderUltimateNormal(bot, ability, enemies)
 	or not IsAbilityReady(ability)
 	or bot:HasModifier("modifier_thdots_flandre_04_multi")
 	then
-		return BOT_ACTION_DESIRE_NONE
+		return BOT_ACTION_DESIRE_NONE, nil, nil
 	end
 
 	local illusions = GetOwnedIllusions(bot, ULTIMATE_ILLUSION_RANGE)
 	if #illusions < MIN_ULTIMATE_ILLUSIONS then
-		return BOT_ACTION_DESIRE_NONE
+		return BOT_ACTION_DESIRE_NONE, nil, nil
 	end
 	if DotaTime() - lastMirrorCastTime < MIRROR_SETUP_TIME then
-		return BOT_ACTION_DESIRE_NONE
+		return BOT_ACTION_DESIRE_NONE, nil, nil
 	end
 
-	local target = GetUltimateTarget(bot)
+	local target = GetUltimateTarget(bot, enemies)
 	local nearbyEnemyCount = CountNearbyEnemies(bot, enemies, 1200)
 	if nearbyEnemyCount >= 2
 	and (J.IsGoingOnSomeone(bot) or J.IsInTeamFight(bot, 1200))
 	then
-		return BOT_ACTION_DESIRE_VERYHIGH
+		return BOT_ACTION_DESIRE_VERYHIGH, target, "teamfight"
 	end
 
 	if target ~= nil and J.IsGoingOnSomeone(bot) then
 		local distance = GetUnitToUnitDistance(bot, target)
 		if distance <= bot:GetAttackRange() + 350 then
-			return BOT_ACTION_DESIRE_HIGH
+			return BOT_ACTION_DESIRE_HIGH, target, "engage"
 		end
 		if J.GetHP(target) <= 0.45 and distance <= bot:GetAttackRange() + 200 then
-			return BOT_ACTION_DESIRE_HIGH
+			return BOT_ACTION_DESIRE_HIGH, target, "finish"
 		end
 		if bot:HasModifier("modifier_item_wanbaochui")
 		and distance <= bot:GetAttackRange() + 150
 		then
-			return BOT_ACTION_DESIRE_HIGH
+			return BOT_ACTION_DESIRE_HIGH, target, "engage"
 		end
 	end
 
-	return BOT_ACTION_DESIRE_NONE
+	return BOT_ACTION_DESIRE_NONE, nil, nil
 end
 
 local function TryUseHorseKing()
@@ -465,6 +497,7 @@ function AbilityUsageThink()
 	local bot = GetBot()
 	local mirrorImage = bot:GetAbilityByName(MIRROR_ABILITY)
 	local ultimate = bot:GetAbilityByName(ULTIMATE_ABILITY)
+	FlandreUltimate.Update(bot)
 
 	-- Action_UseAbility 会替换普通移动/攻击命令，使镜像能在弹道命中前完成失去目标。
 	if CanUseEmergencyMirror(bot, mirrorImage) and HasIncomingTrackingThreat(bot) then
@@ -481,8 +514,18 @@ function AbilityUsageThink()
 	if ConsiderDragonStar(bot, enemies) then return end
 	if ConsiderYukkuriInterrupt(bot, enemies) then return end
 
-	local desire = ConsiderUltimateEmergency(bot, ultimate, enemies)
+	-- 大招期间保留全部物品逻辑，只停止普通镜像和重复大招施法。
+	if FlandreUltimate.IsActive(bot) then
+		if ConsiderYukkuriOffensive(bot) then return end
+		if TryUseHorseKing() then return end
+		if TryUseHorseRed() then return end
+		ConsiderNeutralItems()
+		return
+	end
+
+	local desire, target, reason = ConsiderUltimateEmergency(bot, ultimate, enemies)
 	if desire > BOT_ACTION_DESIRE_NONE then
+		FlandreUltimate.BeginCast(bot, ultimate, target, reason, GetExpectedUltimateAttackCount(bot, ultimate))
 		bot:Action_UseAbility(ultimate)
 		return
 	end
@@ -496,8 +539,9 @@ function AbilityUsageThink()
 
 	if ConsiderYukkuriOffensive(bot) then return end
 
-	desire = ConsiderUltimateNormal(bot, ultimate, enemies)
+	desire, target, reason = ConsiderUltimateNormal(bot, ultimate, enemies)
 	if desire > BOT_ACTION_DESIRE_NONE then
+		FlandreUltimate.BeginCast(bot, ultimate, target, reason, GetExpectedUltimateAttackCount(bot, ultimate))
 		bot:Action_UseAbility(ultimate)
 		return
 	end

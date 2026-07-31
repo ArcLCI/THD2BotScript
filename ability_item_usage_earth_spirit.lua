@@ -107,10 +107,10 @@ function AbilityUsageThink()
 	-- Check if we're already using an ability
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
-	ability01 = npcBot:GetAbilityByName( "ability_thdots_merlin01" )
-	ability02 = npcBot:GetAbilityByName( "ability_thdots_merlin02" )
-	ability03 = npcBot:GetAbilityByName( "ability_thdots_merlin03" )
-	ability04 = npcBot:GetAbilityByName( "ability_thdots_merlin04" )
+	ability01 = npcBot:GetAbilityByName( "ability_thdots_Merlin01" )
+	ability02 = npcBot:GetAbilityByName( "ability_thdots_Merlin02" )
+	ability03 = npcBot:GetAbilityByName( "ability_thdots_Merlin03" )
+	ability04 = npcBot:GetAbilityByName( "ability_thdots_Merlin04" )
 
 	-- Consider using each ability
 	cast01Desire, cast01Target = ConsiderAbilityMerlin01()
@@ -164,7 +164,7 @@ function ConsiderAbilityMerlin01()
 	-- Get some of its values
 	local nCastRange = ability01:GetCastRange()
 	if npcBot:GetActiveMode() == BOT_MODE_ATTACK or 
-	npcBot:GetActiveMode() == BOT_MODE_RETREAT
+	IsRetreating(npcBot, 'ability_thdots_Merlin01')
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+100, true, BOT_MODE_NONE )
 		local mxcap=0
@@ -256,7 +256,7 @@ function ConsiderAbilityMerlin04()
 	if #tableNearbyEnemyHeroes > 0 and (
 			npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH and(
 				(npcBot:GetActiveMode() == BOT_MODE_ATTACK and #tableNearbyEnemyHeroes > 1) or
-				npcBot:GetActiveMode() == BOT_MODE_RETREAT
+				IsRetreating(npcBot, 'ability_thdots_Merlin04')
 			) 
 		) then
 		return BOT_ACTION_DESIRE_MODERATE, mxTarget

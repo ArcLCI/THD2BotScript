@@ -198,7 +198,7 @@ function ConsiderAbilityMokou03()
 		return BOT_ACTION_DESIRE_NONE
 	end
 	
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT ) --Need ++
+	if IsRetreating(npcBot, 'ability_thdots_mokou03') --Need ++
 	then
 		-- 10 seconds delay
 		if GameTime() - not_safe > 10.0 then return BOT_ACTION_DESIRE_HIGH  -- check is safe or not
@@ -220,7 +220,7 @@ function ConsiderAbilityMokou04()
 	end
 	
 	-- Fighting or Retreating with hero
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+	if ( IsRetreating(npcBot, 'ability_thdots_mokou04') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1500, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )

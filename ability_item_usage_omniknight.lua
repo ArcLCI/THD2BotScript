@@ -274,7 +274,7 @@ function ConsiderAbilityKisume02()
 		end
 	end
 	
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
+	if (IsRetreating(npcBot, 'ability_thdots_kisume02') and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
 		local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 		local v_target = - npcBot:GetLocation() + v_shop
 		local dis = GetUnitToLocationDistance( npcBot,v_shop)
@@ -333,7 +333,7 @@ function ConsiderAbilityKisume04()
 			return BOT_ACTION_DESIRE_HIGH
 		end
 	end
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.15) then
+	if (IsRetreating(npcBot, 'ability_thdots_kisume04') and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.15) then
 		return BOT_ACTION_DESIRE_HIGH
 	end
 	return BOT_ACTION_DESIRE_NONE

@@ -163,7 +163,7 @@ function ConsiderAbilityReisen04()
 	end
 
 	-- Fighting or Retreating with hero
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
+	if ( J.IsRetreating(npcBot, 'ability_thdots_reisenOld04') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE ) -- attack range is better, wait for api :p
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )

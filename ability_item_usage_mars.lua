@@ -134,7 +134,7 @@ function ConsiderAbilityShou01()
 	end
 
 	-- Fighting or Retreating with hero
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
+	if ( IsRetreating(npcBot, 'ability_thdots_shou01') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )

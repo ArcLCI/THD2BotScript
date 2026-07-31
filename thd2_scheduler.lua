@@ -1,6 +1,21 @@
 local Scheduler = {}
 
 local DEFAULT_PHASE_INTERVAL = 0.12
+local BASE_ENEMY_SCAN_RANGE = 1800
+
+local function HasVisibleEnemyHeroWithinRange(bot, range)
+    for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMY_HEROES)) do
+        if enemy ~= nil
+            and (enemy.IsNull == nil or not enemy:IsNull())
+            and enemy:IsAlive()
+            and enemy:CanBeSeen()
+            and GetUnitToUnitDistance(bot, enemy) <= range
+        then
+            return true
+        end
+    end
+    return false
+end
 
 function Scheduler.Now()
     return GameTime()
@@ -69,8 +84,8 @@ function Scheduler.IsHighPriorityState(bot)
 
     local ancient = GetAncient(GetTeam())
     if ancient ~= nil and GetUnitToUnitDistance(bot, ancient) < 3600 then
-        local enemies = bot:GetNearbyHeroes(1800, true, BOT_MODE_NONE)
-        if #enemies > 0 then return true end
+        -- 原生 GetNearbyHeroes 最大只支持 1600；全局列表过滤可保留原有 1800 判断。
+        if HasVisibleEnemyHeroWithinRange(bot, BASE_ENEMY_SCAN_RANGE) then return true end
     end
 
     return false

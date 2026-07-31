@@ -198,7 +198,7 @@ function ConsiderAbilityLyrica01()
 		end
 	end
 		--逃命
-	if npcBot:GetActiveMode() == BOT_MODE_RETREAT then
+	if IsRetreating(npcBot, 'ability_thdots_lyrica01') then
 		return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 	end
 	return BOT_ACTION_DESIRE_NONE, 0

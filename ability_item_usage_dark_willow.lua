@@ -209,7 +209,7 @@ function ConsiderAbilityLarva01()
 		return BOT_ACTION_DESIRE_NONE, 0
 	end
 
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.35) then
+	if (IsRetreating(npcBot, 'ability_thdots_larva01_1') and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.35) then
 		if not isfly then
 			local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 			local v_target = - npcBot:GetLocation() + v_shop
@@ -264,7 +264,7 @@ function ConsiderAbilityLarva02()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nRadius-25 , true, BOT_MODE_NONE )
 
 	if (not isfly and (npcBot:GetActiveMode() == BOT_MODE_ATTACK
-		or npcBot:GetActiveMode() == BOT_MODE_RETREAT
+		or IsRetreating(npcBot, 'ability_thdots_larva02')
 		or npcBot:GetActiveMode() == BOT_MODE_GANK)
 		and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_MODERATE ) then
 		if #tableNearbyEnemyHeroes > 0 then
@@ -336,7 +336,7 @@ function ConsiderAbilityLarva04()
 
 	if ((npcBot:GetActiveMode() == BOT_MODE_ATTACK
 		or npcBot:GetActiveMode() == BOT_MODE_GANK
-		or npcBot:GetActiveMode() == BOT_MODE_RETREAT )
+		or IsRetreating(npcBot, 'ability_thdots_larva04') )
 		and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) then
 		local locationAoE = CachedFindAoELocation( npcBot, 60001, true, true, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 )
 		if locationAoE.count > 1 then

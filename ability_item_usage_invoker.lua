@@ -776,9 +776,10 @@ local function TryStartSingleSpell(target, enemies)
 	if TryStartReaperTreeHeal() then return true end
 
 	local opportunisticFight = IsValidEnemyHero(target) and CountEnemies(enemies, 1200) <= 2
+	local seriousRetreat = J.IsSeriouslyRetreating(bot)
 	if (J.IsGoingOnSomeone(bot)
 		or J.IsInTeamFight(bot, 1200)
-		or J.IsSeriouslyRetreating(bot)
+		or (seriousRetreat and J.IsSeriouslyRetreating(bot, SPELLS.EER.name))
 		or opportunisticFight)
 	and not bot:HasModifier("modifier_thdots_patchouli_wood_wood_effect")
 	and StartSingle("EER", bot)
@@ -789,7 +790,7 @@ local function TryStartSingleSpell(target, enemies)
 		local shouldCast = mode == BOT_MODE_LANING
 			or J.IsGoingOnSomeone(bot)
 			or J.IsInTeamFight(bot, 1200)
-			or J.IsSeriouslyRetreating(bot)
+			or seriousRetreat
 			or opportunisticFight
 		if shouldCast and (mode ~= BOT_MODE_LANING or J.GetMP(bot) >= 0.25) then
 			local order = {}
@@ -803,7 +804,9 @@ local function TryStartSingleSpell(target, enemies)
 				table.insert(order, code)
 			end
 			for _, code in ipairs(order) do
-				if StartSingle(code, target) then return true end
+				local registeredRetreatCast = not seriousRetreat
+					or J.IsSeriouslyRetreating(bot, SPELLS[code].name)
+				if registeredRetreatCast and StartSingle(code, target) then return true end
 			end
 		end
 	end
@@ -895,8 +898,7 @@ local function GetIdleElementKey(enemies, target)
 	local mp = J.GetMP(bot)
 	local mode = bot:GetActiveMode()
 
-	if J.IsSeriouslyRetreating(bot)
-	or (mode == BOT_MODE_RETREAT and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH)
+	if J.IsRetreating(bot, ELEMENTS.F, { legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH })
 	then return "F" end
 	if hp < 0.58 then return "E" end
 	if J.IsGoingOnSomeone(bot) then

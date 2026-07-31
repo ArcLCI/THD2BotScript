@@ -89,7 +89,7 @@ function ConsiderAbilityMarisa01()
 	local nCastRange = ability01:GetCastRange()
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) 
+	if IsRetreating(npcBot, 'ability_thdots_marisa01', { legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH })
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -151,7 +151,7 @@ function ConsiderAbilityMarisa02()
 	end
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) 
+	if IsRetreating(npcBot, 'ability_thdots_marisa02', { legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH })
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -206,7 +206,7 @@ function ConsiderAbilityMarisa03()
 	local nDamage = ability03:GetAbilityDamage()*4
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) 
+	if IsRetreating(npcBot, 'ability_thdots_marisa03', { legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH })
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + nRadius + 200, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -260,7 +260,7 @@ function ConsiderAbilityMarisa04()
 	local nDamage = ability04:GetAbilityDamage()
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) 
+	if IsRetreating(npcBot, 'ability_thdots_marisa04', { legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH })
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )

@@ -103,7 +103,7 @@ function AbilityUsageThink()
 	ability01 = npcBot:GetAbilityByName( "ability_thdots_mystia01" )
 	ability02 = npcBot:GetAbilityByName( "ability_thdots_mystia02" )
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_mystia04" )
-	abilityEx = npcBot:GetAbilityByName( "ability_thdots_mystiaEx" )
+	abilityEx = npcBot:GetAbilityByName( "ability_thdots_mystiaex" )
 
 	-- Consider using each ability
 	cast01Desire = ConsiderAbilityMystia01()
@@ -218,7 +218,7 @@ function ConsiderAbilityMystia04()
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( CanCastMystia04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and
-				(npcBot:GetActiveMode() == BOT_MODE_RETREAT or 
+				(IsRetreating(npcBot, 'ability_thdots_mystia04') or
 				(npcBot:GetActiveMode() == BOT_MODE_ATTACK and #tableNearbyEnemyHeroes>1))) 
 			then
 				return BOT_ACTION_DESIRE_HIGH
@@ -242,7 +242,7 @@ function ConsiderAbilityMystiaEx()
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+			if ( IsRetreating(npcBot, 'ability_thdots_mystiaex') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 			then
 				return BOT_ACTION_DESIRE_HIGH
 			end

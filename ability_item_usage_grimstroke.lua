@@ -287,7 +287,7 @@ function ConsiderAbilitySeigaEx()
 	end
 	--]]
 
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
+	if (IsRetreating(npcBot, 'ability_thdots_seigaEx') and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
 		local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 		local v_target = - npcBot:GetLocation() + v_shop
 		local dis = GetUnitToLocationDistance( npcBot,v_shop)

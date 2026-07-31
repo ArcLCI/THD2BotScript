@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local Retreat = require(GetScriptDirectory()..'/THDFuncLib/aba_retreat')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -152,7 +153,7 @@ function ConsiderAbilityAya01()
 		end
 	end
 
-	if (IsSeriouslyRetreating(npcBot) and not npcBot:HasModifier("modifier_fountain_aura_buff")) then
+	if (IsSeriouslyRetreating(npcBot, 'ability_thdots_aya01') and not npcBot:HasModifier("modifier_fountain_aura_buff")) then
 		local v_home = GetAncient(npcBot:GetTeam()):GetLocation()
 		local v_target = ( v_home - npcBot:GetLocation() ) / GetUnitToLocationDistance( npcBot, v_home)
 		local v_final = npcBot:GetLocation() + v_target * nCastRange
@@ -192,6 +193,16 @@ function ConsiderAbilityAyaFantasy()
 		end
 	end
 
+	-- 只有统一撤退框架确认原始风险且技能确实可用时，才把幻想风靡作为保命位移。
+	if Retreat.ShouldPrepareDefense(npcBot, 'aya_fantasy') then
+		local home = GetAncient(npcBot:GetTeam()):GetLocation()
+		local distance = GetUnitToLocationDistance(npcBot, home)
+		if distance > 1 then
+			local direction = (home - npcBot:GetLocation()) / distance
+			return BOT_ACTION_DESIRE_HIGH, npcBot:GetLocation() + direction * math.min(1000, nCastRange)
+		end
+	end
+
 	if npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH and #tableTrueHeros > 2 then
 		local vLocation = GetCenterOfUnits(tableTrueHeros)
 		if GetUnitToLocationDistance(npcBot,vLocation) < 900 then
@@ -214,7 +225,7 @@ function ConsiderAbilityAya04()
 	end
 
 	-- If we're seriously retreating, or attack
-	if IsSeriouslyRetreating(npcBot) then
+	if IsSeriouslyRetreating(npcBot, 'ability_thdots_aya04') then
 		return BOT_ACTION_DESIRE_MODERATE
 	end
 

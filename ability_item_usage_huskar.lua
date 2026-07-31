@@ -203,7 +203,7 @@ function ConsiderAbilityMinoriko02()
 			return BOT_ACTION_DESIRE_HIGH, npcFriend:GetLocation()
 		end
 	end
-	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT)
+	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or IsRetreating(npcBot, 'ability_thdots_minoriko02'))
 		and (npcBot:GetHealth() < npcBot:GetMaxHealth()*0.5 or npcBot:GetMana() < npcBot:GetMaxMana()*0.5 or ability02:GetLevel() >= 3)
 		and not npcBot:HasModifier("modifier_fountain_aura_buff") then
 		return BOT_ACTION_DESIRE_HIGH, npcBot:GetLocation()

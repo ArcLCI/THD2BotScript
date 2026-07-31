@@ -217,7 +217,7 @@ function ConsiderAbilityShikieiki02()
 		end
 	end
 
-	if IsSeriouslyRetreating(npcBot) then
+	if IsSeriouslyRetreating(npcBot, 'ability_thdots_shikieiki02') then
 		for _,npcEnemy in pairs(tableNearbyEnemyHeroes)
 		do
 			if CanCastShikieiki02OnTarget(npcEnemy) then
@@ -259,7 +259,7 @@ function ConsiderAbilityShikieiki04()
 		end
 
 	if npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
-	and (npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT)
+	and (npcBot:GetActiveMode() == BOT_MODE_ATTACK or J.IsRetreating(npcBot, 'ability_thdots_shikieiki04'))
 	then
 		return BOT_ACTION_DESIRE_HIGH, mxTarget
 	end

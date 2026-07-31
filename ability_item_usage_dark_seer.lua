@@ -143,7 +143,7 @@ function ConsiderAbilityByakuren01()
 	local nCastRange = ability01:GetCastRange()
 
 	-- Fighting or Retreating 
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+	if ( IsRetreating(npcBot, 'ability_thdots_byakuren01') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		-- Use ability before being catched ( Near By has enemy heros )
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE )
@@ -175,7 +175,7 @@ function ConsiderAbilityByakuren02()
 	local nCastRange = ability02:GetCastRange()
 
 	-- Fighting or Retreating 
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+	if ( IsRetreating(npcBot, 'ability_thdots_byakuren02') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		-- Use ability before being catched ( Near By has enemy heros )
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE )
@@ -212,7 +212,7 @@ function ConsiderAbilityByakuren03()
 	for _,npcFriend in pairs( tableNearbyFriendlyHeroes )
 	do
 		if ( npcFriend ~= nil and 
-			npcFriend:GetActiveMode() == BOT_MODE_RETREAT and
+			IsRetreating(npcFriend, 'ability_thdots_byakuren03') and
 			GetUnitToUnitDistanceSqr(npcBot, npcFriend) > 400*400 and
 			not npcFriend:WasRecentlyDamagedByAnyHero( 5.0 ) ) 
 		then
@@ -248,7 +248,7 @@ function ConsiderAbilityByakuren04()
 	local nCastRange = ability04:GetCastRange()
 
 	-- Fighting or Retreating 
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+	if ( IsRetreating(npcBot, 'ability_thdots_byakuren05') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		-- Use ability before being catched ( Near By has enemy heros )
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 100, true, BOT_MODE_NONE )

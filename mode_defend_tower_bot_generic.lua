@@ -10,6 +10,7 @@ if bot:IsInvulnerable() or not bot:IsHero() or not string.find(botName, "hero") 
 end
 
 function GetDesire()
+	if Defend.ShouldYieldToRetreat(bot) then return BOT_MODE_DESIRE_NONE end
 	return Utils.GetCachedModeDesire(bot, 'defend_bot', function()
 		return Defend.GetDefendDesire(bot, LANE_BOT)
 	end)

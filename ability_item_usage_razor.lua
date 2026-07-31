@@ -152,7 +152,7 @@ function ConsiderAbilityIku01()
 	end
 
 	-- on shit ruuuuuuuun
-	if npcBot:GetActiveMode() == BOT_MODE_RETREAT then
+	if IsRetreating(npcBot, 'ability_thdots_iku01') then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1000, true, BOT_MODE_NONE )
 		if #tableNearbyEnemyHeroes > 0 then
 			--open
@@ -245,7 +245,7 @@ function ConsiderAbilityIku02()
 			end
 		end
 	end
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT ) then
+	if IsRetreating(npcBot, 'ability_thdots_iku02') then
 		local cur_speed = npcBot:GetCurrentMovementSpeed()
 		if ( cur_speed >= 420 )
 		then
@@ -276,7 +276,7 @@ function ConsiderAbilityIkuEx()
 	if ( locationAoE.count >= 1 ) then
 		return BOT_ACTION_DESIRE_HIGH, locationAoE.targetloc
 	end
-	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT)
+	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or IsRetreating(npcBot, 'ability_thdots_ikuEx'))
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE )
 		local locationAoE = CachedFindAoELocation( npcBot, 2, true, true, npcBot:GetLocation(), 800, nRadius, 1.7, 0 )

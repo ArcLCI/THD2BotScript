@@ -158,9 +158,16 @@ function ConsiderAbilityCirno01()
 		return BOT_ACTION_DESIRE_NONE
 	end
 	
-	-- Fighting or Retreating with hero
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
-	then
+	-- 统一撤退评估已接管时，只为有效且尚未被充分控制的近身追兵施放范围减速。
+	if J.IsRetreating(npcBot, 'ability_thdots_cirno01', { legacyEvasiveManeuvers = true }) then
+		local retreatTarget = J.Retreat.GetControlTarget(npcBot, 400, { minimumControlTime = 0.5 })
+		if retreatTarget ~= nil then
+			return BOT_ACTION_DESIRE_MODERATE
+		end
+	end
+
+	-- Fighting with hero
+	if npcBot:GetActiveMode() == BOT_MODE_ATTACK then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 400, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
@@ -233,7 +240,7 @@ function ConsiderAbilityCirno04()
 	then 
 		return BOT_ACTION_DESIRE_NONE
 	end
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+	if ( J.IsRetreating(npcBot, 'ability_thdots_cirno04') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 	-- Get some of its values
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE )

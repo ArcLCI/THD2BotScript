@@ -147,7 +147,7 @@ function ConsiderAbilitySuwako01()
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
 	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or
-		npcBot:GetActiveMode() == BOT_MODE_RETREAT or
+		IsRetreating(npcBot, 'ability_thdots_suwako01') or
 		npcBot:GetActiveMode() == BOT_MODE_GANK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 450, true, BOT_MODE_NONE )
@@ -173,7 +173,7 @@ function ConsiderAbilitySuwako02()
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
 	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or
-		npcBot:GetActiveMode() == BOT_MODE_RETREAT or
+		IsRetreating(npcBot, 'ability_thdots_suwako02') or
 		npcBot:GetActiveMode() == BOT_MODE_GANK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE )
@@ -237,7 +237,7 @@ function ConsiderAbilitySuwako04()
 
 	-- Fighting with hero
 	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or
-		npcBot:GetActiveMode() == BOT_MODE_RETREAT or
+		IsRetreating(npcBot, 'ability_thdots_suwako04new') or
 		npcBot:GetActiveMode() == BOT_MODE_GANK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 800, true, BOT_MODE_NONE )

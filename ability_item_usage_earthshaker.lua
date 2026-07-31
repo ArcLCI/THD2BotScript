@@ -109,7 +109,7 @@ function ConsiderAbilityTenshi01()
 	end
 
 	-- If we're seriously retreating, see if we can land a stun on someone who's damaged us recently
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH )
+	if IsRetreating(npcBot, 'earthshaker_fissure', { legacyModeDesire = BOT_MODE_DESIRE_VERYHIGH })
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do

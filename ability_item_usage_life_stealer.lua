@@ -115,7 +115,7 @@ function ConsiderAbilityRumia01()
 	end
 
 	-- Fighting or Retreating 
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
+	if ( IsRetreating(npcBot, 'ability_thdots_rumia01') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		-- Use ability before being catched ( Near By has enemy heros )
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1500, true, BOT_MODE_NONE )

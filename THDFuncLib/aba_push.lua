@@ -58,6 +58,11 @@ function Push.GetStablePushLane(bot, lane)
 end
 
 function Push.GetPushDesire(bot, lane)
+	-- 撤退状态在推进缓存之前判断，避免高地塔锁定后继续沿用旧的推进欲望。
+	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+		return BOT_MODE_DESIRE_NONE
+	end
+
     local stablePushLane = Push.GetStablePushLane(bot, lane)
     if stablePushLane ~= lane then
         return BOT_MODE_DESIRE_NONE
@@ -78,6 +83,7 @@ end
 
 function Push.ComputePushDesire(bot, lane)
     if bot.laneToPush == nil then bot.laneToPush = lane end
+	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then return BOT_MODE_DESIRE_NONE end
 
     local nMaxDesire = 0.9
     local nSearchRange = 2000
@@ -326,6 +332,16 @@ function Push.PushThink(bot, lane)
     if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
     if J.CanNotUseAction(bot) then return end
 
+	local retreatState = J.Retreat.GetState(bot)
+	if retreatState.severity >= J.Retreat.HIGH then
+		-- 模式切换可能仍受缓存影响；塔风险期间先退出高地，禁止继续叠加伤害和攻速。
+		if retreatState.towerThreat ~= nil and retreatState.towerThreat.active then
+			local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
+			J.ActionMoveToLocation(bot, 'push_flee_tower_threat', vLocation, 0.35, 260)
+		end
+		return
+	end
+
     local botAttackRange = bot:GetAttackRange()
     local fDeltaFromFront = (Min(J.GetHP(bot), 0.7) * 1000 - 700) + RemapValClamped(botAttackRange, 300, 700, 0, -600)
     local nEnemyTowers = bot:GetNearbyTowers(1600, true)
@@ -366,16 +382,16 @@ function Push.PushThink(bot, lane)
         return
     end
 
-    if J.IsValidBuilding(nEnemyTowers[1]) and (nEnemyTowers[1]:GetAttackTarget() == bot or (nEnemyTowers[1]:GetAttackTarget() ~= bot and bot:WasRecentlyDamagedByTower(#nAllyCreeps <= 2 and 4.0 or 2.0))) then
-        local nDamage = nEnemyTowers[1]:GetAttackDamage() * nEnemyTowers[1]:GetAttackSpeed() * 5.0 - bot:GetHealthRegen() * 5.0
-        if (bot:GetActualIncomingDamage(nDamage, DAMAGE_TYPE_PHYSICAL) / bot:GetHealth() > 0.15)
-        or #nAllyCreeps > 2
-        then
-            local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
-            J.ActionMoveToLocation(bot, 'push_flee_tower', vLocation, 0.45)
-            return
-
-        end
+	local towerThreat = J.Retreat.GetTowerThreat(bot, 3.0)
+	if towerThreat.active
+	and not towerThreat.coveredHighGroundLock
+	and (towerThreat.highGroundLock
+		or towerThreat.unavoidableDamage >= bot:GetHealth()
+		or towerThreat.predictedDamage / math.max(1, bot:GetHealth()) >= 0.25)
+	then
+		local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
+		J.ActionMoveToLocation(bot, 'push_flee_tower', vLocation, 0.35, 260)
+		return
     end
 
     if GetUnitToUnitDistance(bot, hEnemyAncient) <= 3200

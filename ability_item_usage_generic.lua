@@ -759,8 +759,8 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	end
 
 	--撤退
-	if nMode == BOT_MODE_RETREAT
-		and nModeDesire >= BOT_MODE_DESIRE_MODERATE
+	if J.IsRetreating(bot)
+		and (nMode ~= BOT_MODE_RETREAT or nModeDesire >= BOT_MODE_DESIRE_MODERATE or J.IsSeriouslyRetreating(bot))
 		and bot:GetLevel() >= 3
 	then
 

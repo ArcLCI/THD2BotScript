@@ -160,7 +160,7 @@ function ConsiderAbilityDaiyousei01()
 			end
 		end
 	end
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT) then
+	if J.IsRetreating(npcBot, 'ability_thdots_daiyousei01') then
 		local dismin = npcBot:DistanceFromFountain()
 		local opfriendhero = 0
 		local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, false, BOT_MODE_NONE )

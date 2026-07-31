@@ -217,9 +217,29 @@ function Defend.GetStableDefendLane(bot, requestedLane)
 	return selectedLane
 end
 
+function Defend.ShouldYieldToRetreat(bot)
+	local retreatState = J.Retreat.GetState(bot)
+	if retreatState.severity >= J.Retreat.CRITICAL then
+		return true
+	end
+	if retreatState.severity >= J.Retreat.HIGH then
+		local isBaseDefenseEmergency = IsBaseDefenseEmergency()
+		local baseDefenseLoc = GetBaseDefenseLocation(bot:GetTeam())
+		-- 返回基地途中保留紧急防守；抵达四塔中点后让撤退模式接管。
+		if not isBaseDefenseEmergency
+		or GetUnitToLocationDistance(bot, baseDefenseLoc) <= BASE_DEFENSE_SETTLED_RADIUS
+		then
+			return true
+		end
+	end
+	return false
+end
+
 function Defend.GetDefendDesire(bot, lane)
 	Defend.TryUseGlyph(bot)
 	GetBaseDefenseLocation(bot:GetTeam())
+	if Defend.ShouldYieldToRetreat(bot) then return BOT_MODE_DESIRE_NONE end
+
 	local stableLane = Defend.GetStableDefendLane(bot, lane)
 	if stableLane ~= lane then
 		return BOT_MODE_DESIRE_NONE
@@ -426,6 +446,23 @@ end
 function Defend.DefendThink(bot, lane)
     if not Timer.ShouldRunBotTask(bot, 'defend_think_'..tostring(lane), 0.25, 0.03) then return end
     if J.CanNotUseAction(bot) then return end
+
+	local retreatState = J.Retreat.GetState(bot)
+	if retreatState.severity >= J.Retreat.HIGH then
+		local isBaseDefenseEmergency = IsBaseDefenseEmergency()
+		local baseDefenseLoc = GetBaseDefenseLocation(bot:GetTeam())
+		if retreatState.severity >= J.Retreat.CRITICAL
+		or not isBaseDefenseEmergency
+		or GetUnitToLocationDistance(bot, baseDefenseLoc) <= BASE_DEFENSE_SETTLED_RADIUS
+		then
+			return
+		end
+
+		local moveLoc = J.GetStableFormationLocation(bot, 'defend_retreat_to_base_'..tostring(lane), baseDefenseLoc, 300, 10.0)
+		J.ActionMoveToLocation(bot, 'defend_retreat_to_base', moveLoc, 0.4, 260)
+		return
+	end
+
 	local state = GetLaneState(bot, lane)
 	local nSearchRange = 1800
 

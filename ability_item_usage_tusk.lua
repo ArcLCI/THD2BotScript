@@ -133,7 +133,7 @@ function ConsiderAbilityJyoon02()
 	
 	if ((npcBot:GetActiveMode() == BOT_MODE_ATTACK 
 		or npcBot:GetActiveMode() == BOT_MODE_GANK
-		or npcBot:GetActiveMode() == BOT_MODE_RETREAT )
+		or IsRetreating(npcBot, 'ability_thdots_Jyoon_2') )
 		and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH ) then
 		local locationAoE = CachedFindAoELocation( npcBot, 60001, true, true, npcBot:GetLocation(), nCastRange, nRadius, 0, 0 )
 		if locationAoE.count > 1 then
@@ -194,7 +194,7 @@ function ConsiderAbilityJyoon03()
 	local nRadius = 750
 
 	-- Fighting or Retreating with hero
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+	if ( IsRetreating(npcBot, 'ability_thdots_Jyoon_3') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = npcBot:GetNearbyHeroes(nRadius, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )

@@ -479,7 +479,7 @@ Item['item_autumn_leaves'] = {
     "item_throwing_knive",
     "item_huanyingzhifeng",
 	"item_scissors",
-    "item_autumn_recipe_leaves"
+    "item_recipe_autumn_leaves"
 }
 --光龙雷云钻
 Item['item_mr_yang'] = {

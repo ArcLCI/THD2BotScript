@@ -153,7 +153,7 @@ function ConsiderAbilityMiko01()
 			end
 		end
 	end
-	if IsSeriouslyRetreating(npcBot) then
+	if IsSeriouslyRetreating(npcBot, 'ability_thdots_miko01') then
 		local tableNearbyFriendlyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 50, false, BOT_MODE_NONE )
 		if not (#tableNearbyFriendlyHeroes > 0) and npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3 then
 			local v_shop = GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
@@ -222,7 +222,7 @@ function ConsiderAbilityMiko02()
 		end
 	end
 	
-	if npcBot:GetActiveMode() == BOT_MODE_RETREAT then
+	if IsRetreating(npcBot, 'ability_thdots_miko02') then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1000, true, BOT_MODE_NONE )
 		if #tableNearbyEnemyHeroes > 0 then --周围有人追杀
 			if not IsToggleOn then --on 没开就开

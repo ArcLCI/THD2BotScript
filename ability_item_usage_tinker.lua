@@ -195,7 +195,7 @@ function ConsiderAbilityYumemi02()
 		end
 	end
 	--end
-	if IsSeriouslyRetreating(npcBot) then
+	if IsSeriouslyRetreating(npcBot, 'ability_thdots_yumemi02') then
 		return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 	end
 	return BOT_ACTION_DESIRE_NONE, 0
@@ -220,7 +220,7 @@ function ConsiderAbilityYumemi03()
 	end
 
 	-- Fighting or Retreating with hero
-	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or npcBot:GetActiveMode() == BOT_MODE_RETREAT)
+	if (npcBot:GetActiveMode() == BOT_MODE_ATTACK or IsRetreating(npcBot, 'ability_thdots_yumemi03'))
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 300, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )

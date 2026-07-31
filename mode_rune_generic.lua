@@ -401,6 +401,11 @@ function ConsiderWisdomRune()
 end
 
 function GetDesire()
+	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+		ClearActiveRuneTarget()
+		ClearWisdomRuneMode()
+		return BOT_MODE_DESIRE_NONE
+	end
 	return Utils.GetCachedModeDesire(bot, 'rune', ComputeDesire)
 end
 
@@ -428,6 +433,12 @@ function Think()
 	then
         return
     end
+
+	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+		ClearActiveRuneTarget()
+		ClearWisdomRuneMode()
+		return
+	end
 
 	if wisdomRuneInfo[3] then
 		return PickWisdomRune()

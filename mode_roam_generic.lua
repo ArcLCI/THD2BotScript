@@ -3,6 +3,9 @@ require(GetScriptDirectory() ..  "/thd2_item_function")
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
+local FlandreUltimate = require(GetScriptDirectory()..'/THDFuncLib/flandre_ultimate')
+local SunnyUltimate = require(GetScriptDirectory()..'/THDFuncLib/sunny_ultimate')
+local YuukaCombo = require(GetScriptDirectory()..'/THDFuncLib/yuuka_combo')
 
 local ROAM_DESIRE_INTERVAL = 1.0
 local ROAM_DESIRE_LATE_INTERVAL = 5.0
@@ -131,6 +134,10 @@ function GetDesire()
 			return desire
 		end
 	end
+	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+		pickedItem = nil
+		return BOT_MODE_DESIRE_NONE
+	end
 
 	return Utils.GetCachedModeDesire(bot, 'roam', ComputeDesire)
 end
@@ -144,9 +151,16 @@ end
 function OnStart() Utils.NoteModeStart(bot, 'roam') end
 
 function Think()
+	if YuukaCombo.Think(bot) then return end
+	if FlandreUltimate.Think(bot) then return end
+	if SunnyUltimate.Think(bot) then return end
 	if CheckHighPriorityChannelAbility("ability_thdots_reisenOld03") > 0 then return end
 	if not Timer.ShouldRunBotTask(bot, 'roam_think', 0.25, 0.04) then return end
 	if J.CanNotUseAction(bot) then return end
+	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+		pickedItem = nil
+		return
+	end
 	if edibleItem ~= nil then
 		local lessValItem = GetMainInvLessValItemSlot(bot)
 		if lessValItem ~= -1 and edibleItemSlot ~= -1 and bot:HasModifier("modifier_fountain_aura_buff") then
@@ -190,6 +204,18 @@ end
 
 ConsiderHeroSpecificRoaming['npc_dota_hero_mirana'] = function ()
 	return CheckHighPriorityChannelAbility("ability_thdots_reisenOld03")
+end
+
+ConsiderHeroSpecificRoaming['npc_dota_hero_naga_siren'] = function ()
+	return FlandreUltimate.GetModeDesire(bot)
+end
+
+ConsiderHeroSpecificRoaming['npc_dota_hero_rattletrap'] = function ()
+	return SunnyUltimate.GetModeDesire(bot)
+end
+
+ConsiderHeroSpecificRoaming['npc_dota_hero_venomancer'] = function ()
+	return YuukaCombo.GetModeDesire(bot)
 end
 
 function IsItemAvailable(item_name)

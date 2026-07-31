@@ -174,7 +174,7 @@ function ConsiderAbilityYugi02()
 		return BOT_ACTION_DESIRE_NONE
 	end
 	-- Fighting or Retreating with hero
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
+	if ( J.IsRetreating(npcBot, 'centaur_hoof_stomp') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 300, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -198,7 +198,7 @@ function ConsiderAbilityYugi02WithJump(item_jump)
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
 	
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
+	if ( J.IsRetreating(npcBot, 'centaur_hoof_stomp') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -224,7 +224,7 @@ function ConsiderAbilityYugi04()
 	end
 
 	-- Fighting or Retreating with hero
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
+	if ( J.IsRetreating(npcBot, 'ability_thdots_yugi04') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 285, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
@@ -251,7 +251,7 @@ function ConsiderAbilityYugi04WithJump(item_jump)
 	end
 
 	-- Fighting or Retreating with hero
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
+	if ( J.IsRetreating(npcBot, 'ability_thdots_yugi04') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 500, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )

@@ -151,7 +151,7 @@ function ConsiderAbilityYoumu201()
 			end
 		end
 	end
-	if (npcBot:GetActiveMode() == BOT_MODE_RETREAT and 
+	if (IsRetreating(npcBot, 'ability_thdots_youmu2_01') and
 	npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
 		return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 	end

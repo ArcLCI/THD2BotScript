@@ -170,7 +170,7 @@ function ConsiderAbilityMeirin01()
 			end
 		end
 	end
-	if (IsSeriouslyRetreating(npcBot) and 
+	if (IsSeriouslyRetreating(npcBot, 'ability_thdots_meirin01') and
 	npcBot:GetHealth() < npcBot:GetMaxHealth()*0.3) then
 		return BOT_ACTION_DESIRE_HIGH, GetShopLocation(npcBot:GetTeam(),SHOP_HOME)
 	end
@@ -190,7 +190,7 @@ function ConsiderAbilityMeirin02()
 	end
 	
 	-- Fighting or Retreating with hero
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT or npcBot:GetActiveMode() == BOT_MODE_ATTACK ) 
+	if ( IsRetreating(npcBot, 'ability_thdots_meirin02') or npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1500, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )

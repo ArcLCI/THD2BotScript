@@ -104,7 +104,7 @@ local function ConsiderAbilityShizuha01(bot, ability)
 		return BOT_ACTION_DESIRE_VERYHIGH, heroAoE.targetloc
 	end
 
-	if bot:GetActiveMode() == BOT_MODE_RETREAT then
+	if J.IsRetreating(bot, 'ability_thdots_shizuha01') then
 		for _, enemy in pairs(enemies) do
 			if IsValidEnemyHero(enemy) and bot:WasRecentlyDamagedByHero(enemy, 2.0) then
 				local location = enemy:GetExtrapolatedLocation(castPoint)
@@ -176,7 +176,7 @@ local function ConsiderAbilityShizuhaEx(bot, abilityEx, ability05)
 		end
 	end
 
-	if J.IsSeriouslyRetreating(bot) then
+	if J.IsSeriouslyRetreating(bot, 'ability_thdots_shizuhaEXNew') then
 		local nearbyEnemies = CachedGetNearbyHeroes(bot, 900, true, BOT_MODE_NONE)
 		for _, enemy in pairs(nearbyEnemies) do
 			if IsValidEnemyHero(enemy) and bot:WasRecentlyDamagedByHero(enemy, 2.0) then
@@ -377,6 +377,7 @@ local function ConsiderAbilityShizuha02(bot, ability)
 	if mode == BOT_MODE_ATTACK
 		or mode == BOT_MODE_GANK
 		or (mode == BOT_MODE_RETREAT and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH)
+		or J.Retreat.ShouldYield(bot, J.Retreat.HIGH)
 	then
 		return BOT_ACTION_DESIRE_NONE
 	end

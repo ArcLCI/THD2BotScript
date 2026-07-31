@@ -1,4 +1,5 @@
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 
 ModifierNamesTeleporting = {
 	"modifier_teleporting",
@@ -694,11 +695,27 @@ function IsUnderAttack( Target , HeroOnly )
 
 end
 
-function IsSeriouslyRetreating( npcBot )
-	return (npcBot:GetActiveMode() == BOT_MODE_RETREAT
-	and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH
-	and not npcBot:HasModifier("modifier_fountain_aura_buff"))
-	or npcBot:GetHealth()/npcBot:GetMaxHealth() < 0.1
+function IsRetreating( npcBot, abilityName, options )
+	return J.IsRetreating(npcBot, abilityName, options)
+end
+
+function IsSeriouslyRetreating( npcBot, abilityName )
+	return J.IsSeriouslyRetreating(npcBot, abilityName)
+end
+
+local function GetRetreatControlTarget(npcBot, enemies, minimumControlTime, castRange)
+	if not J.IsSeriouslyRetreating(npcBot) then return nil end
+	minimumControlTime = minimumControlTime or 0.2
+	castRange = castRange or 1600
+	local target = J.Retreat.GetControlTarget(npcBot, castRange, {
+		minimumControlTime = minimumControlTime,
+		blockedModifiers = { 'modifier_item_morenjingjuan_antiblink' },
+	})
+	if target == nil or not CanCastStunOnTarget(target) then return nil end
+	for _, enemy in pairs(enemies or {}) do
+		if enemy == target then return target end
+	end
+	return nil
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -734,6 +751,8 @@ function ConsiderItemStun( item_stun )
 	--print(nCastRange)
 
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange , true, BOT_MODE_NONE )
+	local retreatTarget = GetRetreatControlTarget(npcBot, tableNearbyEnemyHeroes, 0.2, nCastRange)
+	if retreatTarget ~= nil then return BOT_ACTION_DESIRE_HIGH, retreatTarget end
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		local j_time=0.2
@@ -776,6 +795,8 @@ function ConsiderItemRoot( item_root )
 	--print(nCastRange)
 
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200 , true, BOT_MODE_NONE )
+	local retreatTarget = GetRetreatControlTarget(npcBot, tableNearbyEnemyHeroes, 0.2, nCastRange + 200)
+	if retreatTarget ~= nil then return BOT_ACTION_DESIRE_HIGH, retreatTarget end
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if ( npcBot:GetTarget() == npcEnemy
@@ -1076,13 +1097,11 @@ function ConsiderItemShield( item_shield )
 	if ( not item_shield:IsFullyCastable() ) then
 		return BOT_ACTION_DESIRE_NONE
 	end
+	if IsSeriouslyRetreating(npcBot) then
+		return BOT_ACTION_DESIRE_HIGH
+	end
 
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 1200 , true, BOT_MODE_NONE )
-	for _,npcEnemy in pairs( tableNearbyEnemyHeroes ) do
-		if IsSeriouslyRetreating(npcBot) and npcBot:WasRecentlyDamagedByHero( npcEnemy, 1.5 ) then
-			return BOT_ACTION_DESIRE_HIGH
-		end
-	end
 
 	if npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
 	and (#tableNearbyEnemyHeroes > 1 or npcBot:GetHealth() < npcBot:GetMaxHealth() * 0.5) then
@@ -1439,15 +1458,22 @@ function ConsiderItemHorseRed( item_horse_red )
 		return BOT_ACTION_DESIRE_NONE
 	end
 
-	if ( npcBot:GetActiveMode() == BOT_MODE_RETREAT )
-	then
-		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 600, true, BOT_MODE_NONE )
-		if not ( #tableNearbyEnemyHeroes >= 1 ) then
-			return BOT_ACTION_DESIRE_MODERATE
-		end
+	-- 框架开启时保留 CRITICAL 门槛；关闭时退回 Valve 的高欲望撤退判断。
+	local shouldUseForRetreat = nil
+	if J.Retreat.IsEnabled() then
+		shouldUseForRetreat = J.Retreat.ShouldYield(npcBot, J.Retreat.CRITICAL)
+	else
+		shouldUseForRetreat = J.IsSeriouslyRetreating(npcBot)
+	end
+	if not shouldUseForRetreat then
+		return BOT_ACTION_DESIRE_NONE
 	end
 
-	if ( npcBot:GetHealth()/npcBot:GetMaxHealth() <= 0.8 and (npcBot:TimeSinceDamagedByAnyHero() >= 2.5 )) then
+	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 600, true, BOT_MODE_NONE )
+	if #tableNearbyEnemyHeroes == 0
+	and npcBot:TimeSinceDamagedByAnyHero() >= 2.5
+	and npcBot:GetHealth()/npcBot:GetMaxHealth() <= 0.8
+	then
 		return BOT_ACTION_DESIRE_MODERATE
 	end
 
@@ -1541,6 +1567,8 @@ function ConsiderItemYukkuriStick( item_yukkuri_stick )
 
 	local j_time=0.2
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + 200 , true, BOT_MODE_NONE )
+	local retreatTarget = GetRetreatControlTarget(npcBot, tableNearbyEnemyHeroes, j_time, nCastRange + 200)
+	if retreatTarget ~= nil then return BOT_ACTION_DESIRE_HIGH, retreatTarget end
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if npcEnemy:HasModifier("modifier_thdots_shikieiki04_debuff") or npcEnemy:IsHexed()
@@ -1601,6 +1629,8 @@ function ConsiderItemBook( item_three_dimension )
 	--print(nCastRange)
 
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange+200 , true, BOT_MODE_NONE )
+	local retreatTarget = GetRetreatControlTarget(npcBot, tableNearbyEnemyHeroes, 0.2, nCastRange + 200)
+	if retreatTarget ~= nil then return BOT_ACTION_DESIRE_HIGH, retreatTarget end
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
 		if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ))
