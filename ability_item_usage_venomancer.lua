@@ -186,6 +186,11 @@ local function HasRetreatFollowup(bot)
 	return bot.yuukaRetreatFollowup ~= nil
 end
 
+local function GetDirectedJumpItem()
+	-- 牛逼跳跃会消耗完美跳跃，过渡期间仍保留旧装备作为回退。
+	return IsItemAvailable("item_nb9ball") or IsItemAvailable("item_wanmeitiaoyuezhuangzhi")
+end
+
 local function TryStartRetreatRing(bot, ability01)
 	if HasRetreatFollowup(bot) or FindCloseMeleePursuer(bot, ability01) == nil then return false end
 	-- 贴身近战追击者先用花环阻断，下一步再选择可靠的位移手段脱离花圈。
@@ -213,9 +218,9 @@ local function TryContinueRetreatFollowup(bot, abilityEx2)
 		return true
 	end
 
-	local perfectJump = IsItemAvailable("item_wanmeitiaoyuezhuangzhi")
-	if perfectJump ~= nil and perfectJump:IsFullyCastable() then
-		bot:Action_UseAbilityOnLocation(perfectJump, GetShopLocation(bot:GetTeam(), SHOP_HOME))
+	local directedJump = GetDirectedJumpItem()
+	if directedJump ~= nil and directedJump:IsFullyCastable() then
+		bot:Action_UseAbilityOnLocation(directedJump, GetShopLocation(bot:GetTeam(), SHOP_HOME))
 		MarkItemAction(bot)
 		bot.yuukaRetreatFollowup = nil
 		return true
@@ -245,9 +250,15 @@ local function UseNoTargetItem(bot, itemName, desire)
 	return true
 end
 
-local function ConsiderFlowerUmbrella(bot)
+local function ConsiderFlowerUmbrella(bot, profile)
 	local enemyCount = CountNearbyEnemies(bot, 1000)
 	if enemyCount >= 2 and (J.IsInTeamFight(bot, 1200) or J.IsGoingOnSomeone(bot)) then
+		return BOT_ACTION_DESIRE_HIGH
+	end
+	if profile == BotProfile.DAMAGE and enemyCount >= 1 and J.IsGoingOnSomeone(bot)
+	and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
+	then
+		-- 输出定位主动开伞强化攻速和减甲，不必等到自身血量下降。
 		return BOT_ACTION_DESIRE_HIGH
 	end
 	if enemyCount >= 1 and bot:WasRecentlyDamagedByAnyHero(2.5) and J.GetHP(bot) < 0.72 then
@@ -256,11 +267,17 @@ local function ConsiderFlowerUmbrella(bot)
 	return BOT_ACTION_DESIRE_NONE
 end
 
-local function ConsiderTrinity(bot, item)
+local function ConsiderTrinity(bot, item, profile)
 	local sharedDesire = ConsiderItemShield(item)
 	if sharedDesire ~= nil and sharedDesire > BOT_ACTION_DESIRE_NONE then return sharedDesire end
 	local enemyCount = CountNearbyEnemies(bot, 1200)
 	if enemyCount >= 2 and J.IsInTeamFight(bot, 1200) then return BOT_ACTION_DESIRE_HIGH end
+	if profile == BotProfile.DAMAGE and enemyCount >= 1 and J.IsGoingOnSomeone(bot)
+	and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
+	then
+		-- 输出定位接战前开启护盾与状态抗性，避免连段被控制打断。
+		return BOT_ACTION_DESIRE_HIGH
+	end
 	if enemyCount >= 1 and bot:WasRecentlyDamagedByAnyHero(2.0) and J.GetHP(bot) < 0.75 then
 		return BOT_ACTION_DESIRE_HIGH
 	end
@@ -285,21 +302,28 @@ local function TryUseActiveItems(bot, profile, abilityEx2)
 		end
 	end
 
+	local trinity = IsItemAvailable("item_trinity")
+	if trinity ~= nil and trinity:IsFullyCastable()
+	and UseNoTargetItem(bot, "item_trinity", ConsiderTrinity(bot, trinity, profile))
+	then return true end
+
 	if profile == BotProfile.FRONTLINE then
-		local trinity = IsItemAvailable("item_trinity")
-		if trinity ~= nil and trinity:IsFullyCastable()
-		and UseNoTargetItem(bot, "item_trinity", ConsiderTrinity(bot, trinity))
-		then return true end
 		local esdw = IsItemAvailable("item_esdw")
 		if esdw ~= nil and esdw:IsFullyCastable()
 		and UseNoTargetItem(bot, "item_esdw", ConsiderItemShield(esdw))
 		then return true end
-		if UseNoTargetItem(bot, "item_flower_umbrella", ConsiderFlowerUmbrella(bot)) then return true end
 	end
+	if UseNoTargetItem(bot, "item_flower_umbrella", ConsiderFlowerUmbrella(bot, profile)) then return true end
 
-	local jump = IsItemAvailable("item_wanmeitiaoyuezhuangzhi")
+	local jump = GetDirectedJumpItem()
 	if jump ~= nil and jump:IsFullyCastable() then
-		local desire, location = ConsiderItemJump(jump)
+		local desire, location
+		if jump:GetName() == "item_nb9ball" then
+			-- 升级版按真实的999距离决策，避免仍按完美跳跃的500距离使用。
+			desire, location = ConsiderItemJump(jump, 100, 600, 999)
+		else
+			desire, location = ConsiderItemJump(jump)
+		end
 		if desire ~= nil and desire > BOT_ACTION_DESIRE_NONE and location ~= nil then
 			bot:Action_UseAbilityOnLocation(jump, location)
 			MarkItemAction(bot)

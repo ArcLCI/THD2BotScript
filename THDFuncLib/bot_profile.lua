@@ -1,6 +1,7 @@
 local BotProfile = {}
 
 BotProfile.DAMAGE = "damage"
+BotProfile.DAMAGE_SPELL = "damage_spell"
 BotProfile.FRONTLINE = "frontline"
 BotProfile.SUPPORT = "support"
 
@@ -16,6 +17,10 @@ function BotProfile.GetProfile(bot)
 	if bot == nil then return nil end
 	local marker = bot:GetAbilityByName(PROFILE_MARKER_ABILITY)
 	if marker == nil then return nil end
+	if marker:GetLevel() == 2 then
+		local unitName = bot.GetUnitName ~= nil and bot:GetUnitName() or nil
+		if unitName == "npc_dota_hero_spectre" then return BotProfile.DAMAGE_SPELL end
+	end
 	return profilesByLevel[marker:GetLevel()]
 end
 

@@ -23,27 +23,22 @@ local PUSH_LOCAL_ENEMY_ADVANTAGE_TOLERANCE = 1
 local PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE = 1
 local PUSH_MIN_LOCAL_ALLIES_WHEN_OUTNUMBERED = 2
 local PUSH_OUTNUMBERED_MAX_DESIRE = 0.72
+local PUSH_ENEMY_PRESSURE_SCORE_PER_HERO = 0.18
+local PUSH_LANE_SWITCH_IMPROVEMENT_RATIO = 0.88
+local LANE_MODE_DEBUG = false -- 验证期间输出三路推塔评分，确认后可关闭。
 
 
-local function GetActivePushLane(bot)
-    local activeMode = bot:GetActiveMode()
-    if activeMode == BOT_MODE_PUSH_TOWER_TOP then return LANE_TOP end
-    if activeMode == BOT_MODE_PUSH_TOWER_MID then return LANE_MID end
-    if activeMode == BOT_MODE_PUSH_TOWER_BOT then return LANE_BOT end
-    return nil
+local function GetLaneName(lane)
+    if lane == LANE_TOP then return 'TOP' end
+    if lane == LANE_MID then return 'MID' end
+    if lane == LANE_BOT then return 'BOT' end
+    return tostring(lane)
 end
 
 function Push.GetStablePushLane(bot, lane)
     if bot == nil then return lane end
 
     local now = GameTime()
-    local activePushLane = GetActivePushLane(bot)
-    if activePushLane ~= nil then
-        bot.StablePushLane = activePushLane
-        bot.StablePushLaneUntil = now + PUSH_LANE_STICKY_SECONDS
-        return activePushLane
-    end
-
     if bot.StablePushLane ~= nil
     and bot.StablePushLaneUntil ~= nil
     and now < bot.StablePushLaneUntil
@@ -52,9 +47,41 @@ function Push.GetStablePushLane(bot, lane)
     end
 
     local selectedLane = Push.WhichLaneToPush(bot, lane)
+    -- 活动模式不再无限续锁；固定窗口到期后重新比较三路，再决定是否继续原路线。
     bot.StablePushLane = selectedLane
     bot.StablePushLaneUntil = now + PUSH_LANE_STICKY_SECONDS
     return selectedLane
+end
+
+function Push.SelectLaneByScores(bot, topLaneScore, midLaneScore, botLaneScore)
+    local selectedLane = LANE_MID
+    local selectionReason = 'tie_mid'
+    if topLaneScore < midLaneScore and topLaneScore < botLaneScore then
+        selectedLane = LANE_TOP
+        selectionReason = 'lowest_score'
+    elseif midLaneScore < topLaneScore and midLaneScore < botLaneScore then
+        selectedLane = LANE_MID
+        selectionReason = 'lowest_score'
+    elseif botLaneScore < topLaneScore and botLaneScore < midLaneScore then
+        selectedLane = LANE_BOT
+        selectionReason = 'lowest_score'
+    end
+
+    local laneScores = {
+        [LANE_TOP] = topLaneScore,
+        [LANE_MID] = midLaneScore,
+        [LANE_BOT] = botLaneScore,
+    }
+    local previousLane = bot ~= nil and bot.StablePushLane or nil
+    if previousLane ~= nil
+    and selectedLane ~= previousLane
+    and laneScores[selectedLane] > laneScores[previousLane] * PUSH_LANE_SWITCH_IMPROVEMENT_RATIO
+    then
+        selectedLane = previousLane
+        selectionReason = 'hysteresis'
+    end
+
+    return selectedLane, selectionReason
 end
 
 function Push.GetPushDesire(bot, lane)
@@ -281,9 +308,9 @@ function Push.WhichLaneToPush(bot, lane)
         end
     end
 
-    topLaneScore = topLaneScore * (0.05 * count1 + 1)
-    midLaneScore = midLaneScore * (0.05 * count2 + 1)
-    botLaneScore = botLaneScore * (0.05 * count3 + 1)
+    topLaneScore = topLaneScore * (PUSH_ENEMY_PRESSURE_SCORE_PER_HERO * count1 + 1)
+    midLaneScore = midLaneScore * (PUSH_ENEMY_PRESSURE_SCORE_PER_HERO * count2 + 1)
+    botLaneScore = botLaneScore * (PUSH_ENEMY_PRESSURE_SCORE_PER_HERO * count3 + 1)
 
     -- tower scores; should more likely consider taking out outer tower first, ^ unless overwhelmingly closer (case above)
     local topLaneTier = Push.GetLaneBuildingTier(LANE_TOP)
@@ -302,29 +329,29 @@ function Push.WhichLaneToPush(bot, lane)
         if not J.Utils.IsAnyBarracksOnLaneAlive(false, LANE_BOT) then botLaneScore = botLaneScore * 0.5 end
     end
 
-    if  topLaneScore < midLaneScore
-    and topLaneScore < botLaneScore
-    then
-        J.Utils.SetCachedVars(cacheKey, LANE_TOP)
-        return LANE_TOP
+    local selectedLane, selectionReason = Push.SelectLaneByScores(bot, topLaneScore, midLaneScore, botLaneScore)
+    J.Utils.SetCachedVars(cacheKey, selectedLane)
+    if LANE_MODE_DEBUG or J.Utils.DebugMode then
+        print(string.format(
+            '[BOT][LaneMode][Push] time=%.1f team=%s pid=%s previous=%s selected=%s reason=%s score=%.0f/%.0f/%.0f pressure=%d/%d/%d tier=%d/%d/%d',
+            GameTime(),
+            tostring(GetTeam()),
+            tostring(bot:GetPlayerID()),
+            bot.StablePushLane ~= nil and GetLaneName(bot.StablePushLane) or 'NONE',
+            GetLaneName(selectedLane),
+            selectionReason,
+            topLaneScore,
+            midLaneScore,
+            botLaneScore,
+            count1,
+            count2,
+            count3,
+            topLaneTier,
+            midLaneTier,
+            botLaneTier
+        ))
     end
-
-    if  midLaneScore < topLaneScore
-    and midLaneScore < botLaneScore
-    then
-        J.Utils.SetCachedVars(cacheKey, LANE_MID)
-        return LANE_MID
-    end
-
-    if  botLaneScore < topLaneScore
-    and botLaneScore < midLaneScore
-    then
-        J.Utils.SetCachedVars(cacheKey, LANE_BOT)
-        return LANE_BOT
-    end
-
-    J.Utils.SetCachedVars(cacheKey, LANE_MID)
-    return LANE_MID
+    return selectedLane
 end
 
 local fNextMovementTime = 0

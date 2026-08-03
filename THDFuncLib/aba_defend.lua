@@ -8,8 +8,8 @@ local currentTime = DotaTime()
 local maxDesire = 0.98
 local DEFEND_DESIRE_CACHE_INTERVAL = 1.5
 local DEFEND_DESIRE_STAGGER_INTERVAL = 0.14
-local DEFEND_LANE_STICKY_SECONDS = 3.0
-local DEFEND_LANES = {LANE_TOP, LANE_MID, LANE_BOT}
+local DEFEND_DEBUG_INTERVAL = 3.0
+local LANE_MODE_DEBUG = false -- 验证期间输出三路守塔欲望，确认后可关闭。
 local BASE_TOWER_DEFENSE_RADIUS = 700
 local ANCIENT_DEFENSE_RADIUS = 1200
 local BASE_DEFENSE_SETTLED_RADIUS = 1000
@@ -164,57 +164,39 @@ local function GetLaneState(bot, lane)
 	return bot.DefendLaneState[lane]
 end
 
-local function GetDefendActiveModeForLane(lane)
-	if lane == LANE_TOP then return BOT_MODE_DEFEND_TOWER_TOP end
-	if lane == LANE_MID then return BOT_MODE_DEFEND_TOWER_MID end
-	if lane == LANE_BOT then return BOT_MODE_DEFEND_TOWER_BOT end
-	return BOT_MODE_NONE
+local function GetLaneName(lane)
+	if lane == LANE_TOP then return 'TOP' end
+	if lane == LANE_MID then return 'MID' end
+	if lane == LANE_BOT then return 'BOT' end
+	return tostring(lane)
 end
 
-function Defend.GetStableDefendLane(bot, requestedLane)
-	if bot == nil then return requestedLane end
+local function DebugDefendDesire(bot, lane, desire, state)
+	if not (LANE_MODE_DEBUG or J.Utils.DebugMode) then return end
 
+	bot.THDDefendLaneDebug = bot.THDDefendLaneDebug or {}
 	local now = GameTime()
-	local activeMode = bot:GetActiveMode()
-	for _, lane in pairs(DEFEND_LANES) do
-		if activeMode == GetDefendActiveModeForLane(lane) then
-			bot.StableDefendLane = lane
-			bot.StableDefendLaneUntil = now + DEFEND_LANE_STICKY_SECONDS
-			return lane
-		end
-	end
-
-	local ancientDefenseState = J.GetAncientDefenseState(1500)
-	if ancientDefenseState ~= nil and ancientDefenseState.enemyPressure > 0 then
-		if bot.StableDefendLane == nil or bot.StableDefendLaneUntil == nil or now >= bot.StableDefendLaneUntil then
-			bot.StableDefendLane = requestedLane
-			bot.StableDefendLaneUntil = now + DEFEND_LANE_STICKY_SECONDS
-		end
-		return bot.StableDefendLane
-	end
-
-	if bot.StableDefendLane ~= nil
-	and bot.StableDefendLaneUntil ~= nil
-	and now < bot.StableDefendLaneUntil
+	local previous = bot.THDDefendLaneDebug[lane]
+	if previous ~= nil
+	and now - previous.time < DEFEND_DEBUG_INTERVAL
+	and math.abs(desire - previous.desire) < 0.05
 	then
-		return bot.StableDefendLane
+		return
 	end
 
-	local selectedLane = requestedLane
-	local bestDesire = -1
-	if bot.DefendLaneDesire ~= nil then
-		for _, lane in pairs(DEFEND_LANES) do
-			local desire = bot.DefendLaneDesire[lane] or 0
-			if desire > bestDesire then
-				bestDesire = desire
-				selectedLane = lane
-			end
-		end
-	end
-
-	bot.StableDefendLane = selectedLane
-	bot.StableDefendLaneUntil = now + DEFEND_LANE_STICKY_SECONDS
-	return selectedLane
+	bot.THDDefendLaneDebug[lane] = {time = now, desire = desire}
+	local enemyCount = state.lEnemyHeroesAroundLoc ~= nil and #state.lEnemyHeroesAroundLoc or 0
+	local allyCount = state.nEffctiveAllyHeroesNearPingedDefendLoc or 0
+	print(string.format(
+		'[BOT][LaneMode][Defend] time=%.1f pid=%s lane=%s desire=%.3f distance=%.0f allies=%d enemies=%d',
+		now,
+		tostring(bot:GetPlayerID()),
+		GetLaneName(lane),
+		desire,
+		state.distanceToLane or -1,
+		allyCount,
+		enemyCount
+	))
 end
 
 function Defend.ShouldYieldToRetreat(bot)
@@ -240,11 +222,7 @@ function Defend.GetDefendDesire(bot, lane)
 	GetBaseDefenseLocation(bot:GetTeam())
 	if Defend.ShouldYieldToRetreat(bot) then return BOT_MODE_DESIRE_NONE end
 
-	local stableLane = Defend.GetStableDefendLane(bot, lane)
-	if stableLane ~= lane then
-		return BOT_MODE_DESIRE_NONE
-	end
-
+	-- 三路必须各自先完成原始欲望计算，避免首个被查询的模式阻断另外两路。
 	return Timer.GetOrComputeBotLane('DefendDesire', bot, lane, DEFEND_DESIRE_CACHE_INTERVAL, function()
 		return Defend.ComputeDefendDesire(bot, lane)
 	end, DEFEND_DESIRE_STAGGER_INTERVAL)
@@ -280,6 +258,7 @@ function Defend.ComputeDefendDesire(bot, lane)
 
 	bot.DefendLaneDesire[lane] = Defend.GetDefendDesireHelper(bot, lane, state)
 	local defendDesire = bot.DefendLaneDesire[lane]
+	DebugDefendDesire(bot, lane, defendDesire, state)
 	if defendDesire > 0.9 then
 		J.Utils.GameStates['recentDefendTime'] = DotaTime()
 	end

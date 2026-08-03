@@ -1,4 +1,6 @@
 extends.zip
 bots.zip
-tools
+tools/*
+!tools/generate_lane_assignment.py
 docs
+__pycache__/

@@ -1291,7 +1291,7 @@ function ConsiderItemQiJiZhiXing( item_qijizhixing )
 end
 ----------------------------------------------------------------------------------------------------
 
-function ConsiderItemJump( item_jump, delta_min, delta_max)
+function ConsiderItemJump( item_jump, delta_min, delta_max, cast_range)
 
 	delta_min = delta_min or 100
 	delta_max = delta_min or 600
@@ -1305,7 +1305,8 @@ function ConsiderItemJump( item_jump, delta_min, delta_max)
 	end
 
 	-- Get some of its values
-	local nCastRange = 500
+	-- 自定义升级跳跃可显式传入真实距离；未传时保持现有装备的500距离语义。
+	local nCastRange = cast_range or 500
 	if npcBot:GetActiveMode() == BOT_MODE_ATTACK then
 		local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange + delta_max, true, BOT_MODE_NONE )
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )

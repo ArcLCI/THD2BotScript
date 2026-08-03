@@ -6,6 +6,7 @@ local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local FlandreUltimate = require(GetScriptDirectory()..'/THDFuncLib/flandre_ultimate')
 local SunnyUltimate = require(GetScriptDirectory()..'/THDFuncLib/sunny_ultimate')
 local YuukaCombo = require(GetScriptDirectory()..'/THDFuncLib/yuuka_combo')
+local NitoriPoke = require(GetScriptDirectory()..'/THDFuncLib/nitori_poke')
 
 local ROAM_DESIRE_INTERVAL = 1.0
 local ROAM_DESIRE_LATE_INTERVAL = 5.0
@@ -145,12 +146,14 @@ end
 function OnEnd()
 
 	pickedItem = nil
+	NitoriPoke.OnEnd(bot)
 
 end
 
 function OnStart() Utils.NoteModeStart(bot, 'roam') end
 
 function Think()
+	if NitoriPoke.Think(bot) then return end
 	if YuukaCombo.Think(bot) then return end
 	if FlandreUltimate.Think(bot) then return end
 	if SunnyUltimate.Think(bot) then return end
@@ -216,6 +219,10 @@ end
 
 ConsiderHeroSpecificRoaming['npc_dota_hero_venomancer'] = function ()
 	return YuukaCombo.GetModeDesire(bot)
+end
+
+ConsiderHeroSpecificRoaming['npc_dota_hero_spectre'] = function ()
+	return NitoriPoke.GetModeDesire(bot)
 end
 
 function IsItemAvailable(item_name)

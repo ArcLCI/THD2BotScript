@@ -1,7 +1,7 @@
 require(GetScriptDirectory() .. "/thd2_item_purchase")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
 
--- 花阵前排：低价承伤与团队保护先成型，永久万宝槌解锁传送后再补冷却和终局护盾。
+-- 花阵前排：低价承伤与团队保护先成型，终局三位一体后再将完美跳跃升级为牛逼跳跃。
 local frontlineItems = {
 	"item_9ball",
 	"item_phoenix_wing",
@@ -14,9 +14,11 @@ local frontlineItems = {
 	"item_loneliness",
 	"item_esdw",
 	"item_recipe_trinity",
+	"item_horse_king",
+	"item_gap_creator",
 }
 
--- 输出核心：半灵练习剑后先补花伞，完美跳跃成型后再完成白楼剑。
+-- 输出核心：白楼剑与三位一体完成后，最后将完美跳跃升级为牛逼跳跃。
 local damageItems = {
 	"item_9ball",
 	"item_watermelon",
@@ -30,7 +32,10 @@ local damageItems = {
 	"item_laevateinn",
 	"item_sampan",
 	"item_recipe_ertianyiliu",
-	"item_loneliness",
+	"item_glutton_spork",
+	"item_recipe_trinity",
+	"item_horse_king",
+	"item_gap_creator",
 }
 
 local seed_id = nil
