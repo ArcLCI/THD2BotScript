@@ -12,6 +12,8 @@ local Generated = dofile(BOT_ROOT .. "/THDFuncLib/lane_assignment_generated.lua"
 local Overrides = dofile(BOT_ROOT .. "/THDFuncLib/lane_assignment_overrides.lua")
 local BotProfile = dofile(BOT_ROOT .. "/THDFuncLib/bot_profile.lua")
 local AuditConfig = dofile(BOT_ROOT .. "/THDFuncLib/lane_assignment_audit_config.lua")
+local LaneConfig = dofile(BOT_ROOT .. "/THDFuncLib/lane_assignment_config.lua")
+LaneConfig.testMode.radiant = false
 
 package.preload[BOT_ROOT .. "/THDFuncLib/lane_assignment_audit_config"] = function() return AuditConfig end
 local Audit = dofile(BOT_ROOT .. "/THDFuncLib/lane_assignment_audit.lua")
@@ -19,6 +21,7 @@ package.preload[BOT_ROOT .. "/THDFuncLib/lane_assignment_generated"] = function(
 package.preload[BOT_ROOT .. "/THDFuncLib/lane_assignment_audit"] = function() return Audit end
 package.preload[BOT_ROOT .. "/THDFuncLib/lane_assignment_overrides"] = function() return Overrides end
 package.preload[BOT_ROOT .. "/THDFuncLib/bot_profile"] = function() return BotProfile end
+package.preload[BOT_ROOT .. "/THDFuncLib/lane_assignment_config"] = function() return LaneConfig end
 
 local LaneAssignment = dofile(BOT_ROOT .. "/THDFuncLib/lane_assignment.lua")
 
@@ -38,6 +41,35 @@ local function CountLanes(assignments)
 	for _, lane in ipairs(assignments) do counts[lane] = (counts[lane] or 0) + 1 end
 	return counts
 end
+
+local templateConfigValid, templateConfigErrors = Audit.ValidateConfig()
+Assert(templateConfigValid, "disabled manual audit templates must validate: " .. table.concat(templateConfigErrors, ","))
+local expectedTemplates = {
+	["npc_dota_hero_bounty_hunter"] = {"damage", "frontline"},
+	["npc_dota_hero_rattletrap"] = {"frontline", "support"},
+	["npc_dota_hero_venomancer"] = {"damage", "frontline"},
+	["npc_dota_hero_spectre"] = {"damage", "damage_spell"},
+	["npc_dota_hero_invoker"] = {"damage", "frontline", "support"},
+}
+for heroName, positionings in pairs(expectedTemplates) do
+	for _, positioning in ipairs(positionings) do
+		local scores, info = Audit.GetScores(heroName, positioning)
+		if heroName == "npc_dota_hero_invoker" and positioning == "damage" then
+			Assert(scores ~= nil and info ~= nil and info.disabled ~= true,
+				"completed Patchouli damage audit produces scores")
+		else
+			AssertEqual(scores, nil, "disabled template does not produce scores " .. heroName .. ":" .. positioning)
+			Assert(info ~= nil and info.disabled == true, "disabled template is discoverable " .. heroName .. ":" .. positioning)
+		end
+	end
+end
+
+local patchouliDamage = Audit.GetScores("npc_dota_hero_invoker", "damage")
+AssertEqual(patchouliDamage.safe_core, 22, "Patchouli damage safe score")
+AssertEqual(patchouliDamage.mid, 24, "Patchouli damage mid score")
+AssertEqual(patchouliDamage.off_core, 18, "Patchouli damage off score cap")
+AssertEqual(patchouliDamage.soft_support, 12, "Patchouli damage soft support score cap")
+AssertEqual(patchouliDamage.hard_support, 4, "Patchouli damage hard support score cap")
 
 local expectedRadiantCounts = {
 	[1] = {0, 1, 0},
@@ -92,28 +124,39 @@ end
 local damageTraits = {
 	gold_scaling = 3, level_scaling = 1, lane_independence = 2, last_hit = 3,
 	trading = 1, wave_control = 2, initiation = 0, follow_up = 2,
-	protection = 0, roaming = 0, low_economy = 0, late_carry = 3,
+	protection = 0, roaming = 0, low_gold_value = 0, low_experience_value = 0,
+	solo_experience_conversion = 1, late_carry = 3,
 }
 local supportTraits = {
 	gold_scaling = 0, level_scaling = 2, lane_independence = 1, last_hit = 0,
 	trading = 3, wave_control = 2, initiation = 2, follow_up = 3,
-	protection = 3, roaming = 2, low_economy = 3, late_carry = 0,
+	protection = 3, roaming = 2, low_gold_value = 3, low_experience_value = 3,
+	solo_experience_conversion = 0, late_carry = 0,
 }
+local capsValid, capsReason = Audit.ValidatePositionCaps({mid = 24, hard_support = 4})
+Assert(capsValid, "valid position caps: " .. tostring(capsReason))
+local invalidCaps, invalidCapsReason = Audit.ValidatePositionCaps({mid = 31})
+Assert(not invalidCaps and invalidCapsReason == "out_of_range_position_cap_mid",
+	"position cap above score scale must fail")
+local unknownCap, unknownCapReason = Audit.ValidatePositionCaps({jungle = 10})
+Assert(not unknownCap and unknownCapReason == "unknown_position_cap_jungle",
+	"unknown position cap must fail")
 AuditConfig.heroes["npc_dota_hero_lina"] = {
 	damage = {label = "damage test", traits = damageTraits},
 	support = {label = "support test", traits = supportTraits},
 	frontline = {label = "invalid test", traits = {gold_scaling = 4}},
+	damage_spell = {label = "invalid cap test", traits = damageTraits, position_caps = {mid = 31}},
 }
 local auditConfigValid, auditConfigErrors = Audit.ValidateConfig()
 Assert(not auditConfigValid, "invalid positioning audit must fail config validation")
-Assert(#auditConfigErrors == 1, "invalid positioning audit reports one config error")
+Assert(#auditConfigErrors == 2, "invalid traits and position cap each report one config error")
 local auditedDamage, _, damageSource = LaneAssignment.GetHeroScores("npc_dota_hero_lina", "damage")
 AssertEqual(auditedDamage.safe_core, 25, "damage positioning audit safe score")
-AssertEqual(auditedDamage.hard_support, 8, "damage positioning audit hard score")
+AssertEqual(auditedDamage.hard_support, 7, "damage positioning audit hard score")
 AssertEqual(damageSource, "audit:damage", "damage positioning score source")
 local auditedSupport, _, supportSource = LaneAssignment.GetHeroScores("npc_dota_hero_lina", "support")
 AssertEqual(auditedSupport.safe_core, 8, "support positioning audit safe score")
-AssertEqual(auditedSupport.hard_support, 26, "support positioning audit hard score")
+AssertEqual(auditedSupport.hard_support, 27, "support positioning audit hard score")
 AssertEqual(supportSource, "audit:support", "support positioning score source")
 local unauditedBase, _, baseSource = LaneAssignment.GetHeroScores("npc_dota_hero_lina", nil)
 AssertEqual(unauditedBase.soft_support, 14, "missing base audit keeps generated score")
@@ -121,6 +164,9 @@ AssertEqual(baseSource, "generated", "missing base audit source")
 local invalidFrontline, _, invalidSource = LaneAssignment.GetHeroScores("npc_dota_hero_lina", "frontline")
 AssertEqual(invalidFrontline.off_core, 10, "invalid audit falls back to profile score")
 AssertEqual(invalidSource, "generated+profile", "invalid audit fallback source")
+local invalidCapped, _, invalidCappedSource = LaneAssignment.GetHeroScores("npc_dota_hero_lina", "damage_spell")
+Assert(invalidCapped ~= nil, "invalid position cap falls back to generated profile score")
+AssertEqual(invalidCappedSource, "generated+profile", "invalid position cap fallback source")
 
 Overrides.audit_mid = {scores = {safe_core = 0, mid = 100, off_core = 0, soft_support = 0, hard_support = 0}}
 Overrides.audit_off = {scores = {safe_core = 0, mid = 0, off_core = 100, soft_support = 0, hard_support = 0}}
@@ -212,6 +258,33 @@ AssertEqual(twelveCounts[LANE_TOP], 4, "12-player TOP capacity")
 AssertEqual(twelveCounts[LANE_MID], 4, "12-player MID capacity")
 AssertEqual(twelveCounts[LANE_BOT], 4, "12-player BOT capacity")
 
+local laneTestPlayers = {
+	{playerID = 20, heroName = "unknown", isBot = false},
+}
+for index = 1, 5 do
+	table.insert(laneTestPlayers, {playerID = 20 + index, heroName = "unknown", isBot = true})
+end
+local normalSixAssignments = LaneAssignment.BuildAssignments({team = TEAM_RADIANT, players = laneTestPlayers})
+local normalSixCounts = CountLanes(normalSixAssignments)
+AssertEqual(normalSixCounts[LANE_TOP], 2, "normal six-player assignment includes human TOP capacity")
+AssertEqual(normalSixCounts[LANE_MID], 2, "normal six-player assignment includes human MID capacity")
+AssertEqual(normalSixCounts[LANE_BOT], 2, "normal six-player assignment includes human BOT capacity")
+local botOnlyAssignments, botOnlyDetails = LaneAssignment.BuildAssignments({
+	team = TEAM_RADIANT,
+	players = laneTestPlayers,
+	ignoreHumans = true,
+})
+AssertEqual(#botOnlyAssignments, 6, "lane test preserves GetTeamPlayers slot count")
+Assert(botOnlyDetails[1].ignored == true, "lane test marks human slot as ignored")
+local botOnlyCounts = {[LANE_TOP] = 0, [LANE_MID] = 0, [LANE_BOT] = 0}
+for index = 2, 6 do
+	local lane = botOnlyAssignments[index]
+	botOnlyCounts[lane] = (botOnlyCounts[lane] or 0) + 1
+end
+AssertEqual(botOnlyCounts[LANE_TOP], 2, "lane test five Bots TOP count")
+AssertEqual(botOnlyCounts[LANE_MID], 1, "lane test five Bots MID count")
+AssertEqual(botOnlyCounts[LANE_BOT], 2, "lane test five Bots BOT count")
+
 local crowdedPlayers = {}
 for index = 1, 5 do
 	crowdedPlayers[index] = {
@@ -257,13 +330,15 @@ function human:DistanceFromFountain() return 3000 end
 function human:GetLocation() return humanLocation end
 local bot = {}
 function bot:GetAbilityByName() return nil end
+function bot:GetPlayerID() return 11 end
 local runtimeMembers = {human, bot}
+local runtimeBotIDs = {[11] = true}
 
 function GetTeam() return runtimeTeam end
 function GetTeamPlayers() return runtimePlayerIDs end
 function DotaTime() return runtimeNow end
 function GetSelectedHeroName(playerID) return runtimeHeroes[playerID] end
-function IsPlayerBot(playerID) return playerID == 11 end
+function IsPlayerBot(playerID) return runtimeBotIDs[playerID] == true end
 function GetTeamMember(index) return runtimeMembers[index] end
 function GetAmountAlongLane(lane, location)
 	if location == "top" then return 0.3, lane == LANE_TOP and 100 or (lane == LANE_MID and 700 or 1400) end
@@ -281,11 +356,49 @@ humanLocation = "bot"
 local lockedAssignments = LaneAssignment.UpdateLaneAssignments()
 AssertEqual(lockedAssignments[1], LANE_TOP, "runtime assignment locks before zero")
 AssertEqual(lockedAssignments[2], LANE_BOT, "locked Bot assignment does not oscillate")
+AssertEqual(LaneAssignment.GetAssignedPosition(bot), "safe_core",
+	"runtime position accessor uses cached assignment details")
+local unknownBot = {}
+function unknownBot:GetPlayerID() return 999 end
+AssertEqual(LaneAssignment.GetAssignedPosition(unknownBot), nil,
+	"unknown player ID conservatively returns no assigned position")
 runtimeNow = 1
 runtimeHeroes[11] = "npc_dota_hero_lina"
 local postZeroAssignments = LaneAssignment.UpdateLaneAssignments()
 AssertEqual(postZeroAssignments[1], LANE_TOP, "post-zero lineup signals do not replace locked human lane")
 AssertEqual(postZeroAssignments[2], LANE_BOT, "post-zero lineup signals do not replace locked Bot lane")
+
+LaneConfig.testMode.radiant = true
+runtimeNow = -10
+runtimePlayerIDs = {10, 11, 12, 13, 14, 15}
+runtimeHeroes[12], runtimeHeroes[13] = "unknown", "unknown"
+runtimeHeroes[14], runtimeHeroes[15] = "unknown", "unknown"
+for playerID = 12, 15 do
+	runtimeBotIDs[playerID] = true
+	local extraBot = {}
+	function extraBot:GetAbilityByName() return nil end
+	table.insert(runtimeMembers, extraBot)
+end
+LaneAssignment.ResetRuntimeState()
+local runtimeLaneTestAssignments = LaneAssignment.UpdateLaneAssignments()
+AssertEqual(#runtimeLaneTestAssignments, 6, "runtime lane test preserves full team slot table")
+local runtimeBotCounts = {[LANE_TOP] = 0, [LANE_MID] = 0, [LANE_BOT] = 0}
+for index = 2, 6 do
+	local lane = runtimeLaneTestAssignments[index]
+	runtimeBotCounts[lane] = (runtimeBotCounts[lane] or 0) + 1
+end
+AssertEqual(runtimeBotCounts[LANE_TOP], 2, "runtime lane test five Bots TOP count")
+AssertEqual(runtimeBotCounts[LANE_MID], 1, "runtime lane test five Bots MID count")
+AssertEqual(runtimeBotCounts[LANE_BOT], 2, "runtime lane test five Bots BOT count")
+
+-- 即使已过锁定时间，关闭静态测试配置也必须重建正常六人分路。
+LaneConfig.testMode.radiant = false
+runtimeNow = -2
+local runtimeNormalAssignments = LaneAssignment.UpdateLaneAssignments()
+local runtimeNormalCounts = CountLanes(runtimeNormalAssignments)
+AssertEqual(runtimeNormalCounts[LANE_TOP], 2, "runtime normal mode restores human TOP capacity")
+AssertEqual(runtimeNormalCounts[LANE_MID], 2, "runtime normal mode restores human MID capacity")
+AssertEqual(runtimeNormalCounts[LANE_BOT], 2, "runtime normal mode restores human BOT capacity")
 
 AssertEqual(Generated.metadata.heroCount, 69, "generated current roster count")
 print("[PASS] THD lane assignment framework mocks")

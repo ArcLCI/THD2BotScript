@@ -20,6 +20,14 @@ local lilyModeEnum = {WHITE = 1, GREY1 = 2, GREY2 = 3}
 local lilyMode = 0
 local lilyStatus = false
 
+local function GetVisibleHealth(unit)
+    if not SafeCanBeSeen(unit) then return nil, nil end
+    local health = unit:GetHealth()
+    local maxHealth = unit:GetMaxHealth()
+    if maxHealth == nil or maxHealth <= 0 then return nil, nil end
+    return health, maxHealth
+end
+
 function MyItemUsageThink()
     local npcBot = GetBot()
 
@@ -231,6 +239,7 @@ function ConsiderAbilityLily02()
             local highestHPTarget
             for _,enemyCreep in pairs(tableNearbylanecreeps)
             do
+                local enemyHealth = GetVisibleHealth(enemyCreep)
                 -- 先打旗手和炮车
                 if IsKeyWordUnit("flagbearer",enemyCreep) or IsKeyWordUnit("siege",enemyCreep) then
                     highestHPTarget = enemyCreep
@@ -241,9 +250,13 @@ function ConsiderAbilityLily02()
                     break
                 end
                 -- 最后打血多的
-                if enemyCreep:GetHealth() < highestHP and highestHPTarget:GetHealth()/highestHPTarget:GetMaxHealth() > 0.7 then
-                    highestHP = enemyCreep:GetHealth()
-                    highestHPTarget = enemyCreep
+                if enemyHealth ~= nil and highestHPTarget ~= nil then
+                    local targetHealth, targetMaxHealth = GetVisibleHealth(highestHPTarget)
+                    if targetHealth ~= nil and enemyHealth < highestHP
+                        and targetHealth / targetMaxHealth > 0.7 then
+                        highestHP = enemyHealth
+                        highestHPTarget = enemyCreep
+                    end
                 end
             end
             if highestHPTarget ~= nil and CanCastLily02OnTarget(highestHPTarget) then
@@ -257,19 +270,21 @@ function ConsiderAbilityLily02()
             local lowestHPTarget
             for _,friendlyCreep in pairs(tableNearbylanecreeps)
             do
+                local friendlyHealth, friendlyMaxHealth = GetVisibleHealth(friendlyCreep)
                 -- 先奶旗手或者炮车
                 if (IsKeyWordUnit("flagbearer",friendlyCreep) or IsKeyWordUnit("siege",friendlyCreep))
-                and friendlyCreep:GetHealth()/friendlyCreep:GetMaxHealth() < 0.4 then
+                and friendlyHealth ~= nil and friendlyHealth / friendlyMaxHealth < 0.4 then
                     lowestHPTarget = friendlyCreep
                     break
                 end
                 -- 然后奶血少的
-                if friendlyCreep:GetHealth() < lowestHP then
-                    lowestHP = friendlyCreep:GetHealth()
+                if friendlyHealth ~= nil and friendlyHealth < lowestHP then
+                    lowestHP = friendlyHealth
                     lowestHPTarget = friendlyCreep
                 end
             end
-            if lowestHPTarget:GetHealth()/lowestHPTarget:GetMaxHealth() < 0.3 then
+            local lowestHealth, lowestMaxHealth = GetVisibleHealth(lowestHPTarget)
+            if lowestHealth ~= nil and lowestHealth / lowestMaxHealth < 0.3 then
                 return BOT_ACTION_DESIRE_HIGH, lowestHPTarget
             end
         end

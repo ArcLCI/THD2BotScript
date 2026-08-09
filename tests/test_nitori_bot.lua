@@ -366,6 +366,8 @@ local trinityItemSource = assert(io.open(
 local gameModeSource = assert(io.open(
 	GAME_ROOT .. "/scripts/vscripts/addon_game_mode.lua", "rb")):read("*a")
 local roamModeSource = assert(io.open(BOT_ROOT .. "/mode_roam_generic.lua", "rb")):read("*a")
+local roamAuxiliarySource = assert(io.open(
+	BOT_ROOT .. "/THDFuncLib/roam_auxiliary.lua", "rb")):read("*a")
 local innateStart = assert(gameModeSource:find(
 	'abilityEx = hero:FindAbilityByName("ability_thdots_nitoriEx")', 1, true),
 	"nitori innate initialization branch")
@@ -377,8 +379,9 @@ Assert(nitoriAbilitySource:find("UtilStun:UnitStunTarget(caster,caster,duration)
 	"permanent wanbao flight-end stun source")
 Assert(trinityItemSource:find('"02" "item_sss"', 1, true) ~= nil,
 	"trinity must accept sss as a direct upgrade base")
-Assert(roamModeSource:find("THDFuncLib/nitori_poke", 1, true) ~= nil,
-	"roam mode must load the nitori poke controller")
+Assert(roamModeSource:find("THDFuncLib/roam_auxiliary", 1, true) ~= nil
+	and roamAuxiliarySource:find("THDFuncLib/nitori_poke", 1, true) ~= nil,
+	"roam router must delegate Nitori poke control to the auxiliary provider")
 
 -- 双购买路线、缺失标记回退和临时食物副本。
 bot = NewHero("npc_dota_hero_spectre", 1)

@@ -2,6 +2,7 @@ local Generated = require(GetScriptDirectory() .. "/THDFuncLib/lane_assignment_g
 local Audit = require(GetScriptDirectory() .. "/THDFuncLib/lane_assignment_audit")
 local Overrides = require(GetScriptDirectory() .. "/THDFuncLib/lane_assignment_overrides")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
+local Config = require(GetScriptDirectory() .. "/THDFuncLib/lane_assignment_config")
 
 local LaneAssignment = {}
 
@@ -65,7 +66,9 @@ local runtimeState = {
 	finalized = false,
 	cachedFingerprint = nil,
 	cachedAssignments = nil,
+	cachedDetails = nil,
 	lastPrintedFingerprint = nil,
+	testMode = false,
 }
 
 local reportedAuditErrors = {}
@@ -287,6 +290,46 @@ function LaneAssignment.BuildAssignments(context)
 	context = context or {}
 	local players = context.players or {}
 	if #players == 0 then return {}, {} end
+	if context.ignoreHumans == true then
+		local botPlayers = {}
+		for _, player in ipairs(players) do
+			if player.isBot == true then table.insert(botPlayers, player) end
+		end
+
+		local botAssignments, botDetails = LaneAssignment.BuildAssignments({
+			team = context.team,
+			players = botPlayers,
+		})
+		local fallback = LaneAssignment.BuildFallback(context.team, #players)
+		local assignments = {}
+		local details = {}
+		local botIndex = 1
+		for playerIndex, player in ipairs(players) do
+			if player.isBot == true then
+				assignments[playerIndex] = botAssignments[botIndex]
+				details[playerIndex] = botDetails[botIndex]
+				botIndex = botIndex + 1
+			else
+				-- 测试观战者保留队伍槽位，但不消耗 Bot 的分路容量。
+				local lane = fallback[playerIndex] or LANE_MID
+				assignments[playerIndex] = lane
+				details[playerIndex] = {
+					playerID = player.playerID,
+					heroName = player.heroName,
+					profile = player.profile,
+					position = "ignored_human",
+					laneRole = LaneAssignment.GetLaneRole(context.team, lane),
+					lane = lane,
+					score = 0,
+					scoreSource = "lane_test",
+					customHero = nil,
+					observed = false,
+					ignored = true,
+				}
+			end
+		end
+		return assignments, details
+	end
 	local observedCounts = BuildObservedCounts(players)
 	local capacities = LaneAssignment.AdjustLaneCapacities(#players, observedCounts)
 	local slots = LaneAssignment.BuildSlotsForCapacities(capacities)
@@ -387,8 +430,8 @@ local function GetBotProfile(member)
 	return SafeCall(nil, function() return BotProfile.GetProfile(member) end)
 end
 
-local function BuildFingerprint(team, players, locked)
-	local values = {tostring(team), locked and "locked" or "open"}
+local function BuildFingerprint(team, players, locked, testMode)
+	local values = {tostring(team), locked and "locked" or "open", testMode and "test" or "normal"}
 	for index, player in ipairs(players) do
 		table.insert(values, table.concat({
 			tostring(index),
@@ -409,7 +452,7 @@ local function LaneName(lane)
 	return tostring(lane)
 end
 
-local function PrintAssignments(team, details, locked)
+local function PrintAssignments(team, details, locked, testMode)
 	local values = {}
 	for index, detail in ipairs(details) do
 		table.insert(values, string.format(
@@ -423,11 +466,21 @@ local function PrintAssignments(team, details, locked)
 			LaneName(detail.lane),
 			tostring(detail.score),
 			tostring(detail.scoreSource),
-			detail.observed and "human_observed" or "predicted"
+			detail.ignored and "human_ignored"
+				or (detail.observed and "human_observed" or "predicted")
 		))
 	end
 	print("[BOT][LaneAssign] team=" .. tostring(team) .. " locked=" .. tostring(locked)
+		.. " test=" .. tostring(testMode)
 		.. " " .. table.concat(values, "; "))
+end
+
+function LaneAssignment.IsTestMode(team)
+	local testMode = type(Config.testMode) == "table" and Config.testMode or nil
+	if testMode == nil then return false end
+	if team == TEAM_RADIANT then return testMode.radiant == true end
+	if team == TEAM_DIRE then return testMode.dire == true end
+	return false
 end
 
 function LaneAssignment.ResetRuntimeState()
@@ -436,13 +489,21 @@ function LaneAssignment.ResetRuntimeState()
 	runtimeState.finalized = false
 	runtimeState.cachedFingerprint = nil
 	runtimeState.cachedAssignments = nil
+	runtimeState.cachedDetails = nil
 	runtimeState.lastPrintedFingerprint = nil
+	runtimeState.testMode = false
 end
 
 function LaneAssignment.UpdateLaneAssignments()
 	local team = GetTeam()
 	local playerIDs = GetTeamPlayers(team) or {}
 	local now = SafeCall(-90, function() return DotaTime() end)
+	local testMode = LaneAssignment.IsTestMode(team)
+	if runtimeState.testMode ~= testMode then
+		runtimeState.testMode = testMode
+		runtimeState.finalized = false
+		runtimeState.cachedFingerprint = nil
+	end
 	if now >= HUMAN_LOCK_TIME then runtimeState.locked = true end
 	if runtimeState.locked and runtimeState.finalized and runtimeState.cachedAssignments ~= nil then
 		return runtimeState.cachedAssignments
@@ -454,7 +515,7 @@ function LaneAssignment.UpdateLaneAssignments()
 		local member = SafeCall(nil, function() return GetTeamMember(index) end)
 		local observedLane = runtimeState.observations[playerID] ~= nil
 			and runtimeState.observations[playerID].confirmed or nil
-		if not runtimeState.locked and not isBot and now >= HUMAN_OBSERVE_START then
+		if not testMode and not runtimeState.locked and not isBot and now >= HUMAN_OBSERVE_START then
 			observedLane = LaneAssignment.UpdateHumanObservation(
 				runtimeState.observations,
 				playerID,
@@ -471,18 +532,39 @@ function LaneAssignment.UpdateLaneAssignments()
 		})
 	end
 
-	local fingerprint = BuildFingerprint(team, players, runtimeState.locked)
+	local fingerprint = BuildFingerprint(team, players, runtimeState.locked, testMode)
 	if runtimeState.cachedFingerprint ~= fingerprint then
-		local assignments, details = LaneAssignment.BuildAssignments({team = team, players = players})
+		local assignments, details = LaneAssignment.BuildAssignments({
+			team = team,
+			players = players,
+			ignoreHumans = testMode,
+		})
 		runtimeState.cachedFingerprint = fingerprint
 		runtimeState.cachedAssignments = assignments
+		runtimeState.cachedDetails = details
 		if runtimeState.lastPrintedFingerprint ~= fingerprint then
-			PrintAssignments(team, details, runtimeState.locked)
+			PrintAssignments(team, details, runtimeState.locked, testMode)
 			runtimeState.lastPrintedFingerprint = fingerprint
 		end
 	end
 	if runtimeState.locked then runtimeState.finalized = true end
 	return runtimeState.cachedAssignments or LaneAssignment.BuildFallback(team, #playerIDs)
+end
+
+function LaneAssignment.GetAssignedPosition(bot)
+	if bot == nil then return nil end
+	local playerID = SafeCall(-1, function() return bot:GetPlayerID() end)
+	if playerID == nil or playerID < 0 then return nil end
+
+	if runtimeState.cachedDetails == nil then
+		SafeCall(nil, function() return LaneAssignment.UpdateLaneAssignments() end)
+	end
+	for _, detail in ipairs(runtimeState.cachedDetails or {}) do
+		if detail.playerID == playerID and not detail.ignored and IsPosition(detail.position) then
+			return detail.position
+		end
+	end
+	return nil
 end
 
 LaneAssignment.GeneratedMetadata = Generated.metadata
