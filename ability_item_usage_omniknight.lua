@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
 
 ----------------------------------------------------------------------------------------------------
 
@@ -82,20 +83,38 @@ end
 function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
-
-	MyItemUsageThink()
-	ConsiderNeutralItems()
-
-	
 	local npcBot = GetBot()
-
-	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
-
 	ability01 = npcBot:GetAbilityByName( "ability_thdots_kisume01" )
 	ability02 = npcBot:GetAbilityByName( "ability_thdots_kisume02" )
 	ability03 = npcBot:GetAbilityByName( "ability_thdots_kisume03" )
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_kisume04" )
+
+	-- Check if we're already using an ability
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
+
+	-- 点目标投射物先锁定 roam 任务目标，再允许普通技能逻辑运行。
+	local initiation = RoamInitiation.GetIntent(npcBot)
+	if initiation ~= nil then
+		local target = initiation.target
+		local castRange = initiation.castRange or (ability01 ~= nil and ability01:GetCastRange() or 0)
+		if initiation.abilityName == "ability_thdots_kisume01"
+			and initiation.castMode == 'location'
+			and initiation.status == 'pending'
+			and ability01 ~= nil
+			and ability01:IsFullyCastable()
+			and target ~= nil
+			and CanCastKisume01OnTarget(target)
+			and GetUnitToUnitDistance(npcBot, target) <= castRange
+		then
+			npcBot:Action_UseAbilityOnLocation(ability01, target:GetLocation())
+			RoamInitiation.MarkIssued(npcBot, ability01:GetName(), target)
+			return
+		end
+		if RoamInitiation.ShouldHoldGenericAction(npcBot) then return end
+	end
+
+	MyItemUsageThink()
+	ConsiderNeutralItems()
 
 	-- Consider using each ability
 	cast01Desire, cast01Location = ConsiderAbilityKisume01()

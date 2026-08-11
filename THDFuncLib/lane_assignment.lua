@@ -403,6 +403,16 @@ local function SafeCall(defaultValue, callback)
 	return defaultValue
 end
 
+local function GetLaneDistance(lane, location)
+	local laneInfo, legacyDistance = SafeCall(nil, function() return GetAmountAlongLane(lane, location) end)
+	-- 真实 Bot API 返回带 amount/distance 字段的表，异常结构不参与人类分路确认。
+	if type(laneInfo) == "table" then
+		return type(laneInfo.distance) == "number" and laneInfo.distance or nil
+	end
+	if type(laneInfo) == "number" and type(legacyDistance) == "number" then return legacyDistance end
+	return nil
+end
+
 local function DetectHumanLane(member)
 	if member == nil then return nil end
 	local fountainDistance = SafeCall(0, function() return member:DistanceFromFountain() end)
@@ -412,7 +422,7 @@ local function DetectHumanLane(member)
 
 	local distances = {}
 	for _, lane in ipairs({LANE_TOP, LANE_MID, LANE_BOT}) do
-		local _, distance = SafeCall(nil, function() return GetAmountAlongLane(lane, location) end)
+		local distance = GetLaneDistance(lane, location)
 		if type(distance) ~= "number" then return nil end
 		table.insert(distances, {lane = lane, distance = distance})
 	end

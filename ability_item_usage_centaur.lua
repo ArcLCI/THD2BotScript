@@ -1,6 +1,7 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
 
 ----------------------------------------------------------------------------------------------------
 
@@ -88,14 +89,45 @@ function MyItemUsageThink()
 
 end
 
+local function TryRoamInitiation(npcBot, ability02, initiation)
+	if initiation == nil
+		or initiation.abilityName ~= "centaur_hoof_stomp"
+		or initiation.castMode ~= 'no_target'
+		or (initiation.status ~= 'pending' and initiation.status ~= 'pending_move')
+		or ability02 == nil
+		or not ability02:IsFullyCastable()
+		or initiation.target == nil
+	then
+		return false
+	end
+
+	local target = initiation.target
+	local castRange = initiation.castRange or 315
+	local distance = GetUnitToUnitDistance(npcBot, target)
+	local jump = IsItemAvailable("item_wanmeitiaoyuezhuangzhi")
+	local jumpRange = 0
+	if jump ~= nil and jump:IsFullyCastable() then
+		if jump.GetCastRange ~= nil then jumpRange = jump:GetCastRange() or 0 end
+		if jumpRange <= 0 then jumpRange = 1200 end
+	end
+	local useJump = distance > castRange and jumpRange >= distance
+	if distance > castRange and not useJump then return false end
+
+	-- Yugi 的跳刀接踩是一个不可被普通攻击插入的完整先手队列。
+	if npcBot.Action_ClearActions ~= nil then npcBot:Action_ClearActions(false) end
+	if useJump then
+		npcBot:ActionQueue_UseAbilityOnLocation(jump, target:GetLocation())
+		npcBot:ActionQueue_UseAbility(ability02)
+	else
+		npcBot:Action_UseAbility(ability02)
+	end
+	RoamInitiation.MarkIssued(npcBot, "centaur_hoof_stomp", target)
+	return true
+end
+
 function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
-	
-	MyItemUsageThink()
-	ConsiderNeutralItems()
-
-	
 	local npcBot = GetBot()
 	local item_jump = IsItemAvailable( "item_wanmeitiaoyuezhuangzhi" )
 
@@ -104,6 +136,15 @@ function AbilityUsageThink()
 
 	ability02 = npcBot:GetAbilityByName( "centaur_hoof_stomp" )
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_yugi04" )
+
+	local initiation = RoamInitiation.GetIntent(npcBot)
+	if initiation ~= nil then
+		if TryRoamInitiation(npcBot, ability02, initiation) then return end
+		if RoamInitiation.ShouldHoldGenericAction(npcBot) then return end
+	end
+
+	MyItemUsageThink()
+	ConsiderNeutralItems()
 
 	-- Consider using each ability
 	cast02Desire = ConsiderAbilityYugi02()

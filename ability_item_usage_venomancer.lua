@@ -3,6 +3,7 @@ local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
 local YuukaUnits = require(GetScriptDirectory() .. "/THDFuncLib/yuuka_units")
 local YuukaCombo = require(GetScriptDirectory() .. "/THDFuncLib/yuuka_combo")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
 
 local YUUKA01 = "ability_thdots_yuuka01"
 local YUUKA02 = "ability_thdots_yuuka02"
@@ -64,6 +65,27 @@ local function GetVisibleEnemies(bot, range, allowMagicImmune)
 		end
 	end
 	return result
+end
+
+local function TryRoamInitiation(bot, ability, initiation)
+	if initiation == nil
+		or initiation.abilityName ~= YUUKA02
+		or initiation.castMode ~= 'entity'
+		or initiation.status ~= 'pending'
+		or not IsCastable(ability)
+		or initiation.target == nil
+	then
+		return false
+	end
+	local target = initiation.target
+	if not IsVisibleRealEnemy(bot, target) then return false end
+	local castRange = initiation.castRange or ability:GetCastRange()
+	if GetUnitToUnitDistance(bot, target) > castRange then return false end
+
+	-- gank 先手必须锁定任务目标，不能让连续技或普通目标选择抢先消耗二技能。
+	bot:Action_UseAbilityOnEntity(ability, target)
+	RoamInitiation.MarkIssued(bot, YUUKA02, target)
+	return true
 end
 
 local function IsStableHardControlled(target)
@@ -564,6 +586,12 @@ function AbilityUsageThink()
 	local ability04 = GetAbility(bot, YUUKA04)
 	local abilityEx = GetAbility(bot, YUUKA_EX)
 	local abilityEx2 = GetAbility(bot, YUUKA_EX2)
+
+	local initiation = RoamInitiation.GetIntent(bot)
+	if initiation ~= nil then
+		if TryRoamInitiation(bot, ability02, initiation) then return end
+		if RoamInitiation.ShouldHoldGenericAction(bot) then return end
+	end
 
 	if not bot:IsSilenced() then
 		if TryContinueRetreatFollowup(bot, abilityEx2) then return end

@@ -2,8 +2,8 @@
 -- Source: THDAmethyst_Game hero.txt Role/Rolelevels and ordinary Bot roster.
 return {
 	metadata = {
-		heroCount = 69,
-		sourceDigest = "f99efaa26a4f90e63a598299e57c521661b6f6d36e93643c5d9062ea00f6ac4c",
+		heroCount = 70,
+		sourceDigest = "2849697c505bb6baf3a67f6f6e6d1c82fcc136f2039e3429605ecbb26598db99",
 	},
 	heroes = {
 		["npc_dota_hero_lina"] = {
@@ -1253,6 +1253,24 @@ return {
 				off_core = 12,
 				soft_support = 11,
 				hard_support = 0,
+			},
+		},
+		["npc_dota_hero_terrorblade"] = {
+			customHero = "npc_dota_hero_cheng",
+			folder = "chen",
+			roles = {
+				["Carry"] = 3,
+				["Durable"] = 2,
+				["Escape"] = 3,
+				["Initiator"] = 1,
+				["Jungler"] = 3,
+			},
+			scores = {
+				safe_core = 21,
+				mid = 12,
+				off_core = 12,
+				soft_support = 5,
+				hard_support = 2,
 			},
 		},
 	},

@@ -16,6 +16,7 @@ function GetDesire()
 	or bot:IsCastingAbility()
 	or bot:IsUsingAbility()
 	or bot:IsChanneling()
+	or bot:HasModifier('modifier_ability_thdots_chen01')
 	then
 		return BOT_MODE_DESIRE_NONE
 	end

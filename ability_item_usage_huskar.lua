@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
 
 ----------------------------------------------------------------------------------------------------
 
@@ -55,18 +56,32 @@ function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink()
-	ConsiderNeutralItems()
-
-
 	local npcBot = GetBot()
+	ability01 = npcBot:GetAbilityByName( "ability_thdots_minoriko01" )
+	ability02 = npcBot:GetAbilityByName( "ability_thdots_minoriko02" )
+	ability04 = npcBot:GetAbilityByName( "ability_thdots_minoriko04" )
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
-	ability01 = npcBot:GetAbilityByName( "ability_thdots_minoriko01" )
-	ability02 = npcBot:GetAbilityByName( "ability_thdots_minoriko02" )
-	ability04 = npcBot:GetAbilityByName( "ability_thdots_minoriko04" )
+	-- gank 先手控制必须先于普通治疗和主动道具；任务外仍走原有技能优先级。
+	local initiation = RoamInitiation.GetIntent(npcBot)
+	if initiation ~= nil then
+		cast01Desire, cast01Target = ConsiderAbilityMinoriko01()
+		if ( cast01Desire > 0 )
+		then
+			npcBot:Action_UseAbilityOnEntity( ability01 , cast01Target)
+			RoamInitiation.MarkIssued(npcBot, ability01:GetName(), initiation.target)
+			return
+		end
+		if RoamInitiation.ShouldHoldGenericAction(npcBot) then return end
+	end
+
+	MyItemUsageThink()
+	ConsiderNeutralItems()
+
+	-- 物品逻辑可能在本帧提交动作；不要覆盖它。
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
 	-- Consider using each ability
 
@@ -112,6 +127,20 @@ function ConsiderAbilityMinoriko01()
 	-- Make sure it's castable
 	if ( not ability01:IsFullyCastable() )
 	then
+		return BOT_ACTION_DESIRE_NONE, nil
+	end
+
+	-- 秋穰子一技能可以治疗友军，gank intent 必须在治疗分支之前明确锁定敌方目标。
+	local initiation = RoamInitiation.GetIntent(npcBot)
+	if initiation ~= nil then
+		local target = initiation.target
+		if initiation.status == 'pending'
+			and target ~= nil
+			and CanCastMinoriko01OnTarget(target)
+			and GetUnitToUnitDistance(npcBot, target) <= (initiation.castRange or 0)
+		then
+			return BOT_ACTION_DESIRE_VERYHIGH, target
+		end
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
 

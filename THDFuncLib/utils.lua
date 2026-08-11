@@ -808,7 +808,7 @@ ____exports.ImportantSpells = {
     [HeroName.ShadowFiend] = {"nevermore_requiem"},
     [HeroName.Slark] = {"slark_shadow_dance"},
     [HeroName.Spectre] = {"spectre_haunt_single", "spectre_haunt"},
-    [HeroName.Terrorblade] = {"terrorblade_metamorphosis", "terrorblade_sunder"},
+    [HeroName.Terrorblade] = {"ability_thdots_chen04"},
     [HeroName.TrollWarlord] = {"troll_warlord_battle_trance"},
     [HeroName.Ursa] = {"ursa_enrage"},
     [HeroName.Viper] = {"viper_viper_strike"},
@@ -1399,7 +1399,7 @@ end
 function ____exports.getCustomAvoidanceZones()
     return avoidanceZones
 end
-local specialOffensiveHeroes = {HeroName.ArcWarden, HeroName.Phoenix, HeroName.Terrorblade}
+local specialOffensiveHeroes = {HeroName.ArcWarden, HeroName.Phoenix}
 function ____exports.IsSpecialOffensiveHero(name)
     return specialOffensiveHeroes[name] ~= nil
 end

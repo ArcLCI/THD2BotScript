@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
 
 ----------------------------------------------------------------------------------------------------
 
@@ -97,20 +98,38 @@ end
 function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
-
-	MyItemUsageThink()
-	ConsiderNeutralItems()
-
-	
 	local npcBot = GetBot()
-
-	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
-
 	ability01 = npcBot:GetAbilityByName( "ability_thdots_Merlin01" )
 	ability02 = npcBot:GetAbilityByName( "ability_thdots_Merlin02" )
 	ability03 = npcBot:GetAbilityByName( "ability_thdots_Merlin03" )
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_Merlin04" )
+
+	-- Check if we're already using an ability
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
+
+	-- gank 先手锁定任务目标，避免物品或其他技能先消耗 Merlin 的控制。
+	local initiation = RoamInitiation.GetIntent(npcBot)
+	if initiation ~= nil then
+		local target = initiation.target
+		local castRange = initiation.castRange or (ability01 ~= nil and ability01:GetCastRange() or 0)
+		if initiation.abilityName == "ability_thdots_Merlin01"
+			and initiation.castMode == 'entity'
+			and initiation.status == 'pending'
+			and ability01 ~= nil
+			and ability01:IsFullyCastable()
+			and target ~= nil
+			and CanCastMerlin01OnTarget(target)
+			and GetUnitToUnitDistance(npcBot, target) <= castRange
+		then
+			npcBot:Action_UseAbilityOnEntity(ability01, target)
+			RoamInitiation.MarkIssued(npcBot, ability01:GetName(), target)
+			return
+		end
+		if RoamInitiation.ShouldHoldGenericAction(npcBot) then return end
+	end
+
+	MyItemUsageThink()
+	ConsiderNeutralItems()
 
 	-- Consider using each ability
 	cast01Desire, cast01Target = ConsiderAbilityMerlin01()

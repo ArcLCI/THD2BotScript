@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
 
 ----------------------------------------------------------------------------------------------------
 
@@ -36,17 +37,31 @@ function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
 
-	MyItemUsageThink()
-	ConsiderNeutralItems()
-
-	
 	local npcBot = GetBot()
+	ability01 = npcBot:GetAbilityByName( "earthshaker_fissure" )
+	ability04 = npcBot:GetAbilityByName( "zuus_thundergods_wrath" )
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
-	ability01 = npcBot:GetAbilityByName( "earthshaker_fissure" )
-	ability04 = npcBot:GetAbilityByName( "zuus_thundergods_wrath" )
+	-- gank 先手优先于通用物品；未进入先手窗口时保留原有物品和技能顺序。
+	local initiation = RoamInitiation.GetIntent(npcBot)
+	if initiation ~= nil then
+		cast01Desire, cast01Location = ConsiderAbilityTenshi01()
+		if ( cast01Desire > 0 )
+		then
+			npcBot:Action_UseAbilityOnLocation( ability01, cast01Location )
+			RoamInitiation.MarkIssued(npcBot, ability01:GetName(), initiation.target)
+			return
+		end
+		if RoamInitiation.ShouldHoldGenericAction(npcBot) then return end
+	end
+
+	MyItemUsageThink()
+	ConsiderNeutralItems()
+
+	-- 物品逻辑可能在本帧提交动作；不要覆盖它。
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
 
 	-- Consider using each ability
 	cast01Desire, cast01Location = ConsiderAbilityTenshi01()
@@ -89,6 +104,20 @@ function ConsiderAbilityTenshi01()
 	-- Get some of its values
 	local nCastRange = ability01:GetCastRange()
 	local nDamage = 30*ability01:GetLevel()+30
+
+	-- 先手窗口只允许把 roam 目标作为 Fissure 目标，不能被附近其他低血量单位抢走。
+	local initiation = RoamInitiation.GetIntent(npcBot)
+	if initiation ~= nil then
+		local target = initiation.target
+		if initiation.status == 'pending'
+			and target ~= nil
+			and CanCastTenshi01OnTarget(target)
+			and GetUnitToUnitDistance(npcBot, target) <= (initiation.castRange or nCastRange)
+		then
+			return BOT_ACTION_DESIRE_VERYHIGH, target:GetLocation()
+		end
+		return BOT_ACTION_DESIRE_NONE, 0
+	end
 
 	if ability04:IsFullyCastable() then  -- ulti ready
 		nDamage = nDamage + 100*ability04:GetLevel()+50 - 30  --( one tick hp+ < 30 )
@@ -140,8 +169,8 @@ function ConsiderAbilityTenshi01()
 
 	-- If we're going after someone
 	if ( npcBot:GetActiveMode() == BOT_MODE_ROAM or
-		 npcBot:GetActiveMode() == BOT_MODE_TEAM_ROAM or
-		 npcBot:GetActiveMode() == BOT_MODE_GANK or
+			npcBot:GetActiveMode() == BOT_MODE_TEAM_ROAM or
+			npcBot:GetActiveMode() == BOT_MODE_GANK or
 		 npcBot:GetActiveMode() == BOT_MODE_DEFEND_ALLY )
 	then
 		local npcTarget = npcBot:GetTarget()

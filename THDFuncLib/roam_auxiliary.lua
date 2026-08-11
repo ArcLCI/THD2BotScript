@@ -31,6 +31,8 @@ local bot = GetBot()
 local botName = bot:GetUnitName()
 local cAbility = nil
 local ConsiderHeroSpecificRoaming = {}
+local HeroSpecificProvider = {}
+local cachedProvider = 'none'
 
 local droppedCheck = -90
 local pickedItem = nil
@@ -95,11 +97,12 @@ local function GetLeastValuableRecoverableItemSlot()
 	return minSlot
 end
 
-local function GetKusanagiMainSlot()
+local function GetKusanagiMainSlot(unit)
+	unit = unit or bot
 	local minPrice = 10000
 	local minSlot = -1
 	for slot = 0, 5 do
-		local item = bot:GetItemInSlot(slot)
+		local item = unit:GetItemInSlot(slot)
 		if item == nil then return slot end
 		if not IsCanNotSwitchItem(item:GetName())
 			and not KUSANAGI_DISPLACEMENT_PROTECTED_ITEMS[item:GetName()]
@@ -114,8 +117,57 @@ local function GetKusanagiMainSlot()
 	return minSlot
 end
 
-local function CanMakeKusanagiMainSlot()
-	return GetKusanagiMainSlot() ~= -1
+local function CanMakeKusanagiMainSlot(unit)
+	return GetKusanagiMainSlot(unit) ~= -1
+end
+
+local function GetPlayerID(unit)
+	if unit == nil or unit.GetPlayerID == nil then return -1 end
+	local ok, playerID = pcall(function() return unit:GetPlayerID() end)
+	return ok and playerID or -1
+end
+
+local function GetKusanagiClaimant(location)
+	local candidates = {}
+	local seen = {}
+	local teamPlayers = nil
+	if GetTeamPlayers ~= nil then
+		local team = bot.GetTeam ~= nil and bot:GetTeam() or nil
+		local ok, result = pcall(function() return GetTeamPlayers(team) end)
+		if ok and type(result) == 'table' then teamPlayers = result end
+	end
+	local teamSize = teamPlayers ~= nil and #teamPlayers or 0
+	if teamSize <= 0 then teamSize = 5 end
+	if GetTeamMember ~= nil then
+		for index = 1, teamSize do
+			local ok, member = pcall(function() return GetTeamMember(index) end)
+			if ok and member ~= nil then table.insert(candidates, member) end
+		end
+	end
+	table.insert(candidates, bot)
+
+	local claimant = nil
+	local claimantDistance = math.huge
+	local claimantID = math.huge
+	for _, member in ipairs(candidates) do
+		local memberID = GetPlayerID(member)
+		local key = memberID >= 0 and ('player:' .. tostring(memberID)) or tostring(member)
+		if not seen[key] then
+			seen[key] = true
+			local alive = member.IsAlive == nil or member:IsAlive()
+			local isBot = member.IsBot == nil or member:IsBot()
+			local distance = GetUnitToLocationDistance(member, location)
+			if alive and isBot and distance <= 900 and CanMakeKusanagiMainSlot(member)
+				and (distance < claimantDistance
+					or (distance == claimantDistance and memberID < claimantID))
+			then
+				claimant = member
+				claimantDistance = distance
+				claimantID = memberID
+			end
+		end
+	end
+	return claimant
 end
 
 local function CheckHighPriorityChannelAbility(abilityName)
@@ -129,22 +181,27 @@ end
 ConsiderHeroSpecificRoaming['npc_dota_hero_mirana'] = function()
 	return CheckHighPriorityChannelAbility("ability_thdots_reisenOld03")
 end
+HeroSpecificProvider['npc_dota_hero_mirana'] = 'channel_reisen'
 
 ConsiderHeroSpecificRoaming['npc_dota_hero_naga_siren'] = function()
 	return FlandreUltimate.GetModeDesire(bot)
 end
+HeroSpecificProvider['npc_dota_hero_naga_siren'] = 'flandre_ultimate'
 
 ConsiderHeroSpecificRoaming['npc_dota_hero_rattletrap'] = function()
 	return SunnyUltimate.GetModeDesire(bot)
 end
+HeroSpecificProvider['npc_dota_hero_rattletrap'] = 'sunny_ultimate'
 
 ConsiderHeroSpecificRoaming['npc_dota_hero_venomancer'] = function()
 	return YuukaCombo.GetModeDesire(bot)
 end
+HeroSpecificProvider['npc_dota_hero_venomancer'] = 'yuuka_combo'
 
 ConsiderHeroSpecificRoaming['npc_dota_hero_spectre'] = function()
 	return NitoriPoke.GetModeDesire(bot)
 end
+HeroSpecificProvider['npc_dota_hero_spectre'] = 'nitori_poke'
 
 local function ScanEdibleItem()
 	if DotaTime() < edibleCheck + 2.0 then return end
@@ -178,8 +235,7 @@ local function ScanKusanagi()
 		if drop.item ~= nil
 			and drop.item ~= blockedKusanagiItem
 			and drop.item:GetName() == KUSANAGI_ITEM_NAME
-			and GetUnitToLocationDistance(bot, drop.location) <= 900
-			and CanMakeKusanagiMainSlot()
+			and GetKusanagiClaimant(drop.location) == bot
 		then
 			pickedItem = drop
 			return BOT_MODE_DESIRE_VERYHIGH
@@ -190,6 +246,7 @@ local function ScanKusanagi()
 end
 
 local function ComputeDesire()
+	cachedProvider = 'none'
 	if not Utils.AllowModeDesire(bot, 'roam') then return BOT_MODE_DESIRE_NONE end
 	botName = bot:GetUnitName()
 
@@ -218,16 +275,21 @@ local function ComputeDesire()
 
 	ScanEdibleItem()
 	if edibleItem ~= nil and bot:HasModifier("modifier_fountain_aura_buff") then
+		cachedProvider = 'edible_swap'
 		return BOT_MODE_DESIRE_VERYHIGH + 0.1
 	end
-	return ScanKusanagi()
+	local desire = ScanKusanagi()
+	if desire > BOT_MODE_DESIRE_NONE then cachedProvider = 'kusanagi_pickup' end
+	return desire
 end
 
 function Auxiliary.GetDesire()
 	local specialRoaming = ConsiderHeroSpecificRoaming[bot:GetUnitName()]
 	if specialRoaming ~= nil then
 		local desire = specialRoaming()
-		if desire ~= nil and desire > 0 then return desire end
+		if desire ~= nil and desire > 0 then
+			return desire, HeroSpecificProvider[bot:GetUnitName()] or 'hero_specific'
+		end
 	end
 
 	if pickedItem ~= nil and HasKusanagiInInventory() then pickedItem = nil end
@@ -240,11 +302,11 @@ function Auxiliary.GetDesire()
 			if droppedItem ~= nil
 				and GetUnitToLocationDistance(bot, droppedItem.location) <= KUSANAGI_RECOVERY_PICKUP_RADIUS
 			then
-				return BOT_MODE_DESIRE_ABSOLUTE * 0.98
+				return BOT_MODE_DESIRE_ABSOLUTE * 0.98, 'kusanagi_recovery'
 			end
-			if droppedItem ~= nil and not shouldYieldToRetreat then return BOT_MODE_DESIRE_VERYHIGH end
+			if droppedItem ~= nil and not shouldYieldToRetreat then return BOT_MODE_DESIRE_VERYHIGH, 'kusanagi_recovery' end
 			if droppedItem == nil and DotaTime() <= displacedItemDropTime + KUSANAGI_RECOVERY_GRACE then
-				return BOT_MODE_DESIRE_VERYHIGH
+				return BOT_MODE_DESIRE_VERYHIGH, 'kusanagi_recovery'
 			end
 			if droppedItem ~= nil then return BOT_MODE_DESIRE_NONE end
 			ClearDisplacedItem()
@@ -255,7 +317,9 @@ function Auxiliary.GetDesire()
 		pickedItem = nil
 		return BOT_MODE_DESIRE_NONE
 	end
-	return Utils.GetCachedModeDesire(bot, 'roam_auxiliary', ComputeDesire)
+	local desire = Utils.GetCachedModeDesire(bot, 'roam_auxiliary', ComputeDesire)
+	if desire == nil or desire <= BOT_MODE_DESIRE_NONE then return BOT_MODE_DESIRE_NONE, 'none' end
+	return desire, cachedProvider
 end
 
 local function TryHandleDisplacedItem()

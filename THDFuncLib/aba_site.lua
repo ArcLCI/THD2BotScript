@@ -1450,13 +1450,17 @@ end
 ____exports.ConsiderIsTimeToFarm.npc_dota_hero_terrorblade = function()
     local bot = GetBot()
     local botNetWorth = bot:GetNetWorth()
-    if not HasItem(bot, "item_manta") and botNetWorth < 16000 then
+    -- 橙先完成接敌攻速与乳牙，再把永久万宝槌和二天一流作为核心发育里程碑。
+    if not HasItem(bot, "item_horse_king") and botNetWorth < 12000 then
         return true
     end
-    if not HasItem(bot, "item_skadi") and botNetWorth < 22000 then
+    if not HasItem(bot, "item_teeth") and botNetWorth < 18000 then
         return true
     end
-    if botNetWorth < 30000 then
+    if not bot:HasModifier("modifier_item_wanbaochui") and botNetWorth < 27000 then
+        return true
+    end
+    if not HasItem(bot, "item_ertianyiliu") and botNetWorth < 40000 then
         return true
     end
     return false

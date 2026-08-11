@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
 
 ----------------------------------------------------------------------------------------------------
 
@@ -64,22 +65,41 @@ end
 function AbilityUsageThink()
 
 	if not IsBotAwake() then return end
-
-	MyItemUsageThink()
-	ConsiderNeutralItems()
-
-	
 	local npcBot = GetBot()
-
-	-- Check if we're already using an ability
-	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
-
 	ability01 = npcBot:GetAbilityByName( "ability_thdots_suwako01" )
 	ability02 = npcBot:GetAbilityByName( "ability_thdots_suwako02" )
 	ability03 = npcBot:GetAbilityByName( "ability_thdots_suwako03z" )
 	abilityEx = npcBot:GetAbilityByName( "ability_thdots_suwako05" )
-	castExToggleState = abilityEx:GetAutoCastState()
 	ability04 = npcBot:GetAbilityByName( "ability_thdots_suwako04new" )
+
+	-- Check if we're already using an ability
+	if ( npcBot:IsSilenced() or npcBot:IsUsingAbility() ) then return end
+
+	-- 无目标控制只在任务目标进入范围后施法，随后由默认进攻逻辑接管。
+	local initiation = RoamInitiation.GetIntent(npcBot)
+	if initiation ~= nil then
+		local target = initiation.target
+		local castRange = initiation.castRange or 450
+		if initiation.abilityName == "ability_thdots_suwako01"
+			and initiation.castMode == 'no_target'
+			and initiation.status == 'pending'
+			and ability01 ~= nil
+			and ability01:IsFullyCastable()
+			and target ~= nil
+			and CanCastSuwako01OnTarget(target)
+			and GetUnitToUnitDistance(npcBot, target) <= castRange
+		then
+			npcBot:Action_UseAbility(ability01)
+			RoamInitiation.MarkIssued(npcBot, ability01:GetName(), target)
+			return
+		end
+		if RoamInitiation.ShouldHoldGenericAction(npcBot) then return end
+	end
+
+	MyItemUsageThink()
+	ConsiderNeutralItems()
+
+	castExToggleState = abilityEx:GetAutoCastState()
 
 	if npcBot:GetLevel() < 25 and npcBot:HasModifier("modifier_ability_thdots_suwako02_telent")
 	then return end

@@ -6,7 +6,20 @@ local Auxiliary = require(GetScriptDirectory()..'/THDFuncLib/roam_auxiliary')
 local bot = GetBot()
 local activeProvider = nil
 local pendingProvider = nil
+local activeAuxiliarySource = 'none'
+local pendingAuxiliarySource = 'none'
 local Gank = nil
+local lastRouterDebugStatus = nil
+local lastRouterDebugTime = -9999
+
+local function FormatGameTime(value)
+	if type(value) ~= 'number' then return 'unknown' end
+	local sign = value < 0 and '-' or ''
+	local tenths = math.floor(math.abs(value) * 10 + 0.5)
+	local minutes = math.floor(tenths / 600)
+	local seconds = (tenths % 600) / 10
+	return string.format('%s%02d:%04.1f', sign, minutes, seconds)
+end
 
 local function IsGankEnabled()
 	if type(Config.IsEnabled) ~= 'function' then return false end
@@ -19,18 +32,49 @@ local function GetGankProvider()
 	return Gank
 end
 
-local function StopGank(reason)
-	if Gank ~= nil then Gank.Abort(bot, reason) end
+local function RouterDebugStatus(message, force)
+	if Config.DEBUG ~= true then return end
+	local now = -9999
+	local timeOk, currentTime = pcall(DotaTime)
+	if timeOk and type(currentTime) == 'number' then now = currentTime end
+	local repeated = lastRouterDebugStatus == message
+	local interval = repeated and 5.0 or 1.0
+	if not force and now - lastRouterDebugTime < interval then return end
+	lastRouterDebugStatus = message
+	lastRouterDebugTime = now
+	local playerID = -1
+	local idOk, id = pcall(function() return bot:GetPlayerID() end)
+	if idOk and id ~= nil then playerID = id end
+	local gameTime = timeOk and FormatGameTime(currentTime) or 'unknown'
+	print('[BOT][Roam] pid=' .. tostring(playerID) .. ' router ' .. tostring(message)
+		.. ' game_time=' .. gameTime)
 end
+
+local function StopGank(reason, auxiliarySource, auxiliaryDesire)
+	if Gank ~= nil then
+		Gank.Abort(bot, reason, {
+			auxProvider = auxiliarySource or 'none',
+			auxDesire = auxiliaryDesire,
+		})
+	end
+end
+
+-- DEBUG 开启后在加载阶段就给出存活信号，避免资格检查前的路由拦截成为日志盲区。
+RouterDebugStatus('loaded enabled=' .. tostring(IsGankEnabled()), true)
 
 function GetDesire()
 	-- 现有持续施法、英雄连招和拾取租约始终优先，不受新 gank 总开关影响。
-	local auxiliaryDesire = Auxiliary.GetDesire(bot)
+	local auxiliaryDesire, auxiliarySource = Auxiliary.GetDesire(bot)
 	if auxiliaryDesire ~= nil and auxiliaryDesire > BOT_MODE_DESIRE_NONE then
+		auxiliarySource = auxiliarySource or 'unknown'
+		RouterDebugStatus('reason=auxiliary_active provider=' .. tostring(auxiliarySource)
+			.. ' desire=' .. tostring(auxiliaryDesire))
 		pendingProvider = 'auxiliary'
+		pendingAuxiliarySource = auxiliarySource
 		if activeProvider == 'gank' then
-			StopGank('auxiliary_preempted')
+			StopGank('auxiliary_preempted', auxiliarySource, auxiliaryDesire)
 			activeProvider = 'auxiliary'
+			activeAuxiliarySource = auxiliarySource
 			Auxiliary.OnStart(bot)
 		end
 		return auxiliaryDesire
@@ -38,16 +82,20 @@ function GetDesire()
 
 	-- 辅助租约释放后先退出一次 ROAM，避免直接续接一份陈旧 gank 任务。
 	if activeProvider == 'auxiliary' then
+		RouterDebugStatus('reason=auxiliary_release_frame provider=' .. tostring(activeAuxiliarySource))
 		pendingProvider = nil
+		pendingAuxiliarySource = 'none'
 		return BOT_MODE_DESIRE_NONE
 	end
 	if not Utils.AllowModeDesire(bot, 'roam') then
+		RouterDebugStatus('reason=mode_switch_lock')
 		if activeProvider == 'gank' then StopGank('mode_unavailable') end
 		pendingProvider = nil
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	if not IsGankEnabled() then
+		RouterDebugStatus('reason=disabled_or_invalid_config')
 		if activeProvider == 'gank' then StopGank('disabled') end
 		pendingProvider = nil
 		return BOT_MODE_DESIRE_NONE
@@ -66,6 +114,7 @@ function OnStart()
 	Utils.NoteModeStart(bot, 'roam')
 	activeProvider = pendingProvider
 	if activeProvider == 'auxiliary' then
+		activeAuxiliarySource = pendingAuxiliarySource
 		Auxiliary.OnStart(bot)
 	elseif activeProvider == 'gank' then
 		GetGankProvider().OnStart(bot)
@@ -77,16 +126,23 @@ function OnEnd()
 	Auxiliary.OnEnd(bot)
 	activeProvider = nil
 	pendingProvider = nil
+	activeAuxiliarySource = 'none'
+	pendingAuxiliarySource = 'none'
 end
 
 function Think()
 	-- Think 再检查一次独占辅助任务，确保技能前摇/引导不会被同模式的 gank 动作覆盖。
-	local auxiliaryDesire = Auxiliary.GetDesire(bot)
+	local auxiliaryDesire, auxiliarySource = Auxiliary.GetDesire(bot)
 	if auxiliaryDesire ~= nil and auxiliaryDesire > BOT_MODE_DESIRE_NONE then
-		if activeProvider == 'gank' then StopGank('auxiliary_preempted') end
+		auxiliarySource = auxiliarySource or 'unknown'
+		RouterDebugStatus('reason=auxiliary_active_think provider=' .. tostring(auxiliarySource)
+			.. ' desire=' .. tostring(auxiliaryDesire))
+		if activeProvider == 'gank' then StopGank('auxiliary_preempted', auxiliarySource, auxiliaryDesire) end
 		if activeProvider ~= 'auxiliary' then Auxiliary.OnStart(bot) end
 		activeProvider = 'auxiliary'
 		pendingProvider = 'auxiliary'
+		activeAuxiliarySource = auxiliarySource
+		pendingAuxiliarySource = auxiliarySource
 		Auxiliary.Think(bot)
 		return
 	end

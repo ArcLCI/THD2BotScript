@@ -2,6 +2,7 @@ require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
 local SunnyUltimate = require(GetScriptDirectory() .. "/THDFuncLib/sunny_ultimate")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
 
 local SUNNY01 = "ability_thdots_sunny01"
 local SUNNY02 = "ability_thdots_sunny02"
@@ -397,6 +398,25 @@ function AbilityUsageThink()
 	local ability03 = GetAbility(bot, SUNNY03)
 	local ability04 = GetAbility(bot, SUNNY04)
 	local ability05 = bot:GetAbilityByName(SUNNY05)
+
+	-- 无目标范围控制以任务目标为距离锚点，进入效果半径后才交给技能接管。
+	local initiation = RoamInitiation.GetIntent(bot)
+	if initiation ~= nil then
+		local target = initiation.target
+		local castRange = initiation.castRange or GetAbilityRadius(ability02)
+		if initiation.abilityName == SUNNY02
+			and initiation.castMode == 'no_target'
+			and initiation.status == 'pending'
+			and IsCastable(ability02)
+			and IsVisibleRealEnemy(bot, target)
+			and GetUnitToUnitDistance(bot, target) <= castRange
+		then
+			bot:Action_UseAbility(ability02)
+			RoamInitiation.MarkIssued(bot, ability02:GetName(), target)
+			return
+		end
+		if RoamInitiation.ShouldHoldGenericAction(bot) then return end
+	end
 
 	if not bot:IsSilenced() and FindEmergencySunny02Target(bot, ability02) ~= nil then
 		bot:Action_UseAbility(ability02)

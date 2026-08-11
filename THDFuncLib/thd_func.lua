@@ -1428,6 +1428,7 @@ function J.CanNotUseAction( bot )
 			or bot:IsCastingAbility()
 			or bot:IsUsingAbility()
 			or bot:IsChanneling()
+			or bot:HasModifier('modifier_ability_thdots_chen01')
 			or bot:IsStunned()
 			or bot:IsNightmared()
 end
