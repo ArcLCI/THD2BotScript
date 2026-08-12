@@ -1572,21 +1572,24 @@ function ConsiderItemYukkuriStick( item_yukkuri_stick )
 	if retreatTarget ~= nil then return BOT_ACTION_DESIRE_HIGH, retreatTarget end
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if npcEnemy:HasModifier("modifier_thdots_shikieiki04_debuff") or npcEnemy:IsHexed()
-		then
-			return BOT_ACTION_DESIRE_NONE, nil
-		end
-		if GetModifiersTimeLeft( npcEnemy, ModifierNamesStun ) < j_time then
-			if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ))
+		-- 邻近英雄缓存可能短暂保留已移除句柄，先用 IsNull 链路淘汰后再读取状态。
+		if IsValid(npcEnemy) then
+			if npcEnemy:HasModifier("modifier_thdots_shikieiki04_debuff") or npcEnemy:IsHexed()
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy
+				return BOT_ACTION_DESIRE_NONE, nil
 			end
-
-			if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ))
-			then
-				if ( CanCastStunOnTarget( npcEnemy ) )
+			if GetModifiersTimeLeft( npcEnemy, ModifierNamesStun ) < j_time then
+				if ( npcBot:GetTarget() == npcEnemy and CanCastStunOnTarget( npcEnemy ))
 				then
-					return BOT_ACTION_DESIRE_MODERATE, npcEnemy
+					return BOT_ACTION_DESIRE_HIGH, npcEnemy
+				end
+
+				if ( npcBot:WasRecentlyDamagedByHero( npcEnemy, 2.0 ))
+				then
+					if ( CanCastStunOnTarget( npcEnemy ) )
+					then
+						return BOT_ACTION_DESIRE_MODERATE, npcEnemy
+					end
 				end
 			end
 		end

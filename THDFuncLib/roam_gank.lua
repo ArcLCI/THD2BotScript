@@ -2,10 +2,17 @@ local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/roam_config')
 local Coordinator = require(GetScriptDirectory()..'/THDFuncLib/roam_coordinator')
 local Initiation = require(GetScriptDirectory()..'/THDFuncLib/roam_initiation')
+local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
 
 local Gank = {}
 local TryUseTP = nil
 local HasIssuedTP = nil
+local TryUseTwinGate = nil
+local HasIssuedTwinGate = nil
+local SMOKE_REQUESTER = 'roam_pickoff_smoke'
+local DUST_REQUESTER = 'roam_pickoff_dust'
+
+Consumables.SetBackpackBridgeEnabled(Config.BACKPACK_CAST_BRIDGE_ENABLED == true)
 
 local function Safe(defaultValue, callback)
 	local ok, value = pcall(callback)
@@ -22,8 +29,11 @@ end
 function Gank.GetDesire(bot)
 	if not IsEnabled() then return BOT_MODE_DESIRE_NONE end
 	local mission = Coordinator.GetMission(bot)
-	-- GetDesire 先于 Think 执行；在这里仅观察已发出的 TP，避免目标死亡先清空任务而丢失终态。
+	-- GetDesire 先于 Think 执行；这里只观察已发出的长引导，避免任务先释放而丢失终态。
 	if HasIssuedTP(bot, mission) and TryUseTP(bot, mission) then
+		return BOT_MODE_DESIRE_ABSOLUTE * 0.95
+	end
+	if HasIssuedTwinGate(bot, mission) and TryUseTwinGate(bot, mission) then
 		return BOT_MODE_DESIRE_ABSOLUTE * 0.95
 	end
 	return Coordinator.GetDesire(bot)
@@ -34,10 +44,14 @@ function Gank.OnStart(bot)
 end
 
 function Gank.Abort(bot, reason, context)
+	Consumables.Release(bot, SMOKE_REQUESTER, reason or 'mission_abort')
+	Consumables.Release(bot, DUST_REQUESTER, reason or 'mission_abort')
 	Coordinator.Abort(bot, reason, context)
 end
 
 function Gank.OnEnd(bot, reason)
+	Consumables.Release(bot, SMOKE_REQUESTER, reason or 'mode_end')
+	Consumables.Release(bot, DUST_REQUESTER, reason or 'mode_end')
 	Coordinator.OnEnd(bot, reason)
 end
 
@@ -55,6 +69,10 @@ end
 
 local function LogTPFallback(bot, mission, plan, reason)
 	plan.useTP = false
+	if plan.tpIssued == true then
+		plan.tpEndedTime = DotaTime()
+		plan.tpLanded = false
+	end
 	Coordinator.DebugAction(bot, string.format('tp_fallback mission=%s reason=%s target=%s channel_observed=%s',
 		tostring(mission.missionID or 'unknown'), tostring(reason), tostring(mission.targetPlayerID),
 		tostring(plan.tpChannelObserved == true)))
@@ -72,6 +90,8 @@ TryUseTP = function(bot, mission)
 		if landingDistance <= Config.TP_LANDING_OBSERVED_RADIUS then
 			local endState = plan.tpChannelObserved == true and 'landed_observed' or 'landed_unobserved'
 			plan.useTP = false
+			plan.tpEndedTime = DotaTime()
+			plan.tpLanded = true
 			plan.tpEndedLogged = true
 			Coordinator.DebugAction(bot, string.format('tp_end mission=%s target=%s state=%s landing_distance=%.0f channel_time=%.1f',
 				tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID), endState,
@@ -91,6 +111,8 @@ TryUseTP = function(bot, mission)
 		if plan.tpChannelObserved == true and plan.tpEndedLogged ~= true then
 			plan.tpEndedLogged = true
 			plan.useTP = false
+			plan.tpEndedTime = DotaTime()
+			plan.tpLanded = false
 			Coordinator.DebugAction(bot, string.format('tp_end mission=%s target=%s state=interrupted landing_distance=%.0f channel_time=%.1f',
 				tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID),
 				landingDistance, DotaTime() - (plan.tpChannelStartTime or plan.tpIssuedTime or DotaTime())))
@@ -112,16 +134,18 @@ TryUseTP = function(bot, mission)
 	if mission.phase ~= 'approach' then return false end
 	if teleporting then return true end
 	if IsActionBlocked(bot) then return false end
-	local refreshedPlan, refreshReason, targetMoved = Coordinator.RefreshTPTravelPlan(bot, mission)
-	if refreshedPlan == nil then
-		LogTPFallback(bot, mission, plan, 'replan_' .. tostring(refreshReason))
-		return false
-	end
-	plan = refreshedPlan
-	if targetMoved ~= nil and targetMoved >= Config.TP_REPLAN_LOG_DISTANCE then
-		Coordinator.DebugAction(bot, string.format('tp_replan mission=%s target=%s moved=%.0f landing=%.0f',
-			tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID),
-			targetMoved, plan.landingDistance or -1))
+	if mission.kind == nil or mission.kind == 'lane_gank' then
+		local refreshedPlan, refreshReason, targetMoved = Coordinator.RefreshTPTravelPlan(bot, mission)
+		if refreshedPlan == nil then
+			LogTPFallback(bot, mission, plan, 'replan_' .. tostring(refreshReason))
+			return false
+		end
+		plan = refreshedPlan
+		if targetMoved ~= nil and targetMoved >= Config.TP_REPLAN_LOG_DISTANCE then
+			Coordinator.DebugAction(bot, string.format('tp_replan mission=%s target=%s moved=%.0f landing=%.0f',
+				tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID),
+				targetMoved, plan.landingDistance or -1))
+		end
 	end
 
 	local targetLocation = Coordinator.GetRallyLocation(mission)
@@ -157,6 +181,8 @@ TryUseTP = function(bot, mission)
 	plan.tpIssuedTime = DotaTime()
 	plan.tpChannelObserved = false
 	plan.tpEndedLogged = false
+	plan.tpEndedTime = nil
+	plan.tpLanded = nil
 	plan.tpItem = tpScroll
 	plan.channelTime = plan.channelTime or Safe(Config.TP_CHANNEL_TIME_ESTIMATE, function() return tpScroll:GetChannelTime() end)
 	Coordinator.DebugAction(bot, string.format('tp_start mission=%s target=%s from_distance=%.0f landing=%.0f',
@@ -171,6 +197,254 @@ HasIssuedTP = function(bot, mission)
 	return plan ~= nil and plan.useTP == true and plan.tpIssued == true
 end
 
+local function LogGateFallback(bot, mission, plan, reason)
+	plan.route = 'walk'
+	plan.gateFailed = true
+	Coordinator.DebugAction(bot, string.format('gate_fallback mission=%s reason=%s target=%s channel_observed=%s',
+		tostring(mission.missionID or 'unknown'), tostring(reason), tostring(mission.targetPlayerID),
+		tostring(plan.gateChannelObserved == true)))
+end
+
+-- 双生门 API 在参考 Bot 中也默认关闭；这里只保留有界实验路径，由配置显式启用。
+TryUseTwinGate = function(bot, mission)
+	if Config.ENABLE_TWIN_GATE_ROUTE ~= true or mission == nil or type(mission.travelPlans) ~= 'table' then return false end
+	local playerID = Safe(-1, function() return bot:GetPlayerID() end)
+	local plan = mission.travelPlans[playerID]
+	if plan == nil or plan.route ~= 'twin_gate' or plan.gateFailed == true
+		or plan.gateEntrance == nil or plan.gateExit == nil
+	then
+		return false
+	end
+
+	local warp = Safe(nil, function() return bot:GetAbilityByName('twin_gate_portal_warp') end)
+	if warp == nil then
+		LogGateFallback(bot, mission, plan, 'ability_unavailable')
+		return false
+	end
+	if plan.gateIssued then
+		local exitDistance = GetLandingDistance(bot, Safe(nil, function() return plan.gateExit:GetLocation() end))
+		if exitDistance <= Config.TP_LANDING_OBSERVED_RADIUS then
+			plan.route = 'walk'
+			Coordinator.DebugAction(bot, string.format('gate_end mission=%s target=%s state=landed landing_distance=%.0f',
+				tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID), exitDistance))
+			return false
+		end
+		local channeling = Safe(false, function() return warp:IsInAbilityPhase() end)
+			or Safe(false, function() return warp:IsChanneling() end)
+			or Safe(false, function() return bot:IsChanneling() end)
+		if channeling then
+			plan.gateChannelObserved = true
+			return true
+		end
+		local elapsed = DotaTime() - (plan.gateIssuedTime or DotaTime())
+		if elapsed < Config.TWIN_GATE_CAST_START_GRACE then return true end
+		if plan.gateChannelObserved ~= true and Safe(false, function() return warp:IsFullyCastable() end) then
+			LogGateFallback(bot, mission, plan, 'cast_not_started')
+			return false
+		end
+		if elapsed < (plan.channelTime or Config.TWIN_GATE_CHANNEL_TIME_ESTIMATE)
+			+ Config.TWIN_GATE_CAST_START_GRACE
+		then
+			return true
+		end
+		LogGateFallback(bot, mission, plan, 'channel_not_completed')
+		return false
+	end
+
+	if mission.phase ~= 'approach' or IsActionBlocked(bot) then return false end
+	local entranceLocation = Safe(nil, function() return plan.gateEntrance:GetLocation() end)
+	if entranceLocation == nil then
+		LogGateFallback(bot, mission, plan, 'entrance_invalid')
+		return false
+	end
+	local entranceDistance = GetLandingDistance(bot, entranceLocation)
+	if entranceDistance > Config.TWIN_GATE_CAST_RANGE then
+		J.ActionMoveToLocation(bot, 'roam_gank_gate_approach', entranceLocation, 0.25, 180)
+		return true
+	end
+	if Safe(false, function() return bot:WasRecentlyDamagedByAnyHero(2.0) end)
+		or #(Safe({}, function() return bot:GetNearbyHeroes(Config.TWIN_GATE_SAFE_RADIUS, true, BOT_MODE_NONE) end) or {}) > 0
+	then
+		LogGateFallback(bot, mission, plan, 'unsafe_channel')
+		return false
+	end
+	if not Safe(false, function() return warp:IsFullyCastable() end) then
+		LogGateFallback(bot, mission, plan, 'ability_not_ready')
+		return false
+	end
+
+	bot:Action_UseAbilityOnEntity(warp, plan.gateEntrance)
+	plan.gateIssued = true
+	plan.gateIssuedTime = DotaTime()
+	plan.gateChannelObserved = false
+	plan.channelTime = Safe(Config.TWIN_GATE_CHANNEL_TIME_ESTIMATE, function() return warp:GetChannelTime() end)
+	Coordinator.DebugAction(bot, string.format('gate_start mission=%s target=%s entrance_distance=%.0f',
+		tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID), entranceDistance))
+	return true
+end
+
+HasIssuedTwinGate = function(bot, mission)
+	if mission == nil or type(mission.travelPlans) ~= 'table' then return false end
+	local playerID = Safe(-1, function() return bot:GetPlayerID() end)
+	local plan = mission.travelPlans[playerID]
+	return plan ~= nil and plan.route == 'twin_gate' and plan.gateIssued == true
+end
+
+local function GetPlayerID(bot)
+	return Safe(-1, function() return bot:GetPlayerID() end)
+end
+
+local function IsMissionParticipant(mission, playerID)
+	for _, expectedID in ipairs(mission.participantIDs or {}) do
+		if expectedID == playerID then return true end
+	end
+	return false
+end
+
+local function GetMissionParticipants(mission)
+	local participants = {}
+	for index = 1, #(Safe({}, function() return GetTeamPlayers(GetTeam()) end) or {}) do
+		local member = Safe(nil, function() return GetTeamMember(index) end)
+		local memberID = member ~= nil and GetPlayerID(member) or -1
+		if member ~= nil and IsMissionParticipant(mission, memberID) then
+			table.insert(participants, member)
+		end
+	end
+	return participants
+end
+
+local function CanSafelyCastSmoke(bot, mission)
+	if mission == nil or mission.requiresSmoke ~= true then return false, 'not_required' end
+	local participants = GetMissionParticipants(mission)
+	if #participants < (mission.requiredCount or 2) then return false, 'participants_missing' end
+	if mission.stagingLocation ~= nil
+		and GetLandingDistance(bot, mission.stagingLocation) > Config.SMOKE_PRECAST_STAGING_DISTANCE
+	then
+		return false, 'staging_too_far'
+	end
+	for _, member in ipairs(participants) do
+		local memberID = GetPlayerID(member)
+		if mission.joinedParticipantIDs == nil or mission.joinedParticipantIDs[memberID] ~= true then
+			return false, 'participant_not_acknowledged'
+		end
+		if GetLandingDistance(member, Safe(nil, function() return bot:GetLocation() end))
+			> Config.SMOKE_APPLICATION_RADIUS - 50
+		then
+			return false, 'outside_application_radius'
+		end
+		local enemies = Safe({}, function()
+			return member:GetNearbyHeroes(Config.SMOKE_SAFE_ENEMY_RADIUS, true, BOT_MODE_NONE)
+		end) or {}
+		if #enemies > 0 then return false, 'visible_enemy_near_group' end
+		local towers = Safe({}, function() return member:GetNearbyTowers(Config.SMOKE_SAFE_TOWER_RADIUS, true) end) or {}
+		if #towers > 0 then return false, 'enemy_tower_near_group' end
+	end
+	return true, 'group_safe'
+end
+
+local function UseReadyConsumable(bot, mission, itemName, requester, castPhase)
+	local item = Consumables.GetReadyItem(bot, itemName, requester)
+	if item == nil then return false end
+	bot:Action_UseAbility(item)
+	local marked, reason = Consumables.MarkCastIssued(bot, requester)
+	local attemptsField = itemName == 'item_smoke_of_deceit' and 'smokeCastAttempts' or 'dustCastAttempts'
+	mission[attemptsField] = (mission[attemptsField] or 0) + 1
+	if not marked then
+		if itemName == 'item_smoke_of_deceit' then mission.smokeCastFailed = true
+		else mission.dustCastFailed = true end
+	end
+	Coordinator.DebugAction(bot, string.format('consumable_cast_issued mission=%s item=%s phase=%s owner=%s attempt=%s tracked=%s reason=%s',
+		tostring(mission.missionID or 'unknown'), tostring(itemName), tostring(castPhase), tostring(GetPlayerID(bot)),
+		tostring(mission[attemptsField]), tostring(marked), tostring(reason)))
+	return true
+end
+
+local function HandleCastStatus(bot, mission, status)
+	local state = Consumables.GetState(bot)
+	if state == nil then return false end
+	local isSmoke = state.itemName == 'item_smoke_of_deceit' and state.requester == SMOKE_REQUESTER
+	local isDust = state.itemName == 'item_dust' and state.requester == DUST_REQUESTER
+	if not isSmoke and not isDust then return false end
+	if status == 'cast_confirmed' then
+		if isSmoke then mission.smokeConfirmedTime = DotaTime()
+		else mission.dustConfirmedTime = DotaTime() end
+		Consumables.Release(bot, state.requester, 'cast_confirmed')
+		Coordinator.DebugAction(bot, string.format('consumable_cast_confirmed mission=%s item=%s owner=%s',
+			tostring(mission.missionID or 'unknown'), tostring(state.itemName), tostring(GetPlayerID(bot))))
+		return true
+	end
+	if status == 'cast_unconfirmed' then
+		local attempts = isSmoke and (mission.smokeCastAttempts or 0) or (mission.dustCastAttempts or 0)
+		Coordinator.DebugAction(bot, string.format('consumable_cast_unconfirmed mission=%s item=%s owner=%s attempt=%s',
+			tostring(mission.missionID or 'unknown'), tostring(state.itemName), tostring(GetPlayerID(bot)), tostring(attempts)))
+		if attempts >= 2 then
+			if isSmoke then mission.smokeCastFailed = true else mission.dustCastFailed = true end
+			Consumables.Release(bot, state.requester, 'cast_unconfirmed')
+			return true
+		end
+	end
+	return false
+end
+
+local function HandleMissionConsumables(bot, mission)
+	local playerID = GetPlayerID(bot)
+	local deadline = (mission.startTime or DotaTime()) + Config.PICKOFF_TOTAL_TIMEOUT
+	local ownsSmoke = mission.requiresSmoke == true
+		and mission.smokeConfirmedTime == nil
+		and mission.smokeOwnerID == playerID
+	if ownsSmoke
+		and (mission.phase == 'assemble' or mission.phase == 'conceal')
+	then
+		Consumables.Request(bot, 'item_smoke_of_deceit', SMOKE_REQUESTER, 100, deadline, {kind = 'none'})
+	elseif mission.smokeOwnerID == playerID then
+		Consumables.Release(bot, SMOKE_REQUESTER, 'smoke_phase_ended')
+	end
+
+	local canPrestageDust = mission.phase == 'assemble' and mission.dustOwnerID ~= mission.smokeOwnerID
+	if mission.requiresDust == true and mission.dustOwnerID == playerID
+		and (canPrestageDust or mission.phase == 'approach' or mission.phase == 'ambush' or mission.phase == 'engage')
+	then
+		Consumables.Request(bot, 'item_dust', DUST_REQUESTER, 90, deadline, {kind = 'none'})
+	elseif mission.dustOwnerID == playerID then
+		Consumables.Release(bot, DUST_REQUESTER, 'dust_phase_ended')
+	end
+
+	local ownsLifecycle, status = Consumables.Think(bot)
+	if HandleCastStatus(bot, mission, status) then return true end
+	local state = Consumables.GetState(bot)
+	if status == 'ready' and state ~= nil then
+		-- 已在释放技能或持续施法时不发烟/粉订单；等待原动作结束后再使用。
+		if IsActionBlocked(bot) then return true end
+		if state.itemName == 'item_smoke_of_deceit'
+			and (mission.phase == 'assemble' or mission.phase == 'conceal')
+		then
+			local safeToSmoke, safetyReason = CanSafelyCastSmoke(bot, mission)
+			if safeToSmoke then
+				return UseReadyConsumable(bot, mission, state.itemName, SMOKE_REQUESTER, mission.phase)
+			end
+			if mission.lastSmokeSafetyReason ~= safetyReason then
+				mission.lastSmokeSafetyReason = safetyReason
+				Coordinator.DebugAction(bot, string.format('smoke_wait mission=%s owner=%s phase=%s reason=%s',
+					tostring(mission.missionID or 'unknown'), tostring(playerID),
+					tostring(mission.phase), tostring(safetyReason)))
+			end
+		end
+		if state.itemName == 'item_dust' then
+			local targetLocation = Coordinator.GetRallyLocation(mission)
+			local closeEnough = targetLocation ~= nil and GetLandingDistance(bot, targetLocation) <= 850
+			if closeEnough and (mission.phase == 'ambush' or mission.phase == 'engage') then
+				return UseReadyConsumable(bot, mission, state.itemName, DUST_REQUESTER, mission.phase)
+			end
+		end
+		return false
+	end
+	-- 换位/确认动作独占；激活冷却与安全等待期间仍可继续向集结点移动。
+	local blocking = status == 'swap_issued' or status == 'restore_swap'
+		or status == 'bridge_attempt' or status == 'cast_confirm_wait'
+		or status == 'cast_confirmed'
+	return ownsLifecycle == true and blocking
+end
+
 function Gank.Think(bot)
 	if not IsEnabled() then
 		Coordinator.Abort(bot, 'disabled')
@@ -179,16 +453,40 @@ function Gank.Think(bot)
 	-- 已发出的 TP 必须先收集终态；否则目标同帧死亡会让 coordinator 先释放并丢失落点结果。
 	local activeMission = Coordinator.GetMission(bot)
 	if HasIssuedTP(bot, activeMission) and TryUseTP(bot, activeMission) then return end
-	if Coordinator.GetDesire(bot) <= BOT_MODE_DESIRE_NONE then return end
+	if HasIssuedTwinGate(bot, activeMission) and TryUseTwinGate(bot, activeMission) then return end
+	if Coordinator.GetDesire(bot) <= BOT_MODE_DESIRE_NONE then
+		Consumables.Release(bot, SMOKE_REQUESTER, 'mission_released')
+		Consumables.Release(bot, DUST_REQUESTER, 'mission_released')
+		return
+	end
 	local mission = Coordinator.GetMission(bot)
 	if mission == nil then return end
 
-	-- 先让 TP 生命周期观察到引导开始和结束，再保护普通技能前摇/引导动作。
+	-- 先让长距离路线观察到引导开始和结束，再保护普通技能前摇/引导动作。
 	if TryUseTP(bot, mission) then return end
+	if TryUseTwinGate(bot, mission) then return end
+
+	-- 先预热副包烟，再继续向集结点移动；这样最后到达的 owner 不会把激活等待全部压进 conceal。
+	if HandleMissionConsumables(bot, mission) then return end
+	if mission.phase == 'assemble' and mission.stagingLocation ~= nil
+		and GetLandingDistance(bot, mission.stagingLocation) > Config.PICKOFF_ASSEMBLE_RADIUS - 50
+	then
+		J.ActionMoveToLocation(bot, 'roam_gank_assemble', mission.stagingLocation, 0.25, 180)
+		return
+	end
 	-- ROAM 只负责移动和普攻；前摇、引导和持续施法期间绝不覆盖技能动作。
 	if IsActionBlocked(bot) then return end
+	if mission.phase == 'assemble' or mission.phase == 'conceal' then
+		local stagingLocation = mission.stagingLocation or Coordinator.GetRallyLocation(mission)
+		if stagingLocation ~= nil then
+			J.ActionMoveToLocation(bot, 'roam_gank_' .. tostring(mission.phase), stagingLocation, 0.25, 180)
+		end
+		return
+	end
 
-	if mission.target ~= nil and mission.target.CanBeSeen ~= nil and mission.target:CanBeSeen() then
+	if mission.target ~= nil and mission.target.CanBeSeen ~= nil
+		and Safe(false, function() return mission.target:CanBeSeen() end)
+	then
 		J.SetTargetIfChanged(bot, mission.target, 0.5)
 		local rallyLocation = Coordinator.GetRallyLocation(mission)
 			or Safe(nil, function() return mission.target:GetLocation() end)

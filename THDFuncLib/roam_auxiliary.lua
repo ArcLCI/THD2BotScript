@@ -7,6 +7,7 @@ local FlandreUltimate = require(GetScriptDirectory()..'/THDFuncLib/flandre_ultim
 local SunnyUltimate = require(GetScriptDirectory()..'/THDFuncLib/sunny_ultimate')
 local YuukaCombo = require(GetScriptDirectory()..'/THDFuncLib/yuuka_combo')
 local NitoriPoke = require(GetScriptDirectory()..'/THDFuncLib/nitori_poke')
+local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
 
 local Auxiliary = {}
 
@@ -405,6 +406,10 @@ local function TryHandleDisplacedItem()
 end
 
 function Auxiliary.Think()
+	-- 消耗品租约活跃时，草薙剑回收与食用物交换必须让行，避免双方争抢同一主背包格。
+	if Consumables.GetState(bot) ~= nil then
+		if Consumables.Think(bot) then return end
+	end
 	-- 临时腾格恢复必须优先，避免英雄专用 Think 覆盖拾取或回收动作。
 	if TryHandleDisplacedItem() then return end
 	if NitoriPoke.Think(bot) then return end

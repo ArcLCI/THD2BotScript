@@ -3,9 +3,13 @@ local Defend = require(GetScriptDirectory()..'/THDFuncLib/aba_defend')
 local LaneAssignment = require(GetScriptDirectory()..'/THDFuncLib/lane_assignment')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/roam_config')
 local Initiation = require(GetScriptDirectory()..'/THDFuncLib/roam_initiation')
+local Pickoff = require(GetScriptDirectory()..'/THDFuncLib/roam_pickoff')
+local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 
 local Coordinator = {}
 local states = {}
+local teamStates = {}
+local targetHealthHistories = {}
 
 local LANES = {LANE_TOP, LANE_MID, LANE_BOT}
 local PROPOSAL_DESIRE = BOT_MODE_DESIRE_ABSOLUTE
@@ -25,6 +29,20 @@ end
 
 local function Clamp(value, low, high)
 	return math.max(low, math.min(high, value))
+end
+
+local function GetSharedTeamState()
+	local team = Safe(-1, function() return GetTeam() end)
+	if teamStates[team] == nil then
+		teamStates[team] = {
+			lastMissionStart = -9999,
+			lastMissionID = nil,
+			lastMissionLeaderID = nil,
+			lastMissionTargetID = nil,
+			objectiveLockUntil = -9999,
+		}
+	end
+	return teamStates[team]
 end
 
 local function GetPlayerID(unit)
@@ -76,6 +94,13 @@ end
 
 local function ObserveTeamMission(state, missionID, missionStart, leaderID, targetID, signalTime)
 	if state == nil or type(missionStart) ~= 'number' then return end
+	local shared = GetSharedTeamState()
+	if missionStart >= (shared.lastMissionStart or -9999) then
+		shared.lastMissionStart = missionStart
+		shared.lastMissionID = missionID
+		shared.lastMissionLeaderID = leaderID
+		shared.lastMissionTargetID = targetID
+	end
 	state.lastObservedMissionStart = math.max(state.lastObservedMissionStart or -9999, missionStart)
 	if missionStart >= (state.lastTeamMissionStart or -9999) then
 		state.lastTeamMissionStart = missionStart
@@ -86,6 +111,22 @@ local function ObserveTeamMission(state, missionID, missionStart, leaderID, targ
 	end
 end
 
+local function HasTeamObjectiveCommitment(bot)
+	local outerCommitment = Wasteland.GetOuterTowerCommitment()
+	if outerCommitment ~= nil then return true, 'outer_tower_commit' end
+	local now = DotaTime()
+	local shared = GetSharedTeamState()
+	local doingRoshan = J.IsDoingRoshan(bot)
+	local pushing = J.Utils.IsTeamPushingSecondTierOrHighGround(bot)
+	if doingRoshan or pushing then
+		shared.objectiveLockUntil = math.max(shared.objectiveLockUntil or -9999,
+			now + Config.TEAM_OBJECTIVE_LOCK_DURATION)
+		return true, doingRoshan and 'roshan' or 'pushing_t2_or_high_ground'
+	end
+	if now < (shared.objectiveLockUntil or -9999) then return true, 'team_objective_lock' end
+	return false, nil
+end
+
 local function IsValidUnit(unit)
 	if unit == nil then return false end
 	if unit.IsNull ~= nil and Safe(true, function() return unit:IsNull() end) then return false end
@@ -94,9 +135,10 @@ local function IsValidUnit(unit)
 end
 
 local function CanInspectUnit(unit)
-	return IsValidUnit(unit)
-		and unit.CanBeSeen ~= nil
-		and Safe(false, function() return unit:CanBeSeen() end) == true
+	if unit == nil then return false end
+	if unit.IsNull ~= nil and Safe(true, function() return unit:IsNull() end) then return false end
+	if unit.CanBeSeen == nil or Safe(false, function() return unit:CanBeSeen() end) ~= true then return false end
+	return unit.IsAlive == nil or Safe(false, function() return unit:IsAlive() end) == true
 end
 
 local function IsRealEnemyHero(bot, target)
@@ -301,8 +343,8 @@ local function CanInitiate(bot)
 	if GetHealthFraction(bot) < rule.minHealth then return false, 'health_too_low' end
 	if GetManaFraction(bot) < rule.minMana then return false, 'mana_too_low' end
 	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then return false, 'retreat' end
-	if J.IsDoingRoshan(bot) then return false, 'roshan' end
-	if J.Utils.IsTeamPushingSecondTierOrHighGround(bot) then return false, 'pushing_t2_or_high_ground' end
+	local objectiveLocked, objectiveReason = HasTeamObjectiveCommitment(bot)
+	if objectiveLocked then return false, objectiveReason end
 
 	if DotaTime() < Config.LANING_PHASE_END_TIME then
 		if position == 'mid' then
@@ -811,7 +853,35 @@ function Coordinator.CalculateTargetScore(metrics)
 	return healthScore + powerScore + positionScore + travelScore + damageScore
 end
 
-local function EstimateLocalTargetTTK(target, hosts, targetHealth)
+local function ObserveTargetHealthDPS(target, targetHealth)
+	local targetID = GetPlayerID(target)
+	if targetID < 0 or type(targetHealth) ~= 'number' then return 0 end
+	local now = Safe(0, function() return DotaTime() end) or 0
+	local history = targetHealthHistories[targetID]
+	if history == nil then
+		history = {samples = {}}
+		targetHealthHistories[targetID] = history
+	end
+	local samples = history.samples
+	local last = samples[#samples]
+	if last == nil or now - last.time >= 0.20 or last.health ~= targetHealth then
+		table.insert(samples, {time = now, health = targetHealth})
+	end
+	while #samples > 1 and now - samples[1].time > Config.TARGET_HEALTH_HISTORY_WINDOW do
+		table.remove(samples, 1)
+	end
+	local observedDPS = 0
+	for _, sample in ipairs(samples) do
+		local elapsed = now - sample.time
+		local healthDrop = sample.health - targetHealth
+		if elapsed > 0 and healthDrop >= Config.TARGET_HEALTH_HISTORY_MIN_DROP then
+			observedDPS = math.max(observedDPS, healthDrop / elapsed)
+		end
+	end
+	return observedDPS
+end
+
+local function EstimateLocalTargetTTK(target, hosts, targetHealth, observedHealthDPS)
 	local localAttackDPS = 0
 	for _, host in ipairs(hosts or {}) do
 		local attackTarget = host.GetAttackTarget ~= nil
@@ -823,10 +893,10 @@ local function EstimateLocalTargetTTK(target, hosts, targetHealth)
 			localAttackDPS = localAttackDPS + damage / attackPeriod
 		end
 	end
-	if localAttackDPS <= 0 then return nil, 0 end
-	local adjustedDPS = localAttackDPS * Config.TARGET_LOCAL_DAMAGE_FACTOR
-	if adjustedDPS <= 0 then return nil, localAttackDPS end
-	return targetHealth / adjustedDPS, localAttackDPS
+	local adjustedDPS = math.max(localAttackDPS * Config.TARGET_LOCAL_DAMAGE_FACTOR,
+		tonumber(observedHealthDPS) or 0)
+	if adjustedDPS <= 0 then return nil, localAttackDPS, observedHealthDPS or 0 end
+	return targetHealth / adjustedDPS, localAttackDPS, observedHealthDPS or 0
 end
 
 local function BuildTargetPlan(bot, target, fixedLeader)
@@ -851,7 +921,9 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 		return nil, 'leader_not_elected'
 	end
 	-- 本地队友已经能在支援者抵达前完成击杀时，不再让低血量分数制造无效赶路任务。
-	local expectedLocalTTK, localAttackDPS = EstimateLocalTargetTTK(target, hosts, targetHealth)
+	local observedHealthDPS = ObserveTargetHealthDPS(target, targetHealth)
+	local expectedLocalTTK, localAttackDPS = EstimateLocalTargetTTK(
+		target, hosts, targetHealth, observedHealthDPS)
 	if expectedLocalTTK ~= nil
 		and expectedLocalTTK <= participants[1].travelTime + Config.TARGET_ARRIVAL_BUFFER
 	then
@@ -882,9 +954,14 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 	})
 	local outnumberAdvantage = allyCount > enemyCount
 		and powerRatio >= Config.OUTNUMBER_TARGET_MIN_POWER_RATIO
-	if score < Config.MIN_TARGET_SCORE and not outnumberAdvantage then
+	local minimumScore = Config.MIN_TARGET_SCORE
+	if outnumberAdvantage then
+		minimumScore = minimumScore - Config.OUTNUMBER_TARGET_SCORE_RELIEF
+	end
+	if score < minimumScore then
 		return nil, 'target_score_too_low', {
 			score = score,
+			minimumScore = minimumScore,
 			powerRatio = powerRatio,
 			allyCount = allyCount,
 			enemyCount = enemyCount,
@@ -908,6 +985,18 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 			channelTime = participant.tpChannelTime,
 		}
 	end
+	local initiationDescription = Initiation.DescribeMission({participantIDs = participantIDs}, GetTeamMembers())
+	local hasReadyOpener = (initiationDescription.readyCount or 0) > 0
+	if healthFraction >= Config.HIGH_HEALTH_TARGET_FRACTION
+		and #participantIDs < Config.HIGH_HEALTH_MIN_PARTICIPANTS
+		and not hasReadyOpener
+	then
+		return nil, 'high_health_without_setup', {
+			healthFraction = healthFraction,
+			participants = #participantIDs,
+			readyOpeners = initiationDescription.readyCount or 0,
+		}
+	end
 	if earlyRoam then
 		local outnumberOpportunity = outnumberAdvantage
 			and healthFraction <= Config.EARLY_ROAM_OUTNUMBER_TARGET_HEALTH
@@ -925,6 +1014,7 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 		end
 	end
 	return {
+		kind = 'lane_gank',
 		target = target,
 		targetPlayerID = targetPlayerID,
 		targetLane = lane,
@@ -948,6 +1038,7 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 		outnumberAdvantage = outnumberAdvantage,
 		expectedLocalTTK = expectedLocalTTK,
 		localAttackDPS = localAttackDPS,
+		observedHealthDPS = observedHealthDPS,
 		rallyLocation = Safe(nil, function() return target:GetLocation() end),
 		travelPlans = travelPlans,
 		useTP = participants[1].useTP == true,
@@ -1001,6 +1092,12 @@ function Coordinator.BuildBestProposal(bot)
 			best = proposal
 		end
 	end
+	local pickoff, pickoffRejected = Pickoff.BuildBestProposal(bot, nil)
+	for reason, count in pairs(pickoffRejected or {}) do
+		rejected[reason] = (rejected[reason] or 0) + count
+	end
+	-- 严格多打少机会优先；纯烟雾巡逻只在没有普通线上目标时接管，避免猜测覆盖已知战机。
+	if pickoff ~= nil and (pickoff.kind == 'pickoff' or best == nil) then best = pickoff end
 	if targetCount == 0 then rejected.no_visible_enemy = 1 end
 	return best, rejected
 end
@@ -1057,6 +1154,24 @@ local function ObserveAnnouncements(bot)
 		if source ~= bot then
 			local target = Safe(nil, function() return source:GetTarget() end)
 			local ping = Safe(nil, function() return source:GetMostRecentPing() end)
+			local pickoffPlan = Pickoff.BuildAnnouncement(bot, source, ping, gameNow)
+			if pickoffPlan ~= nil then
+				local signalAge = math.max(0, gameNow - ping.time)
+				local missionStart = now - signalAge
+				local missionID = BuildMissionID(GetPlayerID(source), pickoffPlan.targetPlayerID, ping.time)
+				ObserveTeamMission(state, missionID, missionStart,
+					GetPlayerID(source), pickoffPlan.targetPlayerID, ping.time)
+				pickoffPlan.startTime = missionStart
+				pickoffPlan.signalTime = ping.time
+				pickoffPlan.missionID = missionID
+				pickoffPlan.phase = 'assemble'
+				pickoffPlan.phaseStartTime = missionStart
+				if best == nil or pickoffPlan.signalTime < best.signalTime
+					or (pickoffPlan.signalTime == best.signalTime and pickoffPlan.leaderID < best.leaderID)
+				then
+					best = pickoffPlan
+				end
+			end
 			if Coordinator.IsAnnouncementValid(bot, source, target, ping, gameNow) then
 				local signalAge = math.max(0, gameNow - ping.time)
 				local missionStart = now - signalAge
@@ -1093,11 +1208,14 @@ local function ObserveActiveTeamMission(bot)
 		if source ~= bot then
 			local target = Safe(nil, function() return source:GetTarget() end)
 			local ping = Safe(nil, function() return source:GetMostRecentPing() end)
-			if IsMissionSignalValid(bot, source, target, ping, gameNow, maxAge) then
+			local oldSignal = IsMissionSignalValid(bot, source, target, ping, gameNow, maxAge)
+			local pickoffSignal = Pickoff.IsSignalCandidate(bot, source, ping, gameNow, maxAge)
+			if oldSignal or pickoffSignal then
 				local signalAge = math.max(0, gameNow - ping.time)
 				local missionStart = now - signalAge
 				local leaderID = GetPlayerID(source)
 				local targetID = GetPlayerID(target)
+				if targetID < 0 then targetID = -1000 - leaderID end
 				local missionID = BuildMissionID(leaderID, targetID, ping.time)
 				ObserveTeamMission(state, missionID, missionStart, leaderID, targetID, ping.time)
 				if best == nil or missionStart > best.startTime
@@ -1359,12 +1477,67 @@ local function UpdateMissionRally(bot, mission, location, now)
 		location.x or 0, location.y or 0, tostring(mission.phase)))
 end
 
+local function TryAdoptVisiblePatrolTarget(bot, mission, now)
+	if mission == nil or mission.kind ~= 'smoke_patrol' or mission.target ~= nil then return false end
+	if mission.leader == nil or mission.leader == bot then return false end
+	local target = Safe(nil, function() return mission.leader:GetTarget() end)
+	if not IsRealEnemyHero(bot, target) then return false end
+	local location = Safe(nil, function() return target:GetLocation() end)
+	if location == nil then return false end
+	local searchCenter = mission.rallyLocation or mission.lastLocation
+	if searchCenter ~= nil
+		and GetLocationDistance(location, searchCenter) > Config.PICKOFF_REVALIDATE_RADIUS
+	then
+		return false
+	end
+	-- 只接收本 Bot 也能看见的队长目标，避免在 Bot 之间传播隐藏单位句柄。
+	mission.target = target
+	mission.targetPlayerID = GetPlayerID(target)
+	mission.targetHeroName = GetUnitName(target)
+	mission.lastLocation = location
+	mission.rallyLocation = location
+	mission.lastVisibleTime = now
+	return true
+end
+
+local function GetRoamTeamfightStatus(bot, mission)
+	if mission == nil then return false, nil end
+	local location = mission.rallyLocation or mission.lastLocation
+	if location == nil and CanInspectUnit(mission.target) then
+		location = Safe(nil, function() return mission.target:GetLocation() end)
+	end
+	local active, counts = Pickoff.GetTeamfightStatus(bot, location, Config.ROAM_TEAMFIGHT_RADIUS)
+	counts = counts or {}
+	return active, {
+		teamfightAllies = counts.allyCount or 0,
+		teamfightEnemies = counts.enemyCount or 0,
+		teamfightTotal = counts.totalHeroCount or 0,
+	}
+end
+
+local function NoteAttributedRoamKill(bot, mission)
+	if mission == nil or mission.phase ~= 'engage' then return false end
+	local metrics = mission.metrics or {}
+	if metrics.attackTargetSeen ~= true then return false end
+	return Wasteland.NoteRoamKill(mission.targetLane, GetMissionID(mission), bot)
+end
+
+local function IsTPReacquireProtected(bot, mission, now)
+	if mission == nil or type(mission.travelPlans) ~= 'table' then return false end
+	local plan = mission.travelPlans[GetPlayerID(bot)]
+	if plan == nil or plan.tpIssued ~= true then return false end
+	if plan.useTP == true then return true end
+	return plan.tpLanded == true
+		and now - (plan.tpEndedTime or now) <= Config.TP_TARGET_REACQUIRE_GRACE
+end
+
 local function GetMissionDesire(bot, state)
 	local mission = state.mission
 	if mission == nil then return BOT_MODE_DESIRE_NONE end
 	if not IsEnabled() then Coordinator.Abort(bot, 'disabled') return BOT_MODE_DESIRE_NONE end
 	local now = DotaTime()
-	if now - mission.startTime >= Config.MISSION_TIMEOUT then
+	local missionTimeout = mission.kind == 'lane_gank' and Config.MISSION_TIMEOUT or Config.PICKOFF_TOTAL_TIMEOUT
+	if now - mission.startTime >= missionTimeout then
 		Coordinator.Abort(bot, 'mission_timeout')
 		return BOT_MODE_DESIRE_NONE
 	end
@@ -1376,15 +1549,26 @@ local function GetMissionDesire(bot, state)
 		Coordinator.Abort(bot, 'urgent_defense')
 		return BOT_MODE_DESIRE_NONE
 	end
-	if J.IsDoingRoshan(bot) or J.Utils.IsTeamPushingSecondTierOrHighGround(bot) then
-		Coordinator.Abort(bot, 'team_objective')
+	local objectiveLocked, objectiveReason = HasTeamObjectiveCommitment(bot)
+	local canFinishEngagedPickoff = objectiveReason == 'outer_tower_commit'
+		and mission.phase == 'engage'
+	if objectiveLocked and not canFinishEngagedPickoff then
+		Coordinator.Abort(bot, objectiveReason or 'team_objective')
+		return BOT_MODE_DESIRE_NONE
+	end
+	local teamfightActive, teamfightContext = GetRoamTeamfightStatus(bot, mission)
+	if teamfightActive then
+		-- 局部抓单扩大为六人以上交战后释放 ROAM，让正式团战模式接管。
+		Coordinator.Abort(bot, 'teamfight_escalated', teamfightContext)
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	if mission.leader ~= bot then
+		local leaderTargetMatches = mission.target == nil
+			or Safe(nil, function() return mission.leader:GetTarget() end) == mission.target
 		if not IsValidUnit(mission.leader)
 			or Safe(BOT_MODE_NONE, function() return mission.leader:GetActiveMode() end) ~= BOT_MODE_ROAM
-			or Safe(nil, function() return mission.leader:GetTarget() end) ~= mission.target
+			or not leaderTargetMatches
 		then
 			Coordinator.Abort(bot, 'leader_released')
 			return BOT_MODE_DESIRE_NONE
@@ -1400,8 +1584,10 @@ local function GetMissionDesire(bot, state)
 			and IsParticipant(memberID, mission.plannedParticipantIDs)
 			and not mission.droppedParticipantIDs[memberID]
 		then
+			local matchingTarget = mission.target == nil
+				or Safe(nil, function() return member:GetTarget() end) == mission.target
 			local matchingRoam = Safe(BOT_MODE_NONE, function() return member:GetActiveMode() end) == BOT_MODE_ROAM
-				and Safe(nil, function() return member:GetTarget() end) == mission.target
+				and matchingTarget
 			if matchingRoam and not mission.joinedParticipantIDs[memberID] then
 				mission.joinedParticipantIDs[memberID] = true
 				Debug(bot, string.format('participant_join mission=%s participant=%s elapsed=%.1f source=observed_roam',
@@ -1423,13 +1609,49 @@ local function GetMissionDesire(bot, state)
 				and not mission.joinedParticipantIDs[participantID]
 				and not mission.droppedParticipantIDs[participantID]
 			then
-				DropMissionParticipant(bot, mission, participantID, 'join_timeout', now)
+				if mission.kind == nil or mission.kind == 'lane_gank' then
+					DropMissionParticipant(bot, mission, participantID, 'join_timeout', now)
+				else
+					-- 集合/开雾任务必须等到计划成员真的进入 ROAM，不能删人后仍沿用 requiredCount。
+					mission.ackWaitLoggedIDs = mission.ackWaitLoggedIDs or {}
+					if not mission.ackWaitLoggedIDs[participantID] then
+						mission.ackWaitLoggedIDs[participantID] = true
+						Debug(bot, string.format('participant_ack_wait mission=%s participant=%s elapsed=%.1f kind=%s',
+							tostring(GetMissionID(mission)), tostring(participantID),
+							math.max(0, now - (mission.startTime or now)), tostring(mission.kind)))
+					end
+				end
 			end
 		end
 	end
 
-	local targetAlive = Safe(false, function() return mission.target:IsAlive() end)
+	if mission.kind ~= nil and mission.kind ~= 'lane_gank' then
+		TryAdoptVisiblePatrolTarget(bot, mission, now)
+		local previousPhase = mission.phase
+		local desire, reason = Pickoff.UpdateMission(bot, mission)
+		if reason ~= nil then
+			if reason == 'target_dead' then NoteAttributedRoamKill(bot, mission) end
+			Coordinator.Abort(bot, reason)
+			return BOT_MODE_DESIRE_NONE
+		end
+		if mission.target ~= nil
+			and Safe(false, function() return mission.target:CanBeSeen() end)
+		then
+			J.SetTargetIfChanged(bot, mission.target, 0.2)
+		end
+		if previousPhase ~= mission.phase then
+			Debug(bot, string.format('phase=%s mission=%s kind=%s target=%s numbers=%dv%d power=%.2f kill=%.1f',
+				tostring(mission.phase), tostring(GetMissionID(mission)), tostring(mission.kind),
+				tostring(mission.targetPlayerID), mission.allyCount or 0, mission.enemyCount or 0,
+				mission.powerRatio or -1, mission.predictedKillTime or -1))
+		end
+		return desire or BOT_MODE_DESIRE_NONE
+	end
+
+	-- 敌方离开视野后不再直接读取 handle:IsAlive，改用玩家级 API 避免不可见 receiver 警告。
+	local targetAlive = Safe(false, function() return IsHeroAlive(mission.targetPlayerID) end)
 	if not targetAlive then
+		NoteAttributedRoamKill(bot, mission)
 		Coordinator.Abort(bot, 'target_dead')
 		return BOT_MODE_DESIRE_NONE
 	end
@@ -1441,7 +1663,9 @@ local function GetMissionDesire(bot, state)
 		-- 可见目标的位置就是当前集合点；步行和尚未发出的 TP 都消费同一份动态坐标。
 		UpdateMissionRally(bot, mission, targetLocation, now)
 		RecordMissionObservation(bot, mission, now, true)
-	elseif now - (mission.lastVisibleTime or mission.startTime) > Config.LOST_TARGET_GRACE then
+	elseif not IsTPReacquireProtected(bot, mission, now)
+		and now - (mission.lastVisibleTime or mission.startTime) > Config.LOST_TARGET_GRACE
+	then
 		Coordinator.Abort(bot, 'target_lost')
 		return BOT_MODE_DESIRE_NONE
 	end
@@ -1507,14 +1731,29 @@ function Coordinator.GetDesire(bot)
 
 	local announcement = ObserveAnnouncements(bot)
 	local urgentDefense = HasUrgentDefense(bot)
+	local objectiveLocked, objectiveReason = HasTeamObjectiveCommitment(bot)
 	if announcement ~= nil
 		and not urgentDefense
+		and not objectiveLocked
 		and IsParticipant(GetPlayerID(bot), announcement.participantIDs)
 	then
+		local teamfightActive, teamfightContext = GetRoamTeamfightStatus(bot, announcement)
+		if teamfightActive then
+			state.pending = nil
+			DebugStatus(bot, string.format('reason=signal_teamfight allies=%d enemies=%d total=%d',
+				teamfightContext.teamfightAllies, teamfightContext.teamfightEnemies,
+				teamfightContext.teamfightTotal))
+			return BOT_MODE_DESIRE_NONE
+		end
 		state.pending = announcement
 		DebugStatus(bot, 'reason=signal_accept target=' .. tostring(announcement.targetPlayerID)
 			.. ' leader=' .. tostring(announcement.leaderID))
 		return PROPOSAL_DESIRE
+	end
+	if announcement ~= nil and objectiveLocked then
+		state.pending = nil
+		DebugStatus(bot, 'reason=signal_objective_lock objective=' .. tostring(objectiveReason))
+		return BOT_MODE_DESIRE_NONE
 	end
 	if not IsValidUnit(bot) or not Safe(false, function() return bot:IsAlive() end) then
 		DebugStatus(bot, 'reason=invalid_or_dead')
@@ -1523,16 +1762,18 @@ function Coordinator.GetDesire(bot)
 	local now = DotaTime()
 	-- 每次选举前重新观察全队活跃 ROAM 信号，避免每个 Bot 只按自己的本地时间放行。
 	ObserveActiveTeamMission(bot)
-	local teamMissionStart = math.max(state.lastObservedMissionStart or -9999, state.lastTeamMissionStart or -9999)
+	local shared = GetSharedTeamState()
+	local teamMissionStart = math.max(state.lastObservedMissionStart or -9999,
+		state.lastTeamMissionStart or -9999, shared.lastMissionStart or -9999)
 	local earlyCooldown = IsEarlyRoamer(bot)
 	local cooldownDuration = earlyCooldown and Config.EARLY_ROAM_TEAM_COOLDOWN or Config.TEAM_COOLDOWN
 	local cooldownRemaining = cooldownDuration - (now - teamMissionStart)
 	if cooldownRemaining > 0 then
 		DebugStatus(bot, string.format('reason=team_cooldown remaining=%.1f threshold=%.1f level=%d early=%s mission=%s leader=%s target=%s',
 			cooldownRemaining, cooldownDuration, GetLevel(bot), tostring(earlyCooldown),
-			tostring(state.lastTeamMissionID or 'unknown'),
-			tostring(state.lastTeamMissionLeaderID or 'unknown'),
-			tostring(state.lastTeamMissionTargetID or 'unknown')))
+			tostring(shared.lastMissionID or state.lastTeamMissionID or 'unknown'),
+			tostring(shared.lastMissionLeaderID or state.lastTeamMissionLeaderID or 'unknown'),
+			tostring(shared.lastMissionTargetID or state.lastTeamMissionTargetID or 'unknown')))
 		return BOT_MODE_DESIRE_NONE
 	end
 	local eligible, eligibilityReason, eligibilityContext = CanInitiate(bot)
@@ -1561,15 +1802,28 @@ function Coordinator.GetDesire(bot)
 			.. ' leader=' .. tostring(proposal.leaderID))
 		return BOT_MODE_DESIRE_NONE
 	end
+	local teamfightActive, teamfightContext = GetRoamTeamfightStatus(bot, proposal)
+	if teamfightActive then
+		state.pending = nil
+		DebugStatus(bot, string.format('reason=proposal_teamfight allies=%d enemies=%d total=%d',
+			teamfightContext.teamfightAllies, teamfightContext.teamfightEnemies,
+			teamfightContext.teamfightTotal))
+		return BOT_MODE_DESIRE_NONE
+	end
 	proposal.startTime = DotaTime()
 	proposal.signalTime = proposal.startTime
 	proposal.missionID = BuildMissionID(proposal.leaderID, proposal.targetPlayerID, proposal.signalTime)
-	proposal.phase = 'approach'
-	proposal.lastLocation = Safe(nil, function() return proposal.target:GetLocation() end)
-	proposal.rallyLocation = proposal.lastLocation
+	proposal.kind = proposal.kind or 'lane_gank'
+	proposal.phase = proposal.kind == 'lane_gank' and 'approach' or 'assemble'
+	proposal.phaseStartTime = proposal.startTime
+	if proposal.target ~= nil then
+		proposal.lastLocation = Safe(proposal.lastLocation, function() return proposal.target:GetLocation() end)
+	end
+	proposal.rallyLocation = proposal.rallyLocation or proposal.lastLocation
 	state.pending = proposal
-	DebugStatus(bot, string.format('reason=proposal mission=%s target=%s target_hero=%s participants=%s participant_levels=%s leader_level=%s early_roam=%s lane_remaining=%s lane_enemies=%s score=%.3f travel=%.1f route=%s health=%.2f local_ttk=%s local_dps=%.1f power=%.2f numbers=%dv%d outnumber=%s',
+	DebugStatus(bot, string.format('reason=proposal mission=%s kind=%s target=%s target_hero=%s participants=%s participant_levels=%s leader_level=%s early_roam=%s lane_remaining=%s lane_enemies=%s score=%.3f travel=%.1f route=%s health=%.2f local_ttk=%s predicted_kill=%s local_dps=%.1f health_dps=%.1f power=%.2f numbers=%dv%d outnumber=%s unknown=%s smoke=%s dust=%s',
 		tostring(proposal.missionID),
+		tostring(proposal.kind),
 		tostring(proposal.targetPlayerID),
 		tostring(proposal.targetHeroName or GetUnitName(proposal.target) or 'unknown'),
 		table.concat(proposal.participantIDs, ','),
@@ -1580,27 +1834,46 @@ function Coordinator.GetDesire(bot)
 		tostring(proposal.homeLaneEnemyCount or 'unknown'),
 		proposal.score or 0,
 		proposal.travelTime or -1,
-		proposal.useTP and 'tp' or 'walk',
+		tostring(proposal.route or (proposal.useTP and 'tp' or 'walk')),
 		proposal.healthFraction or -1,
 		FormatMetric(proposal.expectedLocalTTK, 1),
+		FormatMetric(proposal.predictedKillTime, 1),
 		proposal.localAttackDPS or 0,
+		proposal.observedHealthDPS or 0,
 		proposal.powerRatio or -1,
 		proposal.allyCount or 0,
 		proposal.enemyCount or 0,
-		tostring(proposal.outnumberAdvantage == true)
+		tostring(proposal.outnumberAdvantage == true),
+		tostring(proposal.unknownEnemyCount or 0),
+		tostring(proposal.requiresSmoke == true),
+		tostring(proposal.requiresDust == true)
 	))
-	return PROPOSAL_DESIRE
+	-- 只压低尚未接受的新提案；已发信号的参与者和活动任务继续保持原高优先级。
+	return Wasteland.AdjustRoamProposalDesire(PROPOSAL_DESIRE)
 end
 
 function Coordinator.OnStart(bot)
 	local state = GetState(bot)
 	if not IsEnabled() or state.pending == nil then return false end
 	local mission = state.pending
+	local objectiveLocked, objectiveReason = HasTeamObjectiveCommitment(bot)
+	if objectiveLocked then
+		state.pending = nil
+		state.lastAbortReason = 'start_invalid_' .. tostring(objectiveReason)
+		Debug(bot, 'skip_start reason=' .. tostring(objectiveReason)
+			.. ' target=' .. tostring(mission.targetPlayerID))
+		return false
+	end
 	local playerID = GetPlayerID(bot)
 	if mission.leaderID == playerID then
 		-- 模式仲裁和 OnStart 之间目标可能已经死亡或局势改变；发信号前必须重新验证。
 		local originalSignalTime = mission.signalTime
-		local refreshed, reason = BuildTargetPlan(bot, mission.target, bot)
+		local refreshed, reason = nil, nil
+		if mission.kind == nil or mission.kind == 'lane_gank' then
+			refreshed, reason = BuildTargetPlan(bot, mission.target, bot)
+		else
+			refreshed, reason = Pickoff.RefreshProposal(bot, mission, bot)
+		end
 		if refreshed == nil then
 			state.pending = nil
 			state.lastAbortReason = 'start_invalid_' .. tostring(reason)
@@ -1611,16 +1884,28 @@ function Coordinator.OnStart(bot)
 		refreshed.startTime = DotaTime()
 		refreshed.signalTime = originalSignalTime or refreshed.startTime
 		refreshed.missionID = mission.missionID
-		refreshed.phase = 'approach'
-		refreshed.lastLocation = Safe(nil, function() return refreshed.target:GetLocation() end)
-		refreshed.rallyLocation = refreshed.lastLocation
+		refreshed.kind = mission.kind or refreshed.kind or 'lane_gank'
+		refreshed.phase = refreshed.kind == 'lane_gank' and 'approach' or 'assemble'
+		refreshed.phaseStartTime = refreshed.startTime
+		if refreshed.target ~= nil then
+			refreshed.lastLocation = Safe(refreshed.lastLocation, function() return refreshed.target:GetLocation() end)
+		end
+		refreshed.rallyLocation = refreshed.rallyLocation or refreshed.lastLocation
 		mission = refreshed
+	end
+	local teamfightActive, teamfightContext = GetRoamTeamfightStatus(bot, mission)
+	if teamfightActive then
+		Coordinator.Abort(bot, 'start_invalid_teamfight', teamfightContext)
+		return false
 	end
 	state.mission = mission
 	state.pending = nil
 	mission.startTime = mission.startTime or DotaTime()
 	mission.signalTime = mission.signalTime or mission.startTime
 	mission.missionID = mission.missionID or BuildMissionID(mission.leaderID, mission.targetPlayerID, mission.signalTime)
+	mission.kind = mission.kind or 'lane_gank'
+	mission.phase = mission.phase or (mission.kind == 'lane_gank' and 'approach' or 'assemble')
+	mission.phaseStartTime = mission.phaseStartTime or mission.startTime
 	mission.targetHeroName = mission.targetHeroName or GetUnitName(mission.target)
 	mission.rallyLocation = mission.rallyLocation or mission.lastLocation
 	mission.plannedParticipantIDs = mission.plannedParticipantIDs or CopyParticipantIDs(mission.participantIDs)
@@ -1634,23 +1919,33 @@ function Coordinator.OnStart(bot)
 	mission.initiationCandidates = initiationDescription.candidates
 	Initiation.Begin(bot, mission)
 	mission.joinedParticipantIDs[playerID] = true
-	mission.lastVisibleTime = mission.startTime
+	mission.lastVisibleTime = mission.target ~= nil and mission.startTime or mission.lastVisibleTime
 	EnsureMissionMetrics(mission)
 	ObserveTeamMission(state, mission.missionID, mission.startTime,
 		mission.leaderID, mission.targetPlayerID, mission.signalTime)
-	J.SetTargetIfChanged(bot, mission.target, 0.1)
+	if mission.target ~= nil
+		and Safe(false, function() return mission.target:CanBeSeen() end)
+	then
+		J.SetTargetIfChanged(bot, mission.target, 0.1)
+	end
+	Pickoff.NoteMissionStart(mission)
 	Debug(bot, string.format('participant_join mission=%s participant=%s elapsed=%.1f source=local_start',
 		tostring(mission.missionID), tostring(playerID),
 		math.max(0, DotaTime() - (mission.startTime or DotaTime()))))
 
 	if mission.leaderID == playerID then
-		local location = mission.rallyLocation or mission.lastLocation
+		local location = mission.kind == 'lane_gank'
+			and (mission.rallyLocation or mission.lastLocation)
+			or (mission.stagingLocation or mission.rallyLocation or mission.lastLocation)
 		if location ~= nil then bot:ActionImmediate_Ping(location.x, location.y, true) end
 		if Config.ANNOUNCE_CHAT then
-			bot:ActionImmediate_Chat('[Roam] 集火敌方玩家 ' .. tostring(mission.targetPlayerID), false)
+			local announcement = mission.kind == 'smoke_patrol'
+				and '[Roam] 集合开雾侦察野区'
+				or ('[Roam] 集火敌方玩家 ' .. tostring(mission.targetPlayerID))
+			bot:ActionImmediate_Chat(announcement, false)
 		end
-		Debug(bot, string.format('start mission=%s leader=%s leader_level=%s hero=%s target=%s target_hero=%s participants=%s participant_levels=%s early_roam=%s lane_remaining=%s lane_enemies=%s score=%.3f travel=%.1f route=%s health=%.2f target_health=%s local_ttk=%s local_dps=%.1f power=%.2f numbers=%dv%d outnumber=%s opener=%s opener_registered=%d opener_ready=%d opener_candidates=%d opener_detail=%s',
-			tostring(mission.missionID), tostring(mission.leaderID),
+		Debug(bot, string.format('start mission=%s kind=%s phase=%s leader=%s leader_level=%s hero=%s target=%s target_hero=%s participants=%s participant_levels=%s early_roam=%s lane_remaining=%s lane_enemies=%s score=%.3f travel=%.1f route=%s health=%.2f target_health=%s local_ttk=%s predicted_kill=%s local_dps=%.1f health_dps=%.1f power=%.2f numbers=%dv%d outnumber=%s unknown=%s smoke=%s dust=%s opener=%s opener_registered=%d opener_ready=%d opener_candidates=%d opener_detail=%s',
+			tostring(mission.missionID), tostring(mission.kind), tostring(mission.phase), tostring(mission.leaderID),
 			tostring(mission.leaderLevel or 'unknown'), tostring(GetUnitName(bot) or 'unknown'),
 			tostring(mission.targetPlayerID),
 			tostring(mission.targetHeroName or 'unknown'),
@@ -1661,15 +1956,20 @@ function Coordinator.OnStart(bot)
 			tostring(mission.homeLaneEnemyCount or 'unknown'),
 			mission.score or 0,
 			mission.travelTime or -1,
-			mission.useTP and 'tp' or 'walk',
+			tostring(mission.route or (mission.useTP and 'tp' or 'walk')),
 			mission.healthFraction or -1,
 			FormatMetric(mission.targetHealth, 1),
 			FormatMetric(mission.expectedLocalTTK, 1),
+			FormatMetric(mission.predictedKillTime, 1),
 			mission.localAttackDPS or 0,
+			mission.observedHealthDPS or 0,
 			mission.powerRatio or -1,
 			mission.allyCount or 0,
 			mission.enemyCount or 0,
 			tostring(mission.outnumberAdvantage == true),
+			tostring(mission.unknownEnemyCount or 0),
+			tostring(mission.requiresSmoke == true),
+			tostring(mission.requiresDust == true),
 			tostring(mission.initiationOwnerID),
 			mission.initiationRegisteredCount or 0,
 			mission.initiationReadyCount or 0,
@@ -1707,7 +2007,10 @@ end
 
 function Coordinator.ResetForTests()
 	states = {}
+	teamStates = {}
+	targetHealthHistories = {}
 	Initiation.ResetForTests()
+	Pickoff.ResetForTests()
 end
 
 return Coordinator

@@ -342,6 +342,8 @@ function ConsidertheWorldQ()
                 end
             end
         end
+        -- 邻近列表可能全部被魔免、无敌或幻象筛掉，不能解引用空目标。
+        if lowestHPTarget == nil then return BOT_ACTION_DESIRE_NONE, 0 end
         if lowestHPTarget:GetMovementDirectionStability() >= 0.75 then
             local eta = 0.2 + (GetUnitToUnitDistance(npcBot,lowestHPTarget)/nProjectileSpeed)
             return BOT_ACTION_DESIRE_HIGH, lowestHPTarget:GetExtrapolatedLocation(eta)
@@ -419,6 +421,8 @@ function ConsiderAbilitySakuya01()
                 end
             end
         end
+        -- 邻近列表可能全部被魔免、无敌或幻象筛掉，不能解引用空目标。
+        if lowestHPTarget == nil then return BOT_ACTION_DESIRE_NONE, 0 end
         if lowestHPTarget:GetMovementDirectionStability() >= 0.75 then
             local eta = 0.2 + (GetUnitToUnitDistance(npcBot,lowestHPTarget)/nProjectileSpeed)
             return BOT_ACTION_DESIRE_HIGH, lowestHPTarget:GetExtrapolatedLocation(eta)

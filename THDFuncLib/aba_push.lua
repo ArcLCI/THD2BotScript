@@ -1,6 +1,7 @@
 local Push = {}
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
+local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 
 
 
@@ -37,6 +38,22 @@ end
 
 function Push.GetStablePushLane(bot, lane)
     if bot == nil then return lane end
+
+	local commitment = Wasteland.GetOuterTowerCommitment()
+	if commitment ~= nil then
+		bot.StablePushLane = commitment.lane
+		bot.StablePushLaneUntil = GameTime() + PUSH_LANE_STICKY_SECONDS
+		return commitment.lane
+	end
+	local conversion = Wasteland.GetConversionOpportunity()
+	if conversion ~= nil and conversion.lane ~= nil then
+		commitment = Wasteland.TryCreateOuterTowerCommitment(bot, conversion.lane, Wasteland.GetState())
+		if commitment ~= nil then
+			bot.StablePushLane = commitment.lane
+			bot.StablePushLaneUntil = GameTime() + PUSH_LANE_STICKY_SECONDS
+			return commitment.lane
+		end
+	end
 
     local now = GameTime()
     if bot.StablePushLane ~= nil
@@ -153,6 +170,14 @@ function Push.ComputePushDesire(bot, lane)
     local nMissingEnemyHeroes = J.Utils.CountMissingEnemyHeroes()
     teamAveLvl = J.GetAverageLevel( false )
     enemyTeamAveLvl = J.GetAverageLevel( true )
+	local laneBuildingTier = Push.GetLaneBuildingTier(lane)
+	local wastelandState = Wasteland.IsEnabled() and Wasteland.GetState() or nil
+	if wastelandState ~= nil then Wasteland.ObserveOuterTowerSnapshot(bot, wastelandState) end
+	if Wasteland.ShouldHoldHighGround(laneBuildingTier,
+		wastelandState ~= nil and wastelandState.allyAverageLevel or nil)
+	then
+		return BOT_MODE_DESIRE_NONE
+	end
 
     if not CanPushWithLocalNumbers() then
         return BOT_MODE_DESIRE_EXTRA_LOW
@@ -178,6 +203,10 @@ function Push.ComputePushDesire(bot, lane)
     if eAliveCount > aAliveCount then
         nMaxDesire = math.min(nMaxDesire, PUSH_OUTNUMBERED_MAX_DESIRE)
     end
+	if wastelandState ~= nil then
+		local commitment = Wasteland.TryCreateOuterTowerCommitment(bot, lane, wastelandState)
+		if commitment ~= nil then wastelandState.outerCommitment = commitment end
+	end
 
     local distanceToEnemyAncient = GetUnitToUnitDistance(bot, hEnemyAncient)
     local ancientDefenseState = J.GetAncientDefenseState(4500)
@@ -233,10 +262,15 @@ function Push.ComputePushDesire(bot, lane)
             if J.DoesTeamHaveAegis() then
                 nPushDesire = nPushDesire + 0.3
             end
-            if eAliveCount > aAliveCount then
-                nPushDesire = nPushDesire + 0.12
-            end
-            return RemapValClamped(nPushDesire, 0, 1, 0, nMaxDesire)
+			-- 优势只作为有界增益；原逻辑在敌方存活更多时反而加欲望，方向与注释及目标相反。
+			local aliveLead = aAliveCount - eAliveCount
+			if aliveLead > 0 then nPushDesire = nPushDesire + math.min(0.18, aliveLead * 0.12) end
+			if weAreStronger then nPushDesire = nPushDesire + 0.08 end
+			local levelLead = teamAveLvl - enemyTeamAveLvl
+			if levelLead >= 1 then nPushDesire = nPushDesire + math.min(0.12, levelLead * 0.04) end
+			if teamKillsRatio >= 1.25 then nPushDesire = nPushDesire + 0.05 end
+			local desire = RemapValClamped(nPushDesire, 0, 1, 0, nMaxDesire)
+			return Wasteland.AdjustPushDesire(desire, laneBuildingTier, wastelandState, lane)
         end
     end
 
@@ -244,6 +278,9 @@ function Push.ComputePushDesire(bot, lane)
 end
 
 function Push.WhichLaneToPush(bot, lane)
+	local commitment = Wasteland.GetOuterTowerCommitment()
+	if commitment ~= nil then return commitment.lane end
+
     local cacheKey = 'PushWhichLaneToPush-'..tostring(GetTeam())
     local cachedLane = J.Utils.GetCachedVars(cacheKey, 1.0)
     if cachedLane ~= nil then
@@ -358,6 +395,15 @@ local fNextMovementTime = 0
 function Push.PushThink(bot, lane)
     if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
     if J.CanNotUseAction(bot) then return end
+	local laneBuildingTier = Push.GetLaneBuildingTier(lane)
+	if Wasteland.ShouldHoldHighGround(laneBuildingTier) then
+		-- 欲望缓存或旧模式仍存活时也不允许继续攻击高地；已接近则退回兵线安全侧。
+		if J.Utils.IsNearEnemyHighGroundTower(bot, 4200) then
+			local waitLocation = GetLaneFrontLocation(GetTeam(), lane, -1800)
+			J.ActionMoveToLocation(bot, 'wasteland_wait_high_ground_level', waitLocation, 0.35, 260)
+		end
+		return
+	end
 
 	local retreatState = J.Retreat.GetState(bot)
 	if retreatState.severity >= J.Retreat.HIGH then
@@ -513,6 +559,7 @@ function Push.PushThink(bot, lane)
 
         if hTowerTarget then
             hTowerTarget = J.GetStickyTarget(bot, 'push_tower', hTowerTarget, 1.8, nRange + 300)
+			Wasteland.NoteOuterTowerAttack(bot, lane, hTowerTarget)
             J.ActionAttackUnit(bot, 'push_attack_tower', hTowerTarget, true, 0.45)
             return
 

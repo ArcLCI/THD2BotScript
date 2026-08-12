@@ -1,4 +1,5 @@
 local Config = require(GetScriptDirectory() .. '/THDFuncLib/roam_config')
+local GeneratedHeroes = require(GetScriptDirectory() .. '/THDFuncLib/lane_assignment_generated')
 
 local Initiation = {}
 local states = {}
@@ -85,7 +86,16 @@ end
 
 local function GetHeroName(bot)
 	if bot == nil or bot.GetUnitName == nil then return nil end
-	return Safe(nil, function() return bot:GetUnitName() end)
+	local slotName = Safe(nil, function() return bot:GetUnitName() end)
+	local entry = slotName ~= nil and GeneratedHeroes.heroes ~= nil
+		and GeneratedHeroes.heroes[slotName]
+		or nil
+	-- Bot API 返回基础槽位；统一映射回 customHero 后再查询先手注册表。
+	return entry ~= nil and entry.customHero or slotName
+end
+
+function Initiation.ResolveHeroName(bot)
+	return GetHeroName(bot)
 end
 
 local function GetAbility(bot, info)
@@ -115,8 +125,8 @@ end
 
 local function IsValidTarget(target)
 	if target == nil then return false end
-	if target.IsAlive ~= nil and not Safe(false, function() return target:IsAlive() end) then return false end
 	if target.CanBeSeen ~= nil and not Safe(false, function() return target:CanBeSeen() end) then return false end
+	if target.IsAlive ~= nil and not Safe(false, function() return target:IsAlive() end) then return false end
 	return true
 end
 

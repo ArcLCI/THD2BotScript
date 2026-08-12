@@ -1,6 +1,7 @@
 require(GetScriptDirectory() ..  "/thd2_item_usage")
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Scheduler = require(GetScriptDirectory()..'/thd2_scheduler')
+local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
 
 
 local X = {}
@@ -584,6 +585,9 @@ end
 local function ItemUsageComplement()
 
 	X.SetStashItemTimeUpdate()
+	-- 副包消耗品租约优先持有物品生命周期，避免通用道具动作覆盖交换与恢复。
+	local ownsInventoryLifecycle = Consumables.Think(bot)
+	if ownsInventoryLifecycle == true then return BOT_ACTION_DESIRE_ABSOLUTE end
 
 	if not bot:IsAlive()
 		or bot:IsMuted()
@@ -1013,6 +1017,8 @@ end
 function AbilityUsageThink()
 	if RefreshBotHandle() then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+	-- 烟/粉发单后必须等到物品消耗或冷却得到确认，英雄技能不得覆盖这段短生命周期。
+	if Consumables.IsCastConfirmationPending(bot) then return end
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end
 
 	local abilityThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25)
