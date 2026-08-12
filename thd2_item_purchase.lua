@@ -149,8 +149,7 @@ end
 
 local function TryPurchaseRoamConsumable(npcBot, runnerSeed)
 	if RoamConfig.CONSUMABLE_PURCHASE_ENABLED ~= true or DotaTime() < RoamConfig.PICKOFF_START_TIME then return false end
-	local desiredItems = {'item_smoke_of_deceit'}
-	if EnemyDraftNeedsDust() then table.insert(desiredItems, 'item_dust') end
+	local desiredItems = RoamConfig.GetEnabledConsumablePurchaseItems(EnemyDraftNeedsDust())
 	for _, itemName in ipairs(desiredItems) do
 		local owner = GetDesignatedConsumableOwner(itemName)
 		if owner ~= nil and GetPlayerIDSafe(owner) == GetPlayerIDSafe(npcBot) then
@@ -276,7 +275,7 @@ function ConsiderItemPurchase(tableItemsToBuy,runnerSeedID)
 		npcBot:SetNextItemPurchaseValue( 0 )
 		return -1
 	end
-	-- 补货必须先于常规出装完成后的提前返回，才能在整场中后期持续维持烟与粉。
+	-- 启用的战术消耗品补货必须先于常规出装完成后的提前返回，确保粉等资源仍可持续补充。
 	if TryPurchaseRoamConsumable(npcBot, runnerSeed) then
 		last_purchased[runnerSeedID] = false
 		return -1

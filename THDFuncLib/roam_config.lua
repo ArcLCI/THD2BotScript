@@ -111,6 +111,8 @@ RoamConfig.SMOKE_SAFE_TOWER_RADIUS = 1325
 RoamConfig.SMOKE_PRECAST_STAGING_DISTANCE = 1800
 RoamConfig.SMOKE_MIN_HEALTH = 0.70
 RoamConfig.SMOKE_MIN_MANA = 0.60
+-- 当前烟雾任务的实战利用率较低；关闭后同时禁止购买、提案和施放，但保留完整实现以便后续复评。
+RoamConfig.SMOKE_ENABLED = false
 -- 可见目标距离足够远且队伍已有烟时也先集合开雾，不再把烟限制在失踪目标巡逻。
 RoamConfig.PICKOFF_VISIBLE_SMOKE_MIN_DISTANCE = 2000
 
@@ -122,6 +124,13 @@ RoamConfig.TWIN_GATE_CHANNEL_TIME_ESTIMATE = 3.0
 RoamConfig.TWIN_GATE_CAST_START_GRACE = 1.0
 RoamConfig.BACKPACK_CAST_BRIDGE_ENABLED = false
 RoamConfig.CONSUMABLE_PURCHASE_ENABLED = true
+
+function RoamConfig.GetEnabledConsumablePurchaseItems(enemyNeedsDust)
+	local items = {}
+	if RoamConfig.SMOKE_ENABLED == true then table.insert(items, 'item_smoke_of_deceit') end
+	if enemyNeedsDust == true then table.insert(items, 'item_dust') end
+	return items
+end
 
 -- 仅登记已由 hero.txt 与游戏侧能力 Lua/KV 双重确认的隐身来源；购买与抓单共用同一份 ID 表。
 RoamConfig.INVISIBILITY_HEROES = {
@@ -318,6 +327,7 @@ function RoamConfig.IsEnabled()
 		or type(RoamConfig.ANNOUNCE_CHAT) ~= "boolean"
 		or type(RoamConfig.ENABLE_TWIN_GATE_ROUTE) ~= "boolean"
 		or type(RoamConfig.BACKPACK_CAST_BRIDGE_ENABLED) ~= "boolean"
+		or type(RoamConfig.SMOKE_ENABLED) ~= "boolean"
 		or type(RoamConfig.CONSUMABLE_PURCHASE_ENABLED) ~= "boolean"
 		or type(RoamConfig.INVISIBILITY_HEROES) ~= "table"
 		or type(RoamConfig.INVISIBILITY_SELECTION_ALIASES) ~= "table"

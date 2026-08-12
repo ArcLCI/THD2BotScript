@@ -95,17 +95,23 @@ local function ClearCommit(team, reason, bot)
 		math.max(0, GetNow() - (commit.createdAt or GetNow())), tostring(commit.firstAttackTime ~= nil)))
 end
 
-local function GetStrictAverageLevel(team)
+local function GetActualBotAverageLevel(team)
 	local players = Safe({}, function() return GetTeamPlayers(team) end) or {}
-	-- 用户要求按五名英雄平均等级放行；名单不完整时 fail-closed，避免误上高。
-	if #players ~= 5 then return nil end
 	local total = 0
+	local botCount = 0
 	for _, playerID in ipairs(players) do
-		local level = Safe(nil, function() return GetHeroLevel(playerID) end)
-		if type(level) ~= 'number' or level < 1 then return nil end
-		total = total + level
+		local isBot = Safe(nil, function() return IsPlayerBot(playerID) end)
+		if type(isBot) ~= 'boolean' then return nil, nil end
+		if isBot then
+			local level = Safe(nil, function() return GetHeroLevel(playerID) end)
+			if type(level) ~= 'number' or level < 1 then return nil, nil end
+			total = total + level
+			botCount = botCount + 1
+		end
 	end
-	return total / #players
+	-- 只按当前队伍实际存在的 Bot 计平均值；任一 Bot 等级不可读时继续 fail-closed。
+	if botCount == 0 then return nil, 0 end
+	return total / botCount, botCount
 end
 
 local function CountEnemyOuterTowers()
@@ -144,11 +150,17 @@ end
 function Strategy.GetState()
 	local team = Safe(nil, function() return GetTeam() end)
 	local enemyTeam = Safe(nil, function() return GetOpposingTeam() end)
+	local allyAverageLevel, allyBotCount = nil, 0
+	local enemyAverageLevel, enemyBotCount = nil, 0
+	if team ~= nil then allyAverageLevel, allyBotCount = GetActualBotAverageLevel(team) end
+	if enemyTeam ~= nil then enemyAverageLevel, enemyBotCount = GetActualBotAverageLevel(enemyTeam) end
 	local state = {
 		time = Safe(0, function() return DotaTime() end) or 0,
 		outerTowersRemaining = CountEnemyOuterTowers(),
-		allyAverageLevel = team ~= nil and GetStrictAverageLevel(team) or nil,
-		enemyAverageLevel = enemyTeam ~= nil and GetStrictAverageLevel(enemyTeam) or nil,
+		allyAverageLevel = allyAverageLevel,
+		enemyAverageLevel = enemyAverageLevel,
+		allyBotCount = allyBotCount or 0,
+		enemyBotCount = enemyBotCount or 0,
 		allyAlive = Safe(0, function() return J.GetNumOfAliveHeroes(false) end) or 0,
 		enemyAlive = Safe(0, function() return J.GetNumOfAliveHeroes(true) end) or 0,
 		allyKills = Safe(0, function() return J.GetNumOfTeamTotalKills(false) end) or 0,
@@ -243,10 +255,11 @@ function Strategy.TryCreateOuterTowerCommitment(bot, lane, state)
 		expireAt = now + Strategy.OUTER_COMMIT_DURATION,
 	}
 	outerCommitments[team] = commit
-	Debug(bot, string.format('action=outer_commit_start lane=%s tier=%s source=%s mission=%s duration=%.1f ally_alive=%s enemy_alive=%s ally_avg=%s enemy_avg=%s',
+	Debug(bot, string.format('action=outer_commit_start lane=%s tier=%s source=%s mission=%s duration=%.1f ally_alive=%s enemy_alive=%s ally_avg=%s enemy_avg=%s ally_bots=%s enemy_bots=%s',
 		tostring(lane), tostring(tier), tostring(source), tostring(commit.missionID or 'none'),
 		Strategy.OUTER_COMMIT_DURATION, tostring(state.allyAlive), tostring(state.enemyAlive),
-		tostring(state.allyAverageLevel), tostring(state.enemyAverageLevel)))
+		tostring(state.allyAverageLevel), tostring(state.enemyAverageLevel),
+		tostring(state.allyBotCount or 0), tostring(state.enemyBotCount or 0)))
 	return commit
 end
 
@@ -299,7 +312,7 @@ function Strategy.ShouldHoldHighGround(laneBuildingTier, averageLevel)
 	local level = tonumber(averageLevel)
 	if level == nil then
 		local team = Safe(nil, function() return GetTeam() end)
-		level = team ~= nil and GetStrictAverageLevel(team) or nil
+		level = team ~= nil and GetActualBotAverageLevel(team) or nil
 	end
 	return level == nil or level < Strategy.MIN_TEAM_AVERAGE_LEVEL_FOR_HIGH_GROUND
 end
@@ -362,7 +375,7 @@ end
 
 function Strategy.GetStrictTeamAverageLevel()
 	local team = Safe(nil, function() return GetTeam() end)
-	return team ~= nil and GetStrictAverageLevel(team) or nil
+	return team ~= nil and GetActualBotAverageLevel(team) or nil
 end
 
 function Strategy.ResetForTests()

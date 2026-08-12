@@ -20,6 +20,19 @@ local function Safe(defaultValue, callback)
 	return defaultValue
 end
 
+local function ReleaseConsumable(bot, mission, requester, reason)
+	local state = Consumables.GetState(bot)
+	local itemName = state ~= nil and state.requester == requester and state.itemName or nil
+	local released, releaseReason = Consumables.Release(bot, requester, reason)
+	if itemName ~= nil and mission ~= nil then
+		Coordinator.DebugAction(bot, string.format('consumable_release mission=%s item=%s owner=%s phase=%s request_reason=%s released=%s reason=%s',
+			tostring(mission.missionID or 'unknown'), tostring(itemName),
+			tostring(Safe(-1, function() return bot:GetPlayerID() end)), tostring(mission.phase),
+			tostring(reason), tostring(released), tostring(releaseReason)))
+	end
+	return released, releaseReason
+end
+
 local function IsEnabled()
 	if type(Config) ~= 'table' or type(Config.IsEnabled) ~= 'function' then return false end
 	local ok, enabled = pcall(Config.IsEnabled)
@@ -44,14 +57,16 @@ function Gank.OnStart(bot)
 end
 
 function Gank.Abort(bot, reason, context)
-	Consumables.Release(bot, SMOKE_REQUESTER, reason or 'mission_abort')
-	Consumables.Release(bot, DUST_REQUESTER, reason or 'mission_abort')
+	local mission = Coordinator.GetMission(bot)
+	ReleaseConsumable(bot, mission, SMOKE_REQUESTER, reason or 'mission_abort')
+	ReleaseConsumable(bot, mission, DUST_REQUESTER, reason or 'mission_abort')
 	Coordinator.Abort(bot, reason, context)
 end
 
 function Gank.OnEnd(bot, reason)
-	Consumables.Release(bot, SMOKE_REQUESTER, reason or 'mode_end')
-	Consumables.Release(bot, DUST_REQUESTER, reason or 'mode_end')
+	local mission = Coordinator.GetMission(bot)
+	ReleaseConsumable(bot, mission, SMOKE_REQUESTER, reason or 'mode_end')
+	ReleaseConsumable(bot, mission, DUST_REQUESTER, reason or 'mode_end')
 	Coordinator.OnEnd(bot, reason)
 end
 
@@ -314,6 +329,7 @@ local function GetMissionParticipants(mission)
 end
 
 local function CanSafelyCastSmoke(bot, mission)
+	if Config.SMOKE_ENABLED ~= true then return false, 'smoke_disabled' end
 	if mission == nil or mission.requiresSmoke ~= true then return false, 'not_required' end
 	local participants = GetMissionParticipants(mission)
 	if #participants < (mission.requiredCount or 2) then return false, 'participants_missing' end
@@ -343,6 +359,7 @@ local function CanSafelyCastSmoke(bot, mission)
 end
 
 local function UseReadyConsumable(bot, mission, itemName, requester, castPhase)
+	if itemName == 'item_smoke_of_deceit' and Config.SMOKE_ENABLED ~= true then return false end
 	local item = Consumables.GetReadyItem(bot, itemName, requester)
 	if item == nil then return false end
 	bot:Action_UseAbility(item)
@@ -359,16 +376,63 @@ local function UseReadyConsumable(bot, mission, itemName, requester, castPhase)
 	return true
 end
 
+local function GetConsumableSlot(bot, itemName)
+	local item, slot = Consumables.FindItem(bot, itemName)
+	return item ~= nil and slot or -1
+end
+
+local function LogConsumableRequest(bot, mission, itemName, requester, accepted, reason, deadline)
+	mission.consumableRequestLogs = mission.consumableRequestLogs or {}
+	local key = tostring(accepted) .. ':' .. tostring(reason) .. ':' .. tostring(mission.phase)
+	if mission.consumableRequestLogs[requester] == key then return end
+	mission.consumableRequestLogs[requester] = key
+	Coordinator.DebugAction(bot, string.format('consumable_request mission=%s item=%s owner=%s phase=%s accepted=%s reason=%s slot=%s deadline_remaining=%.1f',
+		tostring(mission.missionID or 'unknown'), tostring(itemName), tostring(GetPlayerID(bot)),
+		tostring(mission.phase), tostring(accepted), tostring(reason),
+		tostring(GetConsumableSlot(bot, itemName)), math.max(0, deadline - DotaTime())))
+end
+
+local function RequestMissionConsumable(bot, mission, itemName, requester, priority, deadline)
+	local accepted, reason = Consumables.Request(bot, itemName, requester, priority, deadline, {kind = 'none'})
+	LogConsumableRequest(bot, mission, itemName, requester, accepted, reason, deadline)
+	return accepted, reason
+end
+
+local function LogConsumableStatus(bot, mission, state, status)
+	if state == nil or (state.requester ~= SMOKE_REQUESTER and state.requester ~= DUST_REQUESTER) then return end
+	mission.consumableStatusLogs = mission.consumableStatusLogs or {}
+	local key = tostring(status) .. ':' .. tostring(mission.phase)
+	if mission.consumableStatusLogs[state.requester] == key then return end
+	mission.consumableStatusLogs[state.requester] = key
+	Coordinator.DebugAction(bot, string.format('consumable_status mission=%s item=%s owner=%s phase=%s status=%s slot=%s ready=%s restore=%s deadline_remaining=%.1f',
+		tostring(mission.missionID or 'unknown'), tostring(state.itemName), tostring(GetPlayerID(bot)),
+		tostring(mission.phase), tostring(status), tostring(GetConsumableSlot(bot, state.itemName)),
+		tostring(state.ready == true), tostring(state.restorePending == true),
+		math.max(0, (state.deadline or DotaTime()) - DotaTime())))
+end
+
+local function LogSmokeWait(bot, mission, playerID, reason)
+	if mission.lastSmokeSafetyReason == reason then return end
+	mission.lastSmokeSafetyReason = reason
+	Coordinator.DebugAction(bot, string.format('smoke_wait mission=%s owner=%s phase=%s reason=%s',
+		tostring(mission.missionID or 'unknown'), tostring(playerID),
+		tostring(mission.phase), tostring(reason)))
+end
+
 local function HandleCastStatus(bot, mission, status)
 	local state = Consumables.GetState(bot)
 	if state == nil then return false end
 	local isSmoke = state.itemName == 'item_smoke_of_deceit' and state.requester == SMOKE_REQUESTER
 	local isDust = state.itemName == 'item_dust' and state.requester == DUST_REQUESTER
 	if not isSmoke and not isDust then return false end
+	if isSmoke and Config.SMOKE_ENABLED ~= true then
+		ReleaseConsumable(bot, mission, state.requester, 'smoke_disabled')
+		return true
+	end
 	if status == 'cast_confirmed' then
 		if isSmoke then mission.smokeConfirmedTime = DotaTime()
 		else mission.dustConfirmedTime = DotaTime() end
-		Consumables.Release(bot, state.requester, 'cast_confirmed')
+		ReleaseConsumable(bot, mission, state.requester, 'cast_confirmed')
 		Coordinator.DebugAction(bot, string.format('consumable_cast_confirmed mission=%s item=%s owner=%s',
 			tostring(mission.missionID or 'unknown'), tostring(state.itemName), tostring(GetPlayerID(bot))))
 		return true
@@ -379,7 +443,7 @@ local function HandleCastStatus(bot, mission, status)
 			tostring(mission.missionID or 'unknown'), tostring(state.itemName), tostring(GetPlayerID(bot)), tostring(attempts)))
 		if attempts >= 2 then
 			if isSmoke then mission.smokeCastFailed = true else mission.dustCastFailed = true end
-			Consumables.Release(bot, state.requester, 'cast_unconfirmed')
+			ReleaseConsumable(bot, mission, state.requester, 'cast_unconfirmed')
 			return true
 		end
 	end
@@ -392,42 +456,48 @@ local function HandleMissionConsumables(bot, mission)
 	local ownsSmoke = mission.requiresSmoke == true
 		and mission.smokeConfirmedTime == nil
 		and mission.smokeOwnerID == playerID
-	if ownsSmoke
+	if Config.SMOKE_ENABLED ~= true then
+		-- 配置关闭后只收尾旧租约，绝不重新申请或尝试施放已有烟雾。
+		ReleaseConsumable(bot, mission, SMOKE_REQUESTER, 'smoke_disabled')
+	elseif ownsSmoke
 		and (mission.phase == 'assemble' or mission.phase == 'conceal')
 	then
-		Consumables.Request(bot, 'item_smoke_of_deceit', SMOKE_REQUESTER, 100, deadline, {kind = 'none'})
+		RequestMissionConsumable(bot, mission, 'item_smoke_of_deceit', SMOKE_REQUESTER, 100, deadline)
 	elseif mission.smokeOwnerID == playerID then
-		Consumables.Release(bot, SMOKE_REQUESTER, 'smoke_phase_ended')
+		ReleaseConsumable(bot, mission, SMOKE_REQUESTER, 'smoke_phase_ended')
 	end
 
 	local canPrestageDust = mission.phase == 'assemble' and mission.dustOwnerID ~= mission.smokeOwnerID
 	if mission.requiresDust == true and mission.dustOwnerID == playerID
 		and (canPrestageDust or mission.phase == 'approach' or mission.phase == 'ambush' or mission.phase == 'engage')
 	then
-		Consumables.Request(bot, 'item_dust', DUST_REQUESTER, 90, deadline, {kind = 'none'})
+		RequestMissionConsumable(bot, mission, 'item_dust', DUST_REQUESTER, 90, deadline)
 	elseif mission.dustOwnerID == playerID then
-		Consumables.Release(bot, DUST_REQUESTER, 'dust_phase_ended')
+		ReleaseConsumable(bot, mission, DUST_REQUESTER, 'dust_phase_ended')
 	end
 
+	local stateBeforeThink = Consumables.GetState(bot)
 	local ownsLifecycle, status = Consumables.Think(bot)
+	LogConsumableStatus(bot, mission, stateBeforeThink or Consumables.GetState(bot), status)
 	if HandleCastStatus(bot, mission, status) then return true end
 	local state = Consumables.GetState(bot)
 	if status == 'ready' and state ~= nil then
 		-- 已在释放技能或持续施法时不发烟/粉订单；等待原动作结束后再使用。
-		if IsActionBlocked(bot) then return true end
-		if state.itemName == 'item_smoke_of_deceit'
+		if IsActionBlocked(bot) then
+			if state.itemName == 'item_smoke_of_deceit' then
+				LogSmokeWait(bot, mission, playerID, 'action_blocked')
+			end
+			return true
+		end
+		if Config.SMOKE_ENABLED == true
+			and state.itemName == 'item_smoke_of_deceit'
 			and (mission.phase == 'assemble' or mission.phase == 'conceal')
 		then
 			local safeToSmoke, safetyReason = CanSafelyCastSmoke(bot, mission)
 			if safeToSmoke then
 				return UseReadyConsumable(bot, mission, state.itemName, SMOKE_REQUESTER, mission.phase)
 			end
-			if mission.lastSmokeSafetyReason ~= safetyReason then
-				mission.lastSmokeSafetyReason = safetyReason
-				Coordinator.DebugAction(bot, string.format('smoke_wait mission=%s owner=%s phase=%s reason=%s',
-					tostring(mission.missionID or 'unknown'), tostring(playerID),
-					tostring(mission.phase), tostring(safetyReason)))
-			end
+			LogSmokeWait(bot, mission, playerID, safetyReason)
 		end
 		if state.itemName == 'item_dust' then
 			local targetLocation = Coordinator.GetRallyLocation(mission)
@@ -455,8 +525,8 @@ function Gank.Think(bot)
 	if HasIssuedTP(bot, activeMission) and TryUseTP(bot, activeMission) then return end
 	if HasIssuedTwinGate(bot, activeMission) and TryUseTwinGate(bot, activeMission) then return end
 	if Coordinator.GetDesire(bot) <= BOT_MODE_DESIRE_NONE then
-		Consumables.Release(bot, SMOKE_REQUESTER, 'mission_released')
-		Consumables.Release(bot, DUST_REQUESTER, 'mission_released')
+		ReleaseConsumable(bot, activeMission, SMOKE_REQUESTER, 'mission_released')
+		ReleaseConsumable(bot, activeMission, DUST_REQUESTER, 'mission_released')
 		return
 	end
 	local mission = Coordinator.GetMission(bot)

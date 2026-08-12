@@ -5,6 +5,7 @@ local Config = require(GetScriptDirectory()..'/THDFuncLib/roam_config')
 local Initiation = require(GetScriptDirectory()..'/THDFuncLib/roam_initiation')
 local Pickoff = require(GetScriptDirectory()..'/THDFuncLib/roam_pickoff')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
+local MissionID = require(GetScriptDirectory()..'/THDFuncLib/roam_mission_id')
 
 local Coordinator = {}
 local states = {}
@@ -56,8 +57,7 @@ local function GetUnitName(unit)
 end
 
 local function BuildMissionID(leaderID, targetID, signalTime)
-	local roundedTime = math.floor((tonumber(signalTime) or 0) + 0.5)
-	return string.format('%s-%s-%d', tostring(leaderID), tostring(targetID), roundedTime)
+	return MissionID.Build(leaderID, targetID, signalTime)
 end
 
 local function GetMissionID(mission)
@@ -1156,9 +1156,8 @@ local function ObserveAnnouncements(bot)
 			local ping = Safe(nil, function() return source:GetMostRecentPing() end)
 			local pickoffPlan = Pickoff.BuildAnnouncement(bot, source, ping, gameNow)
 			if pickoffPlan ~= nil then
-				local signalAge = math.max(0, gameNow - ping.time)
-				local missionStart = now - signalAge
-				local missionID = BuildMissionID(GetPlayerID(source), pickoffPlan.targetPlayerID, ping.time)
+				local missionStart = MissionID.EstimateDotaStart(now, gameNow, ping.time)
+				local missionID = BuildMissionID(GetPlayerID(source), pickoffPlan.targetPlayerID, missionStart)
 				ObserveTeamMission(state, missionID, missionStart,
 					GetPlayerID(source), pickoffPlan.targetPlayerID, ping.time)
 				pickoffPlan.startTime = missionStart
@@ -1173,9 +1172,8 @@ local function ObserveAnnouncements(bot)
 				end
 			end
 			if Coordinator.IsAnnouncementValid(bot, source, target, ping, gameNow) then
-				local signalAge = math.max(0, gameNow - ping.time)
-				local missionStart = now - signalAge
-				local missionID = BuildMissionID(GetPlayerID(source), GetPlayerID(target), ping.time)
+				local missionStart = MissionID.EstimateDotaStart(now, gameNow, ping.time)
+				local missionID = BuildMissionID(GetPlayerID(source), GetPlayerID(target), missionStart)
 				ObserveTeamMission(state, missionID, missionStart,
 					GetPlayerID(source), GetPlayerID(target), ping.time)
 				local plan = BuildTargetPlan(bot, target, source)
@@ -1211,12 +1209,11 @@ local function ObserveActiveTeamMission(bot)
 			local oldSignal = IsMissionSignalValid(bot, source, target, ping, gameNow, maxAge)
 			local pickoffSignal = Pickoff.IsSignalCandidate(bot, source, ping, gameNow, maxAge)
 			if oldSignal or pickoffSignal then
-				local signalAge = math.max(0, gameNow - ping.time)
-				local missionStart = now - signalAge
+				local missionStart = MissionID.EstimateDotaStart(now, gameNow, ping.time)
 				local leaderID = GetPlayerID(source)
 				local targetID = GetPlayerID(target)
 				if targetID < 0 then targetID = -1000 - leaderID end
-				local missionID = BuildMissionID(leaderID, targetID, ping.time)
+				local missionID = BuildMissionID(leaderID, targetID, missionStart)
 				ObserveTeamMission(state, missionID, missionStart, leaderID, targetID, ping.time)
 				if best == nil or missionStart > best.startTime
 					or (missionStart == best.startTime and leaderID < best.leaderID)
@@ -1508,10 +1505,14 @@ local function GetRoamTeamfightStatus(bot, mission)
 	end
 	local active, counts = Pickoff.GetTeamfightStatus(bot, location, Config.ROAM_TEAMFIGHT_RADIUS)
 	counts = counts or {}
+	local allyIDs = table.concat(counts.allyPlayerIDs or {}, ',')
+	local enemyIDs = table.concat(counts.enemyPlayerIDs or {}, ',')
 	return active, {
 		teamfightAllies = counts.allyCount or 0,
 		teamfightEnemies = counts.enemyCount or 0,
 		teamfightTotal = counts.totalHeroCount or 0,
+		teamfightAllyIDs = allyIDs ~= '' and allyIDs or 'none',
+		teamfightEnemyIDs = enemyIDs ~= '' and enemyIDs or 'none',
 	}
 end
 
@@ -1740,9 +1741,10 @@ function Coordinator.GetDesire(bot)
 		local teamfightActive, teamfightContext = GetRoamTeamfightStatus(bot, announcement)
 		if teamfightActive then
 			state.pending = nil
-			DebugStatus(bot, string.format('reason=signal_teamfight allies=%d enemies=%d total=%d',
+			DebugStatus(bot, string.format('reason=signal_teamfight allies=%d enemies=%d total=%d ally_ids=%s enemy_ids=%s',
 				teamfightContext.teamfightAllies, teamfightContext.teamfightEnemies,
-				teamfightContext.teamfightTotal))
+				teamfightContext.teamfightTotal, teamfightContext.teamfightAllyIDs,
+				teamfightContext.teamfightEnemyIDs))
 			return BOT_MODE_DESIRE_NONE
 		end
 		state.pending = announcement
@@ -1805,9 +1807,10 @@ function Coordinator.GetDesire(bot)
 	local teamfightActive, teamfightContext = GetRoamTeamfightStatus(bot, proposal)
 	if teamfightActive then
 		state.pending = nil
-		DebugStatus(bot, string.format('reason=proposal_teamfight allies=%d enemies=%d total=%d',
+		DebugStatus(bot, string.format('reason=proposal_teamfight allies=%d enemies=%d total=%d ally_ids=%s enemy_ids=%s',
 			teamfightContext.teamfightAllies, teamfightContext.teamfightEnemies,
-			teamfightContext.teamfightTotal))
+			teamfightContext.teamfightTotal, teamfightContext.teamfightAllyIDs,
+			teamfightContext.teamfightEnemyIDs))
 		return BOT_MODE_DESIRE_NONE
 	end
 	proposal.startTime = DotaTime()
@@ -1867,7 +1870,6 @@ function Coordinator.OnStart(bot)
 	local playerID = GetPlayerID(bot)
 	if mission.leaderID == playerID then
 		-- 模式仲裁和 OnStart 之间目标可能已经死亡或局势改变；发信号前必须重新验证。
-		local originalSignalTime = mission.signalTime
 		local refreshed, reason = nil, nil
 		if mission.kind == nil or mission.kind == 'lane_gank' then
 			refreshed, reason = BuildTargetPlan(bot, mission.target, bot)
@@ -1882,8 +1884,9 @@ function Coordinator.OnStart(bot)
 			return false
 		end
 		refreshed.startTime = DotaTime()
-		refreshed.signalTime = originalSignalTime or refreshed.startTime
-		refreshed.missionID = mission.missionID
+		-- 以真正发 Ping 的 DotaTime 生成领导者 ID，参与者会把 Ping GameTime 换算回同一时间轴。
+		refreshed.signalTime = refreshed.startTime
+		refreshed.missionID = BuildMissionID(refreshed.leaderID, refreshed.targetPlayerID, refreshed.startTime)
 		refreshed.kind = mission.kind or refreshed.kind or 'lane_gank'
 		refreshed.phase = refreshed.kind == 'lane_gank' and 'approach' or 'assemble'
 		refreshed.phaseStartTime = refreshed.startTime

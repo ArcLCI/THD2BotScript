@@ -24,6 +24,8 @@ local PUSH_LOCAL_ENEMY_ADVANTAGE_TOLERANCE = 1
 local PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE = 1
 local PUSH_MIN_LOCAL_ALLIES_WHEN_OUTNUMBERED = 2
 local PUSH_OUTNUMBERED_MAX_DESIRE = 0.72
+local PUSH_LOCAL_HERO_RESPONSE_RANGE = 1600
+local PUSH_LOCAL_HERO_RETREAT_OFFSET = -1200
 local PUSH_ENEMY_PRESSURE_SCORE_PER_HERO = 0.18
 local PUSH_LANE_SWITCH_IMPROVEMENT_RATIO = 0.88
 local LANE_MODE_DEBUG = false -- 验证期间输出三路推塔评分，确认后可关闭。
@@ -177,6 +179,10 @@ function Push.ComputePushDesire(bot, lane)
 		wastelandState ~= nil and wastelandState.allyAverageLevel or nil)
 	then
 		return BOT_MODE_DESIRE_NONE
+	end
+	-- 视野内已有敌方英雄时交给攻击/撤退模式，避免高推塔欲望压住战斗响应。
+	if #nInRangeEnemy > 0 then
+		return BOT_MODE_DESIRE_VERYLOW
 	end
 
     if not CanPushWithLocalNumbers() then
@@ -391,19 +397,62 @@ function Push.WhichLaneToPush(bot, lane)
     return selectedLane
 end
 
+function Push.GetVisibleNearbyEnemyHeroes(bot, candidates, radius)
+	local enemies = {}
+	radius = radius or PUSH_LOCAL_HERO_RESPONSE_RANGE
+	for _, enemy in pairs(candidates or {}) do
+		if J.IsValidHero(enemy)
+		and J.CanBeAttacked(enemy)
+		and enemy:GetTeam() ~= bot:GetTeam()
+		and not J.IsSuspiciousIllusion(enemy)
+		and GetUnitToUnitDistance(bot, enemy) <= radius
+		then
+			table.insert(enemies, enemy)
+		end
+	end
+	return enemies
+end
+
+function Push.SelectNearbyEnemyHero(bot, enemies)
+	local currentTarget = J.GetProperTarget(bot)
+	local closestTarget = nil
+	local closestDistance = math.huge
+	for _, enemy in pairs(enemies or {}) do
+		if enemy == currentTarget then return enemy end
+		local distance = GetUnitToUnitDistance(bot, enemy)
+		if distance < closestDistance then
+			closestTarget = enemy
+			closestDistance = distance
+		end
+	end
+	return closestTarget
+end
+
+function Push.HandleNearbyEnemyHeroes(bot, lane, nearbyAllies, nearbyEnemies)
+	if #nearbyEnemies == 0 then return false end
+
+	if #nearbyAllies < #nearbyEnemies then
+		-- 模式切换存在缓存窗口；人数劣势时当前帧先后撤，禁止继续攻击兵线或建筑。
+		local retreatLocation = GetLaneFrontLocation(GetTeam(), lane, PUSH_LOCAL_HERO_RETREAT_OFFSET)
+		J.ActionMoveToLocation(bot, 'push_yield_outnumbered_enemy_heroes', retreatLocation, 0.25, 220)
+		return true
+	end
+
+	local target = Push.SelectNearbyEnemyHero(bot, nearbyEnemies)
+	if target ~= nil then
+		-- 人数不劣时先响应可见英雄；下一轮模式仲裁会让 ATTACK 接管技能与追击。
+		J.SetTargetIfChanged(bot, target, 0.2)
+		J.ActionAttackUnit(bot, 'push_answer_enemy_hero', target, true, 0.25)
+		return true
+	end
+
+	return false
+end
+
 local fNextMovementTime = 0
 function Push.PushThink(bot, lane)
     if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
     if J.CanNotUseAction(bot) then return end
-	local laneBuildingTier = Push.GetLaneBuildingTier(lane)
-	if Wasteland.ShouldHoldHighGround(laneBuildingTier) then
-		-- 欲望缓存或旧模式仍存活时也不允许继续攻击高地；已接近则退回兵线安全侧。
-		if J.Utils.IsNearEnemyHighGroundTower(bot, 4200) then
-			local waitLocation = GetLaneFrontLocation(GetTeam(), lane, -1800)
-			J.ActionMoveToLocation(bot, 'wasteland_wait_high_ground_level', waitLocation, 0.35, 260)
-		end
-		return
-	end
 
 	local retreatState = J.Retreat.GetState(bot)
 	if retreatState.severity >= J.Retreat.HIGH then
@@ -415,14 +464,32 @@ function Push.PushThink(bot, lane)
 		return
 	end
 
+	local nearbyAllies = J.GetAlliesNearLoc(bot:GetLocation(), PUSH_LOCAL_HERO_RESPONSE_RANGE)
+	local nearbyEnemies = Push.GetVisibleNearbyEnemyHeroes(
+		bot,
+		J.GetNearbyHeroes(bot, PUSH_LOCAL_HERO_RESPONSE_RANGE, true, BOT_MODE_NONE),
+		PUSH_LOCAL_HERO_RESPONSE_RANGE
+	)
+	if Push.HandleNearbyEnemyHeroes(bot, lane, nearbyAllies, nearbyEnemies) then return end
+
+	local laneBuildingTier = Push.GetLaneBuildingTier(lane)
+	if Wasteland.ShouldHoldHighGround(laneBuildingTier) then
+		-- 欲望缓存或旧模式仍存活时也不允许继续攻击高地；已接近则退回兵线安全侧。
+		if J.Utils.IsNearEnemyHighGroundTower(bot, 4200) then
+			local waitLocation = GetLaneFrontLocation(GetTeam(), lane, -1800)
+			J.ActionMoveToLocation(bot, 'wasteland_wait_high_ground_level', waitLocation, 0.35, 260)
+		end
+		return
+	end
+
     local botAttackRange = bot:GetAttackRange()
     local fDeltaFromFront = (Min(J.GetHP(bot), 0.7) * 1000 - 700) + RemapValClamped(botAttackRange, 300, 700, 0, -600)
     local nEnemyTowers = bot:GetNearbyTowers(1600, true)
     local nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
 
-    if #nInRangeAlly < #nInRangeEnemy or Push.IsBuildingGlyphedBackdoor() then
+    if #nearbyAllies < #nearbyEnemies or Push.IsBuildingGlyphedBackdoor() then
         local nEnemyHeroLongestAttackRange = 0
-        for _, enemyHero in pairs(nInRangeEnemy) do
+        for _, enemyHero in pairs(nearbyEnemies) do
             if J.IsValidHero(enemyHero)
             and not J.IsSuspiciousIllusion(enemyHero)
             then
@@ -481,14 +548,14 @@ function Push.PushThink(bot, lane)
 
     end
 
-    nInRangeAlly = J.GetAlliesNearLoc(hEnemyAncient:GetLocation(), 1600)
+    local ancientAllies = J.GetAlliesNearLoc(hEnemyAncient:GetLocation(), 1600)
     if GetUnitToUnitDistance(bot, hEnemyAncient) < 1600
     and J.CanBeAttacked(hEnemyAncient)
     and not Push.HasBackdoorProtect(hEnemyAncient)
     and (#Push.GetAllyHeroesAttackingUnit(hEnemyAncient) >= 3
         or #Push.GetAllyCreepsAttackingUnit(hEnemyAncient) >= 4
         or hEnemyAncient:GetHealthRegen() < 20
-        or #nInRangeAlly >= 4)
+        or #ancientAllies >= 4)
     then
         J.ActionAttackUnit(bot, 'push_attack_enemy_ancient', hEnemyAncient, true, 0.45)
         return

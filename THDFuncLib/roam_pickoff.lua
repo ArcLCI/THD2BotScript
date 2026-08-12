@@ -105,26 +105,46 @@ local function GetTeamMembers()
 	return result
 end
 
+local function IsRealVisibleEnemyHero(bot, unit)
+	if not CanInspect(unit) then return false end
+	if Safe(-1, function() return unit:GetTeam() end) == Safe(-1, function() return bot:GetTeam() end) then
+		return false
+	end
+	if not Safe(false, function() return unit:IsHero() end) then return false end
+	if GetPlayerID(unit) < 0 then return false end
+	if unit.IsKnownIllusion ~= nil and Safe(false, function() return unit:IsKnownIllusion() end) then return false end
+	if unit.HasModifier ~= nil
+		and Safe(false, function() return unit:HasModifier('modifier_illusion') end)
+	then
+		return false
+	end
+	return true
+end
+
+local function AddUniqueHero(result, seenPlayerIDs, unit)
+	local playerID = GetPlayerID(unit)
+	if playerID < 0 or seenPlayerIDs[playerID] then return end
+	seenPlayerIDs[playerID] = true
+	table.insert(result, unit)
+end
+
 local function GetVisibleEnemies(bot)
 	local botID = GetPlayerID(bot)
 	local now = Now()
 	if now - (visibleEnemyUpdateTimes[botID] or -9999) < Config.PICKOFF_OBSERVATION_INTERVAL then
 		local current = {}
+		local seenPlayerIDs = {}
 		for _, enemy in ipairs(visibleEnemies[botID] or {}) do
-			if CanInspect(enemy) then table.insert(current, enemy) end
+			if IsRealVisibleEnemyHero(bot, enemy) then AddUniqueHero(current, seenPlayerIDs, enemy) end
 		end
 		visibleEnemies[botID] = current
 		return current
 	end
 	local result = {}
+	local seenPlayerIDs = {}
 	for _, unit in pairs(Safe({}, function() return GetUnitList(UNIT_LIST_ENEMY_HEROES) end) or {}) do
-		if CanInspect(unit)
-			and Safe(-1, function() return unit:GetTeam() end) ~= Safe(-1, function() return bot:GetTeam() end)
-			and Safe(false, function() return unit:IsHero() end)
-			and not Safe(false, function() return unit:IsKnownIllusion() end)
-		then
-			table.insert(result, unit)
-		end
+		-- 同一玩家的分身/克隆只代表一名参团英雄；显式幻象同时走双重过滤。
+		if IsRealVisibleEnemyHero(bot, unit) then AddUniqueHero(result, seenPlayerIDs, unit) end
 	end
 	visibleEnemies[botID] = result
 	visibleEnemyUpdateTimes[botID] = now
@@ -135,17 +155,30 @@ function Pickoff.GetTeamfightStatus(bot, location, radius)
 	radius = tonumber(radius) or Config.ROAM_TEAMFIGHT_RADIUS
 	local allyCount = 0
 	local enemyCount = 0
+	local allyPlayerIDs = {}
+	local enemyPlayerIDs = {}
 	if location ~= nil then
+		local seenAllies = {}
 		for _, member in ipairs(GetTeamMembers()) do
-			if IsValidUnit(member) and LocationDistance(member, location) <= radius then
+			local playerID = GetPlayerID(member)
+			if IsValidUnit(member) and playerID >= 0 and not seenAllies[playerID]
+				and LocationDistance(member, location) <= radius
+			then
+				seenAllies[playerID] = true
 				allyCount = allyCount + 1
+				table.insert(allyPlayerIDs, playerID)
 			end
 		end
 		-- 复用按 Bot 分桶的可见敌人缓存，不把游戏侧全图信息带入 Bot 决策。
 		for _, enemy in ipairs(GetVisibleEnemies(bot)) do
-			if LocationDistance(enemy, location) <= radius then enemyCount = enemyCount + 1 end
+			if LocationDistance(enemy, location) <= radius then
+				enemyCount = enemyCount + 1
+				table.insert(enemyPlayerIDs, GetPlayerID(enemy))
+			end
 		end
 	end
+	table.sort(allyPlayerIDs)
+	table.sort(enemyPlayerIDs)
 	local totalHeroCount = allyCount + enemyCount
 	local active = Now() >= Config.ROAM_TEAMFIGHT_START_TIME
 		and allyCount >= Config.ROAM_TEAMFIGHT_MIN_ALLIES
@@ -155,6 +188,8 @@ function Pickoff.GetTeamfightStatus(bot, location, radius)
 		allyCount = allyCount,
 		enemyCount = enemyCount,
 		totalHeroCount = totalHeroCount,
+		allyPlayerIDs = allyPlayerIDs,
+		enemyPlayerIDs = enemyPlayerIDs,
 		radius = radius,
 	}
 end
@@ -535,9 +570,18 @@ local function TeamHasCarriedItem(itemName)
 end
 
 function Pickoff.ShouldUseSmokeForVisibleTarget(distance, teamHasSmoke)
-	return teamHasSmoke == true
+	return Config.SMOKE_ENABLED == true
+		and teamHasSmoke == true
 		and type(distance) == 'number'
 		and distance >= Config.PICKOFF_VISIBLE_SMOKE_MIN_DISTANCE
+end
+
+function Pickoff.GetSmokeRequirement(targetVisible, distance, teamHasSmoke)
+	if targetVisible ~= true then
+		if Config.SMOKE_ENABLED ~= true then return nil, 'smoke_disabled' end
+		return true, nil
+	end
+	return Pickoff.ShouldUseSmokeForVisibleTarget(distance, teamHasSmoke), nil
 end
 
 local function BuildPickoffPlan(bot, state, observation, fixedLeader)
@@ -557,9 +601,11 @@ local function BuildPickoffPlan(bot, state, observation, fixedLeader)
 	local requiredCount = #group + 1
 	-- 接收队友公告时按被冻结的任务发起者计算距离，不能让接收者的位置反转用烟判断。
 	local leaderDistance = LocationDistance(fixedLeader or bot, observation.location)
-	local requiresSmoke = not observation.visible
-		or Pickoff.ShouldUseSmokeForVisibleTarget(leaderDistance,
-			TeamHasCarriedItem('item_smoke_of_deceit'))
+	local teamHasSmoke = Config.SMOKE_ENABLED == true
+		and TeamHasCarriedItem('item_smoke_of_deceit')
+	local requiresSmoke, smokeReason = Pickoff.GetSmokeRequirement(observation.visible, leaderDistance,
+		teamHasSmoke)
+	if requiresSmoke == nil then return nil, smokeReason end
 	local requiresDust = false
 	for _, enemy in ipairs(group) do
 		if HeroNeedsDust(enemy.heroName) then requiresDust = true break end
@@ -640,6 +686,7 @@ local function BuildPickoffPlan(bot, state, observation, fixedLeader)
 end
 
 local function BuildPatrolPlan(bot, state, fixedLeader, requiredZoneID)
+	if Config.SMOKE_ENABLED ~= true then return nil, 'disabled' end
 	local team = Safe(GetTeam(), function() return bot:GetTeam() end)
 	if Now() - (lastPatrolStart[team] or -9999) < Config.SMOKE_PATROL_COOLDOWN then
 		return nil, 'patrol_cooldown'
@@ -870,6 +917,9 @@ end
 
 function Pickoff.UpdateMission(bot, mission)
 	local now = Now()
+	if mission.requiresSmoke == true and Config.SMOKE_ENABLED ~= true then
+		return nil, 'smoke_disabled'
+	end
 	if mission.kind == 'smoke_patrol'
 		and mission.smokeConfirmedTime ~= nil
 		and mission.patrolCooldownRecorded ~= true
