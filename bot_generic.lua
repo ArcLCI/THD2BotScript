@@ -28,6 +28,10 @@ end
 
 local function ShouldRunMinionThink(hMinionUnit)
 	if IsNullMinion(hMinionUnit) then return false end
+	if hMinionUnit.IsAlive ~= nil then
+		local ok, alive = pcall(function() return hMinionUnit:IsAlive() end)
+		if not ok or alive ~= true then return false end
+	end
 	local taskName = GetMinionTaskName(hMinionUnit)
 	local phaseInterval = MINION_THINK_STAGGER
 	return Scheduler.ShouldRunBotTask(hMinionUnit, taskName, MINION_THINK_INTERVAL, phaseInterval)

@@ -3,6 +3,7 @@ local LaneAssignment = require(GetScriptDirectory()..'/THDFuncLib/lane_assignmen
 local Config = require(GetScriptDirectory()..'/THDFuncLib/roam_config')
 local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 local Pickoff = {}
 local observations = {}
@@ -35,6 +36,13 @@ local function Safe(defaultValue, callback)
 	return defaultValue
 end
 
+local function IsFiniteNumber(value)
+	return type(value) == 'number'
+		and value == value
+		and value > -math.huge
+		and value < math.huge
+end
+
 local function Now()
 	return Safe(0, function() return DotaTime() end) or 0
 end
@@ -42,6 +50,38 @@ end
 local function GetPlayerID(unit)
 	if unit == nil then return -1 end
 	return Safe(-1, function() return unit:GetPlayerID() end) or -1
+end
+
+local function GetEntityIndex(unit)
+	if unit == nil then return nil end
+	if unit.entindex ~= nil then
+		local index = Safe(nil, function() return unit:entindex() end)
+		if type(index) == 'number' and index >= 0 then return index end
+	end
+	if unit.GetEntityIndex ~= nil then
+		local index = Safe(nil, function() return unit:GetEntityIndex() end)
+		if type(index) == 'number' and index >= 0 then return index end
+	end
+	return nil
+end
+
+local function IsSamePlayer(first, second)
+	local firstID = GetPlayerID(first)
+	return firstID >= 0 and firstID == GetPlayerID(second)
+end
+
+local function IsMissionTargetHandle(mission, target)
+	if mission == nil or target == nil then return false end
+	if mission.targetPlayerID ~= nil and mission.targetPlayerID >= 0
+		and GetPlayerID(target) ~= mission.targetPlayerID
+	then
+		return false
+	end
+	if mission.targetEntityIndex ~= nil then
+		local actualIndex = GetEntityIndex(target)
+		if actualIndex == nil or actualIndex ~= mission.targetEntityIndex then return false end
+	end
+	return true
 end
 
 local function GetUnitName(unit)
@@ -107,9 +147,10 @@ end
 
 local function IsRealVisibleEnemyHero(bot, unit)
 	if not CanInspect(unit) then return false end
-	if Safe(-1, function() return unit:GetTeam() end) == Safe(-1, function() return bot:GetTeam() end) then
-		return false
-	end
+	local unitTeam = Safe(-1, function() return unit:GetTeam() end)
+	local botTeam = Safe(-2, function() return bot:GetTeam() end)
+	local opposingTeam = Safe(nil, function() return GetOpposingTeam() end)
+	if unitTeam == botTeam or (opposingTeam ~= nil and unitTeam ~= opposingTeam) then return false end
 	if not Safe(false, function() return unit:IsHero() end) then return false end
 	if GetPlayerID(unit) < 0 then return false end
 	if unit.IsKnownIllusion ~= nil and Safe(false, function() return unit:IsKnownIllusion() end) then return false end
@@ -119,6 +160,10 @@ local function IsRealVisibleEnemyHero(bot, unit)
 		return false
 	end
 	return true
+end
+
+function Pickoff.IsMissionTargetValid(bot, mission, target)
+	return IsRealVisibleEnemyHero(bot, target) and IsMissionTargetHandle(mission, target)
 end
 
 local function AddUniqueHero(result, seenPlayerIDs, unit)
@@ -212,19 +257,23 @@ local function UpdateObservations(bot)
 	for _, enemy in ipairs(GetVisibleEnemies(bot)) do
 		local playerID = GetPlayerID(enemy)
 		if playerID >= 0 then
+			local defense = CombatPower.GetDefenseSnapshot(enemy)
+			local attack = CombatPower.GetAttackSnapshot(enemy)
 			visibleByID[playerID] = enemy
 			state[playerID] = {
 				playerID = playerID,
 				heroName = GetUnitName(enemy),
 				handle = enemy,
+				entityIndex = GetEntityIndex(enemy),
 				visible = true,
 				location = GetLocation(enemy),
 				seenAge = 0,
-				health = Safe(nil, function() return enemy:GetHealth() end),
-				maxHealth = Safe(nil, function() return enemy:GetMaxHealth() end),
+				health = defense ~= nil and defense.health or nil,
+				maxHealth = defense ~= nil and defense.maxHealth or nil,
+				defense = defense,
 				level = Safe(nil, function() return enemy:GetLevel() end),
-				attackDamage = Safe(nil, function() return enemy:GetAttackDamage() end),
-				attackPeriod = Safe(nil, function() return enemy:GetSecondsPerAttack() end),
+				attackDamage = attack ~= nil and attack.attackDamage or nil,
+				attackPeriod = attack ~= nil and attack.attackPeriod or nil,
 				updatedTime = Now(),
 			}
 		end
@@ -235,10 +284,19 @@ local function UpdateObservations(bot)
 			local info = Safe(nil, function() return GetHeroLastSeenInfo(playerID) end)
 			local latest = type(info) == 'table' and info[1] or nil
 			local previous = state[playerID] or {}
-			if type(latest) == 'table' and latest.location ~= nil and type(latest.time_since_seen) == 'number' then
+			local selectedHeroName = Safe(nil, function() return GetSelectedHeroName(playerID) end)
+			local heroChanged = previous.heroName ~= nil and selectedHeroName ~= nil
+				and previous.heroName ~= selectedHeroName
+			if heroChanged then
+				-- 同一玩家换英雄后，旧英雄的最后位置/血量/实体索引不能继续生成抓单任务。
+				state[playerID] = {
+					playerID = playerID, heroName = selectedHeroName, handle = nil,
+					entityIndex = nil, visible = false, location = nil,
+					seenAge = math.huge, updatedTime = Now(),
+				}
+			elseif type(latest) == 'table' and latest.location ~= nil and type(latest.time_since_seen) == 'number' then
 				previous.playerID = playerID
-				previous.heroName = previous.heroName
-					or Safe(nil, function() return GetSelectedHeroName(playerID) end)
+				previous.heroName = previous.heroName or selectedHeroName
 				previous.handle = nil
 				previous.visible = false
 				previous.location = latest.location
@@ -280,18 +338,27 @@ local function IsNearNeutralZone(location)
 end
 
 local function GetEnemyPower(observation)
-	local damage = math.max(0, tonumber(observation.attackDamage) or 0)
-	local period = math.max(0.25, tonumber(observation.attackPeriod) or 1.7)
-	local maxHealth = math.max(0, tonumber(observation.maxHealth) or 0)
-	local healthFraction = maxHealth > 0 and math.max(0.1, math.min(1, (observation.health or maxHealth) / maxHealth)) or 1
-	return math.max(1, (damage / period + maxHealth * 0.035 + (observation.level or 1) * 5)
-		* (0.25 + 0.75 * healthFraction))
+	local damage = tonumber(observation.attackDamage)
+	local period = tonumber(observation.attackPeriod)
+	local maxHealth = tonumber(observation.maxHealth)
+	local level = tonumber(observation.level)
+	local health = tonumber(observation.health)
+	if not IsFiniteNumber(damage) or damage < 0
+		or not IsFiniteNumber(period) or period <= 0
+		or not IsFiniteNumber(maxHealth) or maxHealth <= 0
+		or not IsFiniteNumber(level) or level < 0
+		or not IsFiniteNumber(health)
+	then
+		return math.huge
+	end
+	local healthFraction = math.max(0.1, math.min(1, health / maxHealth))
+	local power = (damage / math.max(0.25, period) + maxHealth * 0.035 + math.max(1, level) * 5)
+		* (0.25 + 0.75 * healthFraction)
+	return IsFiniteNumber(power) and math.max(1, power) or math.huge
 end
 
 local function GetAllyPower(unit)
-	local power = Safe(0, function() return unit:GetOffensivePower() end) or 0
-	if power > 0 then return power end
-	return math.max(1, (Safe(1, function() return unit:GetLevel() end) or 1) * 100)
+	return CombatPower.Estimate(unit)
 end
 
 local function IsBusy(unit)
@@ -372,6 +439,21 @@ local function BuildGatePlan(unit, targetLocation, distance, speed)
 	return best
 end
 
+local function BuildStagingLocation(location)
+	local fountain = Safe(nil, function() return J.GetTeamFountain() end)
+	if fountain == nil then return location end
+	local dx = (fountain.x or 0) - (location.x or 0)
+	local dy = (fountain.y or 0) - (location.y or 0)
+	local length = math.sqrt(dx * dx + dy * dy)
+	if length < 1 then return location end
+	local x = (location.x or 0) + dx / length * Config.PICKOFF_STAGING_DISTANCE
+	local y = (location.y or 0) + dy / length * Config.PICKOFF_STAGING_DISTANCE
+	local z = location.z or 0
+	-- 原生移动指令只接受 Vector；无 Vector 的 Lua 测试环境保留坐标表兼容。
+	if type(Vector) == 'function' then return Vector(x, y, z) end
+	return {x = x, y = y, z = z}
+end
+
 local function BuildTravelCandidate(unit, targetLocation, strategyState)
 	if not IsValidUnit(unit) or IsBusy(unit) then return nil, 'busy' end
 	if Safe(false, function() return unit:IsBot() end) ~= true then return nil, 'not_bot' end
@@ -398,6 +480,19 @@ local function BuildTravelCandidate(unit, targetLocation, strategyState)
 	local gate = BuildGatePlan(unit, targetLocation, distance, speed)
 	if tp ~= nil and tp.travelTime < plan.travelTime then plan = tp end
 	if gate ~= nil and gate.travelTime < plan.travelTime then plan = gate end
+	-- 集合点位于目标朝己方泉水方向偏移处；把参与者走到集合点的行程写进旅行计划，
+	-- 供 assemble 阶段按预期到达时间提前排期，而不是用固定 8 秒一刀切。
+	local stagingLocation = BuildStagingLocation(targetLocation)
+	local stagingTravelTime = LocationDistance(unit, stagingLocation) / speed
+	if plan.route == 'tp' and plan.tpLocation ~= nil then
+		stagingTravelTime = (plan.channelTime or Config.TP_CHANNEL_TIME_ESTIMATE)
+			+ LocationDistance(plan.tpLocation, stagingLocation) / speed
+	elseif plan.route == 'twin_gate' and plan.gateExit ~= nil then
+		stagingTravelTime = (plan.channelTime or Config.TWIN_GATE_CHANNEL_TIME_ESTIMATE)
+			+ LocationDistance(plan.gateExit, stagingLocation) / speed
+	end
+	plan.stagingLocation = stagingLocation
+	plan.stagingTravelTime = stagingTravelTime
 	if plan.travelTime > Config.PICKOFF_APPROACH_TIMEOUT then return nil, 'travel_too_long' end
 	return {
 		unit = unit, playerID = GetPlayerID(unit), position = position, positionNumber = number,
@@ -521,37 +616,18 @@ local function EstimateDamage(participants, observation, window)
 	local totalDamage = 0
 	for _, participant in ipairs(participants) do
 		local unit = participant.unit
-		local damage = nil
-		if observation.handle ~= nil and unit.GetEstimatedDamageToTarget ~= nil then
-			damage = Safe(nil, function()
-				return unit:GetEstimatedDamageToTarget(true, observation.handle, window, DAMAGE_TYPE_ALL)
-			end)
-		end
-		if type(damage) ~= 'number' or damage <= 0 then
-			local attackDamage = math.max(0, Safe(0, function() return unit:GetAttackDamage() end) or 0)
-			local attackPeriod = math.max(0.25, Safe(1.7, function() return unit:GetSecondsPerAttack() end) or 1.7)
-			damage = attackDamage / attackPeriod * window * 0.65
-		end
+		-- 仅用可见基础攻击与目标护甲估算，避免原生接口解析自定义技能的空目标路径。
+		local damage = CombatPower.EstimateAttackDamageFromSnapshots(
+			CombatPower.GetAttackSnapshot(unit),
+			observation.defense,
+			window,
+			0.65
+		) or 0
 		totalDamage = totalDamage + math.max(0, damage)
 	end
 	local health = math.max(1, tonumber(observation.health) or tonumber(observation.maxHealth) or 1)
 	local dps = totalDamage / math.max(0.1, window)
 	return totalDamage, dps > 0 and health / dps or math.huge
-end
-
-local function BuildStagingLocation(location)
-	local fountain = Safe(nil, function() return J.GetTeamFountain() end)
-	if fountain == nil then return location end
-	local dx = (fountain.x or 0) - (location.x or 0)
-	local dy = (fountain.y or 0) - (location.y or 0)
-	local length = math.sqrt(dx * dx + dy * dy)
-	if length < 1 then return location end
-	local x = (location.x or 0) + dx / length * Config.PICKOFF_STAGING_DISTANCE
-	local y = (location.y or 0) + dy / length * Config.PICKOFF_STAGING_DISTANCE
-	local z = location.z or 0
-	-- 原生移动指令只接受 Vector；无 Vector 的 Lua 测试环境保留坐标表兼容。
-	if type(Vector) == 'function' then return Vector(x, y, z) end
-	return {x = x, y = y, z = z}
 end
 
 local function FindHolder(participants, itemName)
@@ -618,9 +694,12 @@ local function BuildPickoffPlan(bot, state, observation, fixedLeader)
 	requiredCount = #participants
 
 	local latestArrival = 0
+	local latestStagingArrival = 0
 	local allyPower = 0
 	for _, participant in ipairs(participants) do
 		latestArrival = math.max(latestArrival, participant.travelTime)
+		local stagingTime = participant.plan ~= nil and tonumber(participant.plan.stagingTravelTime) or nil
+		if stagingTime ~= nil then latestStagingArrival = math.max(latestStagingArrival, stagingTime) end
 		allyPower = allyPower + GetAllyPower(participant.unit)
 	end
 	local enemyPower = 0
@@ -668,6 +747,7 @@ local function BuildPickoffPlan(bot, state, observation, fixedLeader)
 	if requiresDust and dustOwnerID == nil then return nil, 'dust_unavailable' end
 	return {
 		kind = 'pickoff', target = observation.handle, targetPlayerID = observation.playerID,
+		targetEntityIndex = observation.entityIndex,
 		targetHeroName = observation.heroName, targetObservation = observation,
 		targetGroupIDs = groupIDs, targetLane = nil, leader = participants[1].unit,
 		leaderID = participants[1].playerID, leaderLevel = Safe(0, function() return participants[1].unit:GetLevel() end),
@@ -676,6 +756,7 @@ local function BuildPickoffPlan(bot, state, observation, fixedLeader)
 		powerRatio = ratio, requiredPowerRatio = requiredRatio, predictedKillTime = predictedKill,
 		killTimeLimit = killLimit, unknownEnemyCount = unknown, score = 2 + (killLimit - predictedKill) / 10,
 		travelTime = participants[1].travelTime, travelPlans = travelPlans,
+		latestStagingArrival = latestStagingArrival,
 		useTP = participants[1].plan.route == 'tp', route = participants[1].plan.route,
 		lastLocation = observation.location, rallyLocation = observation.location,
 		stagingLocation = BuildStagingLocation(observation.location),
@@ -730,6 +811,11 @@ local function BuildPatrolPlan(bot, state, fixedLeader, requiredZoneID)
 			.. tostring(Safe(0, function() return participant.unit:GetLevel() end)))
 		travelPlans[participant.playerID] = participant.plan
 	end
+	local latestStagingArrival = 0
+	for _, participant in ipairs(participants) do
+		local stagingTime = participant.plan ~= nil and tonumber(participant.plan.stagingTravelTime) or nil
+		if stagingTime ~= nil then latestStagingArrival = math.max(latestStagingArrival, stagingTime) end
+	end
 	local zoneID = evidence.zoneID
 	return {
 		kind = 'smoke_patrol', target = nil, targetPlayerID = -1000 - evidence.observation.playerID,
@@ -742,6 +828,7 @@ local function BuildPatrolPlan(bot, state, fixedLeader, requiredZoneID)
 		useTP = participants[1].plan.route == 'tp', route = participants[1].plan.route,
 		lastLocation = targetLocation, rallyLocation = targetLocation,
 		stagingLocation = BuildStagingLocation(targetLocation), requiresSmoke = true,
+		latestStagingArrival = latestStagingArrival,
 		smokeOwnerID = smokeOwnerID, resourcePlans = {smokeOwnerID = smokeOwnerID},
 	}
 end
@@ -783,7 +870,7 @@ function Pickoff.RefreshProposal(bot, mission, fixedLeader)
 end
 
 function Pickoff.IsSignalCandidate(bot, source, ping, now, maxAge)
-	if source == nil or source == bot or ping == nil then return false end
+	if source == nil or IsSamePlayer(source, bot) or ping == nil then return false end
 	if source.IsBot == nil or not Safe(false, function() return source:IsBot() end) then return false end
 	if Safe(BOT_MODE_NONE, function() return source:GetActiveMode() end) ~= BOT_MODE_ROAM then return false end
 	if ping.normal_ping ~= true or type(ping.time) ~= 'number' or ping.location == nil then return false end
@@ -797,7 +884,11 @@ function Pickoff.BuildAnnouncement(bot, source, ping, now)
 	if plan == nil then return nil end
 	local sourceTarget = Safe(nil, function() return source:GetTarget() end)
 	if plan.kind == 'smoke_patrol' and sourceTarget ~= nil then return nil end
-	if plan.kind == 'pickoff' and plan.target ~= nil and sourceTarget ~= plan.target then return nil end
+	if plan.kind == 'pickoff' and plan.target ~= nil
+		and not IsMissionTargetHandle(plan, sourceTarget)
+	then
+		return nil
+	end
 	-- 新任务用集结点发信号，与普通 lane_gank 在目标脚下的 ping 做空间区分。
 	local location = plan.stagingLocation or plan.rallyLocation or plan.lastLocation
 	if LocationDistance(location, ping.location) > Config.ANNOUNCEMENT_TARGET_RADIUS then return nil end
@@ -852,6 +943,10 @@ local function HasSmoke(unit)
 end
 
 local function AcquireTarget(bot, mission)
+	local expectedEntityIndex = mission.kind == 'pickoff' and mission.targetEntityIndex or nil
+	-- 先解除旧引用；重取失败时只能沿最后位置移动，绝不能把死亡实体继续交给原生动作。
+	mission.target = nil
+	if mission.kind == 'smoke_patrol' then mission.targetEntityIndex = nil end
 	local best = nil
 	for _, enemy in ipairs(GetVisibleEnemies(bot)) do
 		local matchesPlayer = mission.kind == 'pickoff' and GetPlayerID(enemy) == mission.targetPlayerID
@@ -862,13 +957,18 @@ local function AcquireTarget(bot, mission)
 		end
 	end
 	if best ~= nil then
+		local entityIndex = GetEntityIndex(best)
+		if expectedEntityIndex ~= nil and entityIndex ~= expectedEntityIndex then
+			return nil, 'target_replaced'
+		end
 		mission.target = best
 		mission.targetPlayerID = GetPlayerID(best)
+		mission.targetEntityIndex = entityIndex
 		mission.targetHeroName = GetUnitName(best)
 		mission.lastLocation = GetLocation(best)
 		mission.rallyLocation = mission.lastLocation
 	end
-	return best
+	return best, nil
 end
 
 local function ValidateVisibleFight(bot, mission)
@@ -878,13 +978,15 @@ local function ValidateVisibleFight(bot, mission)
 	local enemyPower = 0
 	for _, enemy in ipairs(GetVisibleEnemies(bot)) do
 		if LocationDistance(enemy, targetLocation) <= Config.PICKOFF_GROUP_RADIUS then
+			local defense = CombatPower.GetDefenseSnapshot(enemy)
+			local attack = CombatPower.GetAttackSnapshot(enemy)
 			enemyCount = enemyCount + 1
 			enemyPower = enemyPower + GetEnemyPower({
-				handle = enemy, health = Safe(nil, function() return enemy:GetHealth() end),
-				maxHealth = Safe(nil, function() return enemy:GetMaxHealth() end),
+				health = defense ~= nil and defense.health or nil,
+				maxHealth = defense ~= nil and defense.maxHealth or nil,
 				level = Safe(nil, function() return enemy:GetLevel() end),
-				attackDamage = Safe(nil, function() return enemy:GetAttackDamage() end),
-				attackPeriod = Safe(nil, function() return enemy:GetSecondsPerAttack() end),
+				attackDamage = attack ~= nil and attack.attackDamage or nil,
+				attackPeriod = attack ~= nil and attack.attackPeriod or nil,
 			})
 		end
 	end
@@ -904,8 +1006,13 @@ local function ValidateVisibleFight(bot, mission)
 	if ratio < requiredRatio then return false, 'power_changed' end
 	local limit = enemyCount == 1 and Config.PICKOFF_SINGLE_KILL_TIME or Config.PICKOFF_PAIR_FIRST_KILL_TIME
 	if (mission.unknownEnemyCount or 0) > 0 then limit = limit - Config.PICKOFF_UNKNOWN_KILL_TIME_PENALTY end
-	local observation = {handle = mission.target, health = Safe(nil, function() return mission.target:GetHealth() end),
-		maxHealth = Safe(nil, function() return mission.target:GetMaxHealth() end)}
+	local defense = CombatPower.GetDefenseSnapshot(mission.target)
+	local observation = {
+		handle = mission.target,
+		health = defense ~= nil and defense.health or nil,
+		maxHealth = defense ~= nil and defense.maxHealth or nil,
+		defense = defense,
+	}
 	local _, predicted = EstimateDamage(participants, observation, limit)
 	if predicted > limit then return false, 'kill_window_changed' end
 	mission.enemyCount = enemyCount
@@ -913,6 +1020,26 @@ local function ValidateVisibleFight(bot, mission)
 	mission.powerRatio = ratio
 	mission.predictedKillTime = predicted
 	return true
+end
+
+local function GetAssembleWindow(mission)
+	local latestStagingArrival = 0
+	if mission ~= nil then
+		latestStagingArrival = tonumber(mission.latestStagingArrival) or 0
+		for _, plan in pairs(mission.travelPlans or {}) do
+			if type(plan) == 'table' then
+				local stagingTime = tonumber(plan.stagingTravelTime)
+				if stagingTime ~= nil then latestStagingArrival = math.max(latestStagingArrival, stagingTime) end
+			end
+		end
+	end
+	-- 集合窗口按参与者走到集合点的行程提前排期，并保留固定的最短窗口。
+	return math.max(Config.PICKOFF_ASSEMBLE_TIMEOUT,
+		latestStagingArrival + Config.PICKOFF_ASSEMBLE_TRAVEL_BUFFER), latestStagingArrival
+end
+
+function Pickoff.GetAssembleWindow(mission)
+	return GetAssembleWindow(mission)
 end
 
 function Pickoff.UpdateMission(bot, mission)
@@ -929,12 +1056,26 @@ function Pickoff.UpdateMission(bot, mission)
 		mission.patrolCooldownRecorded = true
 	end
 	if now - (mission.startTime or now) >= Config.PICKOFF_TOTAL_TIMEOUT then return nil, 'pickoff_total_timeout' end
-	if mission.target == nil or not CanInspect(mission.target) then AcquireTarget(bot, mission) end
-	if mission.targetPlayerID ~= nil
-		and mission.targetPlayerID >= 0
-		and Safe(false, function() return IsHeroAlive(mission.targetPlayerID) end) ~= true
-	then
-		return nil, 'target_dead'
+	if mission.kind == 'pickoff' and mission.targetPlayerID ~= nil and mission.targetPlayerID >= 0 then
+		local selectedHeroName = Safe(nil, function() return GetSelectedHeroName(mission.targetPlayerID) end)
+		if mission.targetHeroName ~= nil and selectedHeroName ~= nil
+			and selectedHeroName ~= mission.targetHeroName
+		then
+			mission.target = nil
+			return nil, 'target_replaced'
+		end
+		-- 玩家级存活状态不依赖旧单位 handle；目标死亡时先释放任务，再做任何实体读取。
+		if Safe(false, function() return IsHeroAlive(mission.targetPlayerID) end) ~= true then
+			mission.target = nil
+			return nil, 'target_dead'
+		end
+	end
+	if mission.target ~= nil and not Pickoff.IsMissionTargetValid(bot, mission, mission.target) then
+		mission.target = nil
+	end
+	if mission.target == nil then
+		local _, acquireReason = AcquireTarget(bot, mission)
+		if acquireReason ~= nil then return nil, acquireReason end
 	end
 
 	if mission.phase == 'assemble' then
@@ -947,7 +1088,7 @@ function Pickoff.UpdateMission(bot, mission)
 		if AllAssembled(mission) then
 			mission.phase = mission.requiresSmoke and 'conceal' or 'approach'
 			mission.phaseStartTime = now
-		elseif now - (mission.phaseStartTime or mission.startTime or now) >= Config.PICKOFF_ASSEMBLE_TIMEOUT then
+		elseif now - (mission.phaseStartTime or mission.startTime or now) >= GetAssembleWindow(mission) then
 			return nil, 'assemble_timeout'
 		end
 		return BOT_MODE_DESIRE_ABSOLUTE * 0.95
@@ -1023,6 +1164,15 @@ end
 
 function Pickoff.GetInvisibilityRegistry()
 	return INVISIBILITY_HEROES
+end
+
+function Pickoff.ResetBotState(bot)
+	local playerID = GetPlayerID(bot)
+	if playerID < 0 then return end
+	observations[playerID] = nil
+	observationUpdateTimes[playerID] = nil
+	visibleEnemies[playerID] = nil
+	visibleEnemyUpdateTimes[playerID] = nil
 end
 
 function Pickoff.ResetForTests()

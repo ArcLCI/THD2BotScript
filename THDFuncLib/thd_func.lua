@@ -6,8 +6,10 @@ local DireFountain = Vector( 6928, 6372, 392 )
 J.Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 J.Site = require( GetScriptDirectory()..'/THDFuncLib/aba_site')
 J.Retreat = require( GetScriptDirectory()..'/THDFuncLib/aba_retreat')
+local CombatPower = require( GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 local IsModeTurbo = J.Utils.IsModeTurbo
+local GetVisibleHealth = J.Utils.GetVisibleHealth
 
 --- Item 相关方法库 ---
 function J.HasItem( bot, sItemName )
@@ -518,8 +520,9 @@ function J.CheckTimeOfDay()
 end
 
 function J.GetHP( unit )
-	local nCurHealth = unit:GetHealth()
-    local nMaxHealth = unit:GetMaxHealth()
+	local nCurHealth, nMaxHealth = GetVisibleHealth(unit)
+	-- 不可见或已失效的目标不能参与血量决策，按满血处理以避免误判为击杀目标。
+	if nCurHealth == nil then return 1 end
 	if nCurHealth <= 0 then return 0 end
 	return nCurHealth / nMaxHealth
 end
@@ -1004,15 +1007,16 @@ function J.WeAreStronger(bot, radius)
 
     for _, h in pairs(mates) do
 		if J.IsValid(h) and not h:IsIllusion() then
-			ourPower = ourPower + h:GetOffensivePower();
-			maxOurPower = math.max(maxOurPower, h:GetOffensivePower())
+			local power = CombatPower.Estimate(h)
+			ourPower = ourPower + power;
+			maxOurPower = math.max(maxOurPower, power)
 		end
     end
 
     for _, h in pairs(enemies) do
 		if J.IsValid(h) and not J.IsSuspiciousIllusion(h) then
 			if J.Utils.IsSpecialOffensiveHero(h:GetUnitName()) then
-				enemyPower = enemyPower + h:GetRawOffensivePower();
+				enemyPower = enemyPower + CombatPower.Estimate(h);
 			end
 		end
     end
@@ -1036,8 +1040,10 @@ function J.GetAttackProDelayTime( bot, nCreep )
 	local botAttackSpeed = bot:GetAttackSpeed()
 	local botProSpeed = bot:GetAttackProjectileSpeed()
 	local botMoveSpeed = bot:GetCurrentMovementSpeed()
+	local botAttack = CombatPower.GetAttackSnapshot(bot)
+	if botAttack == nil then return math.huge end
 	local botAttackPointTime = botAttackPoint / botAttackSpeed
-	local botAttackIdleTime = bot:GetSecondsPerAttack() - botAttackPointTime
+	local botAttackIdleTime = botAttack.attackPeriod - botAttackPointTime
 	local nLastAttackRemainIdleTime = 0
 
 	if GameTime() - bot:GetLastAttackTime() < botAttackIdleTime
@@ -1105,11 +1111,19 @@ end
 --未计算技能增强
 function J.WillKillTarget( npcTarget, dmg, dmgType, nDelay )
 
-	local targetHealth = npcTarget:GetHealth() + npcTarget:GetHealthRegen() * nDelay + 0.8
+	local targetHealth = GetVisibleHealth(npcTarget)
+	if targetHealth == nil then return false end
+
+	local ok, healthRegen = pcall(function() return npcTarget:GetHealthRegen() end)
+	local incomingDamage = CombatPower.EstimateIncomingDamage(npcTarget, dmg, dmgType)
+	if not ok or type(healthRegen) ~= "number" or type(incomingDamage) ~= "number" then
+		return false
+	end
+	targetHealth = targetHealth + healthRegen * nDelay + 0.8
 
 	local nRealBonus = J.GetTotalAttackWillRealDamage( npcTarget, nDelay )
 
-	local nTotalDamage = npcTarget:GetActualIncomingDamage( dmg, dmgType ) + nRealBonus
+	local nTotalDamage = incomingDamage + nRealBonus
 
 	return nTotalDamage > targetHealth and nRealBonus < targetHealth - 1
 
@@ -1129,20 +1143,21 @@ function J.GetCreepAttackActivityWillRealDamage( nUnit, nTime )
 	local nCreeps = bot:GetNearbyLaneCreeps( 1600, othersBeEnemy )
 	for _, creep in pairs( nCreeps )
 	do
-		if creep:CanBeSeen()
+		local attack = CombatPower.GetAttackSnapshot(creep)
+		if attack ~= nil
 			and creep:GetAttackTarget() == nUnit
 			and creep:GetAnimActivity() == 1503
 			and creep:GetLastAttackTime() < gameTime - 0.2
 		then
 			local attackPoint	= creep:GetAttackPoint()
 			local animCycle	 = creep:GetAnimCycle()
-			local attackPerTime = creep:GetSecondsPerAttack()
+			local attackPerTime = attack.attackPeriod
 
 			if J.IsKeyWordUnit( 'melee', creep )
 				and animCycle < attackPoint
 				and ( attackPoint - animCycle ) * attackPerTime < nTime * ( 0.99 - botLV / 300 )
 			then
-				nDamage = nDamage + creep:GetAttackDamage() * 1
+				nDamage = nDamage + attack.attackDamage
 			end
 
 			if J.IsKeyWordUnit( 'ranged', creep )
@@ -1153,7 +1168,7 @@ function J.GetCreepAttackActivityWillRealDamage( nUnit, nTime )
 				local nProjectTime = nDist / ( nProjectSpeed + 1 )
 				if ( attackPoint - animCycle ) * attackPerTime + nProjectTime < nTime * ( 0.98 - botLV / 200 )
 				then
-					nDamage = nDamage + creep:GetAttackDamage() * 1
+					nDamage = nDamage + attack.attackDamage
 				end
 			end
 
@@ -1165,14 +1180,14 @@ function J.GetCreepAttackActivityWillRealDamage( nUnit, nTime )
 				local nProjectTime = nDist / ( nProjectSpeed + 1 )
 				if ( 0.292 - animCycle ) * 0.699 / 0.292 + nProjectTime < nTime * ( 0.9 - botLV / 150 )
 				then
-					nDamage = nDamage + creep:GetAttackDamage() * 1
+					nDamage = nDamage + attack.attackDamage
 				end
 			end
 
 		end
 	end
 
-	return nUnit:GetActualIncomingDamage( nDamage, DAMAGE_TYPE_PHYSICAL )
+	return CombatPower.EstimateIncomingDamage(nUnit, nDamage, DAMAGE_TYPE_PHYSICAL, 0)
 
 end
 
@@ -1183,8 +1198,9 @@ function J.GetCreepAttackProjectileWillRealDamage( nUnit, nTime )
 	local incProj = nUnit:GetIncomingTrackingProjectiles()
 	for _, p in pairs( incProj )
 	do
+		local attack = p.caster ~= nil and CombatPower.GetAttackSnapshot(p.caster) or nil
 		if p.is_attack
-			and p.caster ~= nil
+			and attack ~= nil
 		then
 			local nProjectSpeed = p.caster:GetAttackProjectileSpeed()
 			if p.caster:IsTower() then nProjectSpeed = nProjectSpeed * 0.93 end
@@ -1192,12 +1208,12 @@ function J.GetCreepAttackProjectileWillRealDamage( nUnit, nTime )
 			local nDistance	 = GetUnitToLocationDistance( nUnit, p.location )
 			if nProjectDist > nDistance * 1.02
 			then
-				nDamage = nDamage + p.caster:GetAttackDamage() * 1
+				nDamage = nDamage + attack.attackDamage
 			end
 		end
 	end
 
-	return nUnit:GetActualIncomingDamage( nDamage, DAMAGE_TYPE_PHYSICAL )
+	return CombatPower.EstimateIncomingDamage(nUnit, nDamage, DAMAGE_TYPE_PHYSICAL, 0)
 
 end
 
@@ -1458,11 +1474,15 @@ function J.GetHeroesTargetingUnit(tUnits, hUnit)
 end
 
 function J.CanKillTarget( npcTarget, dmg, dmgType )
+	local targetHealth = GetVisibleHealth(npcTarget)
+	if targetHealth == nil then return false end
+
 	if dmgType == DAMAGE_TYPE_PURE then
-		return dmg >= npcTarget:GetHealth()
+		return dmg >= targetHealth
 	end
 
-	return npcTarget:GetActualIncomingDamage( dmg, dmgType ) >= npcTarget:GetHealth()
+	local incomingDamage = CombatPower.EstimateIncomingDamage(npcTarget, dmg, dmgType)
+	return type(incomingDamage) == "number" and incomingDamage >= targetHealth
 
 end
 
@@ -1571,7 +1591,9 @@ function J.GetAttackProjectileDamageByRange( nUnit, nRadius )
 		if p.is_attack and p.caster ~= nil
 			and GetUnitToLocationDistance( nUnit, p.location ) < nRadius
 		then
-			nDamage = nDamage + p.caster:GetAttackDamage() * 1
+			local attack = CombatPower.GetAttackSnapshot(p.caster)
+			if attack == nil then return math.huge end
+			nDamage = nDamage + attack.attackDamage
 		end
 	end
 	return nDamage

@@ -789,7 +789,7 @@ ____exports.ImportantSpells = {
     [HeroName.Omniknight] = {"omniknight_guardian_angel"},
     [HeroName.PrimalBeast] = {"primal_beast_pulverize"},
     [HeroName.Sven] = {"sven_gods_strength"},
-    [HeroName.Tidehunter] = {"tidehunter_ravage"},
+    [HeroName.Tidehunter] = {"ability_thdots_suika04"},
     [HeroName.TreantProtector] = {"treant_overgrowth"},
     [HeroName.Undying] = {"undying_tombstone", "undying_flesh_golem"},
     [HeroName.WraithKing] = {"skeleton_king_reincarnation"},
@@ -1083,7 +1083,58 @@ end
 -- @param target - The unit to check.
 -- @returns True if the target is a valid creep, false otherwise.
 function ____exports.IsValidCreep(target)
-    return ____exports.IsValidUnit(target) and target:GetHealth() < 5000 and not target:IsHero() and (GetBot():GetLevel() > 9 or not target:IsAncientCreep())
+    if target == nil then
+        return false
+    end
+
+    -- 小兵句柄可能来自上一帧的可见列表；实时属性读取前必须在同一检查内再次确认可见。
+    local ok, health, isHero, isAncient = pcall(function()
+        if target:IsNull()
+        or not target:CanBeSeen()
+        or not target:IsAlive()
+        or target:IsInvulnerable()
+        then
+            return nil, nil, nil
+        end
+        return target:GetHealth(), target:IsHero(), target:IsAncientCreep()
+    end)
+    if not ok or type(health) ~= "number" then
+        return false
+    end
+
+    return health < 5000
+        and not isHero
+        and (GetBot():GetLevel() > 9 or not isAncient)
+end
+
+--- Read a unit's current and maximum health only while it is visible.
+--
+-- Bot-side unit handles can remain in a nearby-unit list for one or more
+-- frames after vision is lost, so health reads must be coupled to the
+-- visibility check instead of being performed by the caller afterward.
+function ____exports.GetVisibleHealth(target)
+    if target == nil then
+        return nil, nil
+    end
+
+    local ok, health, maxHealth = pcall(function()
+        if target:IsNull()
+        or not target:CanBeSeen()
+        or not target:IsAlive()
+        then
+            return nil, nil
+        end
+        return target:GetHealth(), target:GetMaxHealth()
+    end)
+    if not ok
+    or type(health) ~= "number"
+    or type(maxHealth) ~= "number"
+    or maxHealth <= 0
+    then
+        return nil, nil
+    end
+
+    return health, maxHealth
 end
 --- Check if the target is a valid building.
 -- 

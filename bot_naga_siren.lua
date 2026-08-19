@@ -308,9 +308,10 @@ local function GetWeakest(units)
 	local weakest = nil
 	local lowestHealth = math.huge
 	for _, unit in pairs(units) do
-		if IsValidUnit(unit) and J.CanBeAttacked(unit) and unit:GetHealth() < lowestHealth then
+		local health = J.Utils.GetVisibleHealth(unit)
+		if IsValidUnit(unit) and health ~= nil and J.CanBeAttacked(unit) and health < lowestHealth then
 			weakest = unit
-			lowestHealth = unit:GetHealth()
+			lowestHealth = health
 		end
 	end
 	return weakest

@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -181,14 +182,15 @@ function ConsiderAbilityKomachi03()
 	do
 		if ( npcEnemy~=nil )
 		then
-		if ( npcEnemy:IsAlive() and CanCastKomachi03OnTarget(npcEnemy) and not IsPossibleIllusion( npcEnemy ))
+		local defense = CombatPower.GetDefenseSnapshot(npcEnemy)
+		if ( defense ~= nil and CanCastKomachi03OnTarget(npcEnemy) and not IsPossibleIllusion( npcEnemy ))
 		then
 		local soul_index = npcEnemy:GetModifierByName("modifier_thdots_komachi_03_soul")
 		if (soul_index ~= nil)
 		then
 			local soul_num = npcEnemy:GetModifierStackCount(soul_index)
 			local soul_time = npcEnemy:GetModifierRemainingDuration(soul_index)
-			local damage = (10 + npcEnemy:GetMaxHealth()*0.01)*(ability03:GetLevel()+1)*soul_num
+			local damage = (10 + defense.maxHealth*0.01)*(ability03:GetLevel()+1)*soul_num
 			local kill_coef = 0
 			-- 斩杀
 			if (npcEnemy:HasModifier("modifier_thdots_komachi_04_debuff"))
@@ -199,7 +201,12 @@ function ConsiderAbilityKomachi03()
 				kill_coef = 0.25
 				end
 			end
-			if (damage*(1-npcEnemy:GetMagicResist())>npcEnemy:GetHealth()-npcEnemy:GetMaxHealth()*kill_coef)
+			local incomingDamage = CombatPower.EstimateIncomingDamageFromSnapshot(
+				defense,
+				damage,
+				DAMAGE_TYPE_MAGICAL
+			)
+			if (incomingDamage ~= nil and incomingDamage > defense.health-defense.maxHealth*kill_coef)
 			then
 				return BOT_ACTION_DESIRE_HIGH
 			end

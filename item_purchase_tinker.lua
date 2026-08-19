@@ -4,9 +4,12 @@ require(GetScriptDirectory() ..  "/thd2_item_purchase")
 local tableItemsToBuy = {
 	"item_broom",
 	"item_yueyaomishi",
+	"item_aghanims_shard",
+	"item_wanbaochui",
 	"item_morenjingjuan",
 	"item_nuclear_stick",
 	"item_recipe_gap_creator",
+	"item_recipe_wanbaochui2",
 	"item_bagua",
 	"item_camera",
 }

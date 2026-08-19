@@ -13,6 +13,10 @@ local function IsValidUnit(unit)
 	return unit ~= nil and not unit:IsNull() and unit:IsAlive()
 end
 
+local function GetVisibleHealth(unit)
+	return J.Utils.GetVisibleHealth(unit)
+end
+
 local function IsValidEnemyHero(unit)
 	return IsValidUnit(unit)
 		and unit:IsHero()
@@ -118,10 +122,12 @@ local function GetFarmTarget(unit)
 	local weakest = nil
 	local hp = math.huge
 	for _, creep in pairs(unit:GetNearbyLaneCreeps(750, true) or {}) do
-		if IsValidUnit(creep) and creep:GetHealth() < hp then weakest, hp = creep, creep:GetHealth() end
+		local health = GetVisibleHealth(creep)
+		if IsValidUnit(creep) and health ~= nil and health < hp then weakest, hp = creep, health end
 	end
 	for _, creep in pairs(unit:GetNearbyNeutralCreeps(650) or {}) do
-		if IsValidUnit(creep) and creep:GetHealth() < hp then weakest, hp = creep, creep:GetHealth() end
+		local health = GetVisibleHealth(creep)
+		if IsValidUnit(creep) and health ~= nil and health < hp then weakest, hp = creep, health end
 	end
 	return weakest
 end
@@ -130,13 +136,14 @@ local function GetLaneLastHitTarget(unit)
 	local best = nil
 	local lowestHealth = math.huge
 	for _, creep in pairs(unit:GetNearbyLaneCreeps(800, true) or {}) do
-		if IsValidUnit(creep) and creep:CanBeSeen() and J.CanBeAttacked(creep) then
+		local health = GetVisibleHealth(creep)
+		if IsValidUnit(creep) and health ~= nil and J.CanBeAttacked(creep) then
 			local delay = J.GetAttackProDelayTime(unit, creep)
 			if J.WillKillTarget(creep, unit:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL, delay)
-			and creep:GetHealth() < lowestHealth
+			and health < lowestHealth
 			then
 				best = creep
-				lowestHealth = creep:GetHealth()
+				lowestHealth = health
 			end
 		end
 	end

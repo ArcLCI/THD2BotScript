@@ -39,7 +39,12 @@ local function IsEnabled()
 	return ok and enabled == true
 end
 
+local function IsCurrentBot(bot)
+	return Coordinator.IsCurrentBot == nil or Coordinator.IsCurrentBot(bot) == true
+end
+
 function Gank.GetDesire(bot)
+	if not IsCurrentBot(bot) then return BOT_MODE_DESIRE_NONE end
 	if not IsEnabled() then return BOT_MODE_DESIRE_NONE end
 	local mission = Coordinator.GetMission(bot)
 	-- GetDesire 先于 Think 执行；这里只观察已发出的长引导，避免任务先释放而丢失终态。
@@ -53,17 +58,20 @@ function Gank.GetDesire(bot)
 end
 
 function Gank.OnStart(bot)
+	if not IsCurrentBot(bot) then return false end
 	return Coordinator.OnStart(bot)
 end
 
 function Gank.Abort(bot, reason, context)
+	if not IsCurrentBot(bot) then return false end
 	local mission = Coordinator.GetMission(bot)
 	ReleaseConsumable(bot, mission, SMOKE_REQUESTER, reason or 'mission_abort')
 	ReleaseConsumable(bot, mission, DUST_REQUESTER, reason or 'mission_abort')
-	Coordinator.Abort(bot, reason, context)
+	return Coordinator.Abort(bot, reason, context)
 end
 
 function Gank.OnEnd(bot, reason)
+	if not IsCurrentBot(bot) then return end
 	local mission = Coordinator.GetMission(bot)
 	ReleaseConsumable(bot, mission, SMOKE_REQUESTER, reason or 'mode_end')
 	ReleaseConsumable(bot, mission, DUST_REQUESTER, reason or 'mode_end')
@@ -516,6 +524,7 @@ local function HandleMissionConsumables(bot, mission)
 end
 
 function Gank.Think(bot)
+	if not IsCurrentBot(bot) then return end
 	if not IsEnabled() then
 		Coordinator.Abort(bot, 'disabled')
 		return
@@ -557,6 +566,11 @@ function Gank.Think(bot)
 	if mission.target ~= nil and mission.target.CanBeSeen ~= nil
 		and Safe(false, function() return mission.target:CanBeSeen() end)
 	then
+		-- 可见只是读取前提；原生 SetTarget/Attack 前还必须绑定当前敌方玩家与实体索引。
+		if not Coordinator.IsMissionTargetValid(bot, mission, mission.target) then
+			Coordinator.Abort(bot, 'action_target_invalid')
+			return
+		end
 		J.SetTargetIfChanged(bot, mission.target, 0.5)
 		local rallyLocation = Coordinator.GetRallyLocation(mission)
 			or Safe(nil, function() return mission.target:GetLocation() end)
@@ -608,6 +622,10 @@ function Gank.Think(bot)
 				return
 			end
 			local combatTarget = pursuit ~= nil and pursuit.target or mission.target
+			if not Coordinator.IsValidEnemyHero(bot, combatTarget) then
+				Coordinator.Abort(bot, 'action_target_invalid')
+				return
+			end
 			J.ActionAttackUnit(bot, 'roam_gank_attack', combatTarget, false, 0.35)
 			return
 		end

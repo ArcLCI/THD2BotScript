@@ -1,5 +1,6 @@
 local X = {}
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 local ownerBot
 
 local nEnemyAncient = GetAncient(GetOpposingTeam())
@@ -16,6 +17,21 @@ local MINION_ATTACK_INTERVAL = 0.45
 local MINION_MOVE_INTERVAL = 0.65
 local MINION_DEFAULT_FOLLOW_INTERVAL = 1.0
 local MINION_LOCATION_BUCKET = 260
+
+local function CanIssueMinionAction(unit)
+    if unit == nil then return false end
+    if unit == GetBot() then return true end
+
+    if unit.IsCourier ~= nil then
+        local ok, isCourier = pcall(function() return unit:IsCourier() end)
+        if ok and isCourier == true then return true end
+    end
+
+    if unit.IsMinion == nil then return false end
+    local ok, isMinion = pcall(function() return unit:IsMinion() end)
+    -- 幻象只有被引擎登记为当前 Bot 的 minion 时，才允许作为 Bot Action receiver。
+    return ok and isMinion == true
+end
 
 local MoveMinionToLocation
 
@@ -60,6 +76,7 @@ local function ShouldThrottleMinionAction(unit, actionName, targetKey, interval)
 end
 
 local function MinionActionAttackUnit(unit, actionName, target, once, interval)
+    if not CanIssueMinionAction(unit) then return false end
     if not IsValidUnit(target) then return false end
     local targetKey = GetMinionUnitKey(target)
     if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_ATTACK_INTERVAL) then return true end
@@ -68,6 +85,7 @@ local function MinionActionAttackUnit(unit, actionName, target, once, interval)
 end
 
 local function MinionActionMoveToLocation(unit, actionName, vLoc, interval, bucket)
+    if not CanIssueMinionAction(unit) then return false end
     if vLoc == nil then return false end
     local targetKey = GetMinionLocationKey(vLoc, bucket)
     if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_MOVE_INTERVAL) then return true end
@@ -76,6 +94,7 @@ local function MinionActionMoveToLocation(unit, actionName, vLoc, interval, buck
 end
 
 local function MinionActionAttackMove(unit, actionName, vLoc, interval, bucket)
+    if not CanIssueMinionAction(unit) then return false end
     if vLoc == nil then return false end
     local targetKey = GetMinionLocationKey(vLoc, bucket)
     if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_MOVE_INTERVAL) then return true end
@@ -103,6 +122,7 @@ end
 function X.IllusionThink(owner, hMinionUnit)
 
 	ownerBot = owner
+	if not IsValidUnit(hMinionUnit) then return end
 	if not hMinionUnit:IsIllusion() then return end
 
 	if hMinionUnit:IsIllusion() then
@@ -154,6 +174,7 @@ end
 function X.DemonThink(owner, hMinionUnit)
 
     ownerBot = owner
+	if not IsValidUnit(hMinionUnit) then return end
     if IsKeyWordUnit("necronomicon",hMinionUnit) then
 
         --[[if IsKeyWordUnit("necronomicon_archer",hMinionUnit) then
@@ -275,14 +296,15 @@ function CanNotUseAbility( unit )
 end
 
 function CantAttack(unit)
-	return IsValidUnit(unit)
-        and (unit:IsStunned()
+	if not IsValidUnit(unit) then return false end
+	local attack = CombatPower.GetAttackSnapshot(unit)
+	return attack == nil
+		or unit:IsStunned()
             or unit:IsRooted()
             or unit:IsNightmared()
             or unit:IsDisarmed()
             or unit:IsInvulnerable()
-            or unit:GetAttackDamage() <= 0
-            )
+			or attack.attackDamage <= 0
 end
 
 function IsInRange( bot, npcTarget, nRadius )
@@ -361,14 +383,21 @@ function GetWeakest(unitList)
 		for i = 1, #unitList
 		do
 			local unit = unitList[i]
-			if IsValidTarget(unit)
-			and not IsNotAllowedToAttack(unit)
-			then
-				local killUnitTime = unit:GetHealth() / unit:GetActualIncomingDamage( 3000, DAMAGE_TYPE_PHYSICAL )
-				if killUnitTime < minKillTime
+			if IsValidTarget(unit) and not IsNotAllowedToAttack(unit) then
+				local defense = CombatPower.GetDefenseSnapshot(unit)
+				local incomingDamage = CombatPower.EstimateIncomingDamageFromSnapshot(
+					defense,
+					3000,
+					DAMAGE_TYPE_PHYSICAL
+				)
+				if defense ~= nil and type(incomingDamage) == 'number'
+				and incomingDamage > 0
 				then
-					target = unit
-					minKillTime = killUnitTime
+					local killUnitTime = defense.health / incomingDamage
+					if killUnitTime < minKillTime then
+						target = unit
+						minKillTime = killUnitTime
+					end
 				end
 			end
 		end
@@ -443,8 +472,15 @@ function IsTargetedByCreep(unit)
 end
 
 function GetHP( unit )
-	local nCurHealth = unit:GetHealth()
-    local nMaxHealth = unit:GetMaxHealth()
+	if unit == nil then return 0 end
+	local ok, nCurHealth, nMaxHealth = pcall(function()
+		if unit:IsNull() or not unit:CanBeSeen() then return nil, nil end
+		return unit:GetHealth(), unit:GetMaxHealth()
+	end)
+	if not ok or type(nCurHealth) ~= 'number' or type(nMaxHealth) ~= 'number' or nMaxHealth <= 0 then
+		-- 不可见目标不再读取实时血量，按不可用目标处理，避免跨帧句柄触发原生警告。
+		return 0
+	end
 	if nCurHealth <= 0 then return 0 end
 	return nCurHealth / nMaxHealth
 end
@@ -581,6 +617,7 @@ end
 function ComputeAttackTarget(hMinionUnit)
 	local target = nil
 	local bot = GetBot()
+	if not IsValidUnit(hMinionUnit) or not IsValidUnit(bot) then return nil end
 
     for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMIES))
     do
@@ -634,6 +671,7 @@ function ComputeAttackTarget(hMinionUnit)
 end
 
 function ConsiderMove(hMinionUnit)
+	if not IsValidUnit(hMinionUnit) then return BOT_MODE_DESIRE_NONE, nil end
 	if CanNotUseAction(hMinionUnit) or CantMove(hMinionUnit) then return BOT_MODE_DESIRE_NONE, nil end
 
     local bot = GetBot()

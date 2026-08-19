@@ -1,5 +1,6 @@
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
+local CombatPower = require(GetScriptDirectory() .. "/THDFuncLib/combat_power")
 
 local CHEN01 = "ability_thdots_chen01"
 local CHEN02 = "ability_thdots_chen02"
@@ -8,18 +9,30 @@ local CHEN04 = "ability_thdots_chen04"
 local CHEN_WANBAO = "ability_thdots_chen_wanbaochui"
 
 local ROLLING_MODIFIER = "modifier_ability_thdots_chen01"
+local CHEN_EX_MODIFIER = "modifier_ability_thdots_chenEx"
 local ULTIMATE_MODIFIER = "modifier_ability_thdots_chen04"
 local WANBAO_MODIFIER = "modifier_item_wanbaochui"
 local HORSE_KING_MODIFIER = "modifier_item_horse_king_open"
 local DRAGON_STAR_MODIFIER = "modifier_item_dragon_star_buff"
 local TRINITY_MODIFIER = "modifier_item_trinity_active_shield"
 
-local COMBO_WINDOW = 4.5
+local COMBO_WINDOW = 8.0
 local ACTION_GUARD_TIME = 0.05
 local HERO_SCAN_RANGE = 1200
+local DRAGON_STAR_ENGAGE_RANGE = 1000
+local DRAGON_STAR_REACTIVE_HP = 0.75
 local CHEN03_COMBAT_RADIUS = 500
 local FARM_RESERVE_RANGE = 1000
 local ROLL_PREDICTION_TIME = 0.35
+local ROLL_RETRY_TIME = 0.35
+local TOWER_SCAN_RANGE = 1600
+local TOWER_RANGE_FALLBACK = 900
+local TOWER_ROLL_BUFFER = 80
+local TOWER_DIVE_MIN_HP = 0.80
+local TOWER_DIVE_MAX_TARGET_HP = 0.45
+local TOWER_DIVE_MIN_HP_ADVANTAGE = 0.30
+local TOWER_DIVE_KILL_WINDOW = 2.25
+local TOWER_DIVE_DAMAGE_MARGIN = 1.05
 
 local function SafeCall(object, methodName, fallback, ...)
 	if object == nil or object[methodName] == nil then return fallback end
@@ -131,7 +144,10 @@ local function ScoreDelayedControlTarget(isProperTarget, isChanneling, isTelepor
 	return score
 end
 
-local function FindCombatTarget(bot, enemies, ability01)
+local GetPredictedRollLocation
+local CanUseChaseRoll
+
+local function FindCombatTarget(bot, enemies, ability01, ability02, towerContext)
 	if not J.IsGoingOnSomeone(bot) and not J.IsInTeamFight(bot, HERO_SCAN_RANGE) then return nil end
 	local properTarget = J.GetProperTarget(bot)
 	local bestTarget = nil
@@ -143,16 +159,25 @@ local function FindCombatTarget(bot, enemies, ability01)
 	for _, enemy in pairs(enemies) do
 		local distance = GetUnitToUnitDistance(bot, enemy)
 		if inTeamFight or distance <= reachableRange then
-			local score = ScoreDelayedControlTarget(
-				enemy == properTarget,
-				SafeCall(enemy, "IsChanneling", false),
-				IsTeleportingSafely(enemy),
-				distance,
-				GetHP(enemy)
+			local approachRange = math.max(
+				SafeCall(bot, "GetAttackRange", 150) + 125,
+				ability02 ~= nil and SafeCall(ability02, "GetCastRange", 400) + 25 or 425
 			)
-			if score > bestScore then
-				bestTarget = enemy
-				bestScore = score
+			local needsInitialRoll = distance > approachRange and IsCastable(ability01)
+			local rollAllowed = not needsInitialRoll
+				or CanUseChaseRoll(bot, enemy, enemies, GetPredictedRollLocation(bot, enemy, ability01), towerContext)
+			if rollAllowed then
+				local score = ScoreDelayedControlTarget(
+					enemy == properTarget,
+					SafeCall(enemy, "IsChanneling", false),
+					IsTeleportingSafely(enemy),
+					distance,
+					GetHP(enemy)
+				)
+				if score > bestScore then
+					bestTarget = enemy
+					bestScore = score
+				end
 			end
 		end
 	end
@@ -163,14 +188,13 @@ local function ClearCombo(bot)
 	bot.thdOrangeCombo = nil
 end
 
-local function StartCombo(bot, target, ability02)
-	local nearRange = ability02 ~= nil and math.max(SafeCall(ability02, "GetCastRange", 400), 400) or 400
+local function StartCombo(bot, target)
 	bot.thdOrangeCombo = {
 		target = target,
 		expiresAt = DotaTime() + COMBO_WINDOW,
-		remote = GetUnitToUnitDistance(bot, target) > nearRange + 50,
 		ultimateIssued = false,
-		rollIssued = false,
+		rollCount = 0,
+		lastRollAt = -90,
 		chen02Issued = false,
 		chen03Issued = false,
 		teethIssued = false,
@@ -203,9 +227,114 @@ local function GetRollRange(ability)
 	return castRange
 end
 
-local function GetPredictedRollLocation(bot, target, ability)
+GetPredictedRollLocation = function(bot, target, ability)
 	local targetLocation = SafeCall(target, "GetExtrapolatedLocation", target:GetLocation(), ROLL_PREDICTION_TIME)
 	return ProjectLocation(bot:GetLocation(), targetLocation, GetRollRange(ability))
+end
+
+local function GetLocationDistance(first, second)
+	local dx = first.x - second.x
+	local dy = first.y - second.y
+	return math.sqrt(dx * dx + dy * dy)
+end
+
+local function IsValidTower(tower)
+	if tower == nil or SafeCall(tower, "IsNull", false) or not SafeCall(tower, "IsAlive", false) then
+		return false
+	end
+	return true
+end
+
+local function IsHighGroundTower(tower)
+	local name = SafeCall(tower, "GetUnitName", "")
+	return string.find(name, "tower3", 1, true) ~= nil
+		or string.find(name, "tower4", 1, true) ~= nil
+end
+
+local function LoadTowerContext(bot, context)
+	if context.loaded then return end
+	context.loaded = true
+	context.towers = {}
+	context.hasUnknownTower = false
+	for _, tower in pairs(SafeCall(bot, "GetNearbyTowers", {}, TOWER_SCAN_RANGE, true)) do
+		if IsValidTower(tower) and SafeCall(tower, "CanBeSeen", false) then
+			table.insert(context.towers, tower)
+		elseif IsValidTower(tower) then
+			-- 无法读取位置的塔不能安全计算滚动落点，越塔判断按未知风险失败关闭。
+			context.hasUnknownTower = true
+		end
+	end
+end
+
+local function GetRollTowerRisk(bot, location, context)
+	LoadTowerContext(bot, context)
+	local towerCount = 0
+	local highGround = false
+	for _, tower in pairs(context.towers) do
+		local towerLocation = SafeCall(tower, "GetLocation", nil)
+		if towerLocation ~= nil then
+			local attackRange = SafeCall(tower, "GetAttackRange", TOWER_RANGE_FALLBACK)
+			if GetLocationDistance(location, towerLocation) <= attackRange + TOWER_ROLL_BUFFER then
+				towerCount = towerCount + 1
+				highGround = highGround or IsHighGroundTower(tower)
+			end
+		end
+	end
+	return towerCount, highGround, context.hasUnknownTower
+end
+
+local function ShouldAllowTowerDive(botHP, targetHP, enemyCount, towerCount, highGround,
+	unknownTower, hasNativeReduction, recentlyDamagedByTower, estimatedDamage, targetHealth)
+	return towerCount == 1
+		and not highGround
+		and not unknownTower
+		and hasNativeReduction
+		and not recentlyDamagedByTower
+		and enemyCount <= 1
+		and botHP >= TOWER_DIVE_MIN_HP
+		and targetHP <= TOWER_DIVE_MAX_TARGET_HP
+		and botHP - targetHP >= TOWER_DIVE_MIN_HP_ADVANTAGE
+		and estimatedDamage >= targetHealth * TOWER_DIVE_DAMAGE_MARGIN
+end
+
+CanUseChaseRoll = function(bot, target, enemies, location, towerContext)
+	local towerCount, highGround, unknownTower = GetRollTowerRisk(bot, location, towerContext)
+	if towerCount == 0 and not unknownTower then return true end
+	local targetHealth = SafeCall(target, "GetHealth", math.huge)
+	local estimatedDamage = CombatPower.EstimateAttackDamage(
+		bot,
+		target,
+		TOWER_DIVE_KILL_WINDOW,
+		1,
+		0
+	)
+	return ShouldAllowTowerDive(
+		GetHP(bot),
+		GetHP(target),
+		#enemies,
+		towerCount,
+		highGround,
+		unknownTower,
+		bot:HasModifier(CHEN_EX_MODIFIER),
+		SafeCall(bot, "WasRecentlyDamagedByTower", false, 1.25),
+		estimatedDamage,
+		targetHealth
+	)
+end
+
+local function GetChaseApproachRange(bot, state, ability02)
+	local attackRange = SafeCall(bot, "GetAttackRange", 150) + 125
+	local chen02Range = 0
+	if not state.chen02Issued and IsCastable(ability02) then
+		chen02Range = SafeCall(ability02, "GetCastRange", 400) + 25
+	end
+	return math.max(attackRange, chen02Range)
+end
+
+local function ShouldUseChaseRoll(distance, approachRange, rollReady, rollCount, isChasing, sinceLastRoll)
+	if not rollReady or distance <= approachRange or sinceLastRoll < ROLL_RETRY_TIME then return false end
+	-- 第一次用于接敌；后续短 CD 滚动只追真正背身逃跑的目标，避免原地反复冲撞。
+	return rollCount == 0 or isChasing
 end
 
 local function GetSafeRollLocation(bot, ability, pursuer)
@@ -257,6 +386,37 @@ local function CountEnemiesWithin(bot, enemies, range)
 	return count
 end
 
+local function GetClosestEnemyDistance(bot, enemies)
+	local closestDistance = math.huge
+	for _, enemy in pairs(enemies) do
+		closestDistance = math.min(closestDistance, GetUnitToUnitDistance(bot, enemy))
+	end
+	return closestDistance
+end
+
+local function ShouldUseDragonStar(enemyCount, closestDistance, seriousRetreat,
+	recentlyDamaged, hp, committed)
+	if enemyCount <= 0 then return false end
+	if seriousRetreat then return true end
+	if recentlyDamaged and hp <= DRAGON_STAR_REACTIVE_HP then return true end
+	return committed and closestDistance <= DRAGON_STAR_ENGAGE_RANGE
+end
+
+local function TryUseDragonStar(bot, enemies, committed, seriousRetreat)
+	if bot:HasModifier(DRAGON_STAR_MODIFIER) then return false end
+	local dragonStar = GetReadyItem("item_dragon_star")
+	if dragonStar == nil then return false end
+	local shouldUse = ShouldUseDragonStar(
+		#enemies,
+		GetClosestEnemyDistance(bot, enemies),
+		seriousRetreat,
+		SafeCall(bot, "WasRecentlyDamagedByAnyHero", false, 2.5),
+		GetHP(bot),
+		committed
+	)
+	return shouldUse and UseAbility(bot, dragonStar) or false
+end
+
 local function FindClosestPursuer(bot, enemies, range)
 	local closest = nil
 	local closestDistance = math.huge
@@ -273,15 +433,12 @@ local function FindClosestPursuer(bot, enemies, range)
 end
 
 local function TryUseDefensiveItems(bot, enemies, seriousRetreat)
+	if TryUseDragonStar(bot, enemies, false, seriousRetreat) then return true end
 	local underPressure = #enemies > 0
 		and (seriousRetreat or SafeCall(bot, "WasRecentlyDamagedByAnyHero", false, 2.5))
 		and (seriousRetreat or GetHP(bot) < 0.65)
 	if not underPressure then return false end
 
-	local dragonStar = GetReadyItem("item_dragon_star")
-	if dragonStar ~= nil and not bot:HasModifier(DRAGON_STAR_MODIFIER) then
-		return UseAbility(bot, dragonStar)
-	end
 	local trinity = GetReadyItem("item_trinity")
 	if trinity ~= nil and not bot:HasModifier(TRINITY_MODIFIER) then
 		return UseAbility(bot, trinity)
@@ -297,6 +454,13 @@ local function TryUseHorseKing(bot, committed)
 		return UseAbility(bot, item)
 	end
 	return false
+end
+
+local function TryUsePreEngagementItems(bot, enemies, state)
+	if state == nil then return false end
+	-- 彗星是持续开关，先开启不会损失时限；龙星后开，完整覆盖六秒接敌窗口。
+	if TryUseHorseKing(bot, true) then return true end
+	return TryUseDragonStar(bot, enemies, true, false)
 end
 
 local function TryUseHorseRed(bot, enemies)
@@ -329,9 +493,22 @@ local function TryUseTeeth(bot, state, ability02, ability03)
 	return UseAbility(bot, teeth)
 end
 
-local function ContinueCombo(bot, state, ability01, ability02, ability03, ability04)
+local function ContinueCombo(bot, state, ability01, ability02, ability03, ability04, enemies, towerContext)
 	local target = state.target
 	local silenced = SafeCall(bot, "IsSilenced", false)
+	local rollLocation = GetPredictedRollLocation(bot, target, ability01)
+	local shouldRoll = ShouldUseChaseRoll(
+		GetUnitToUnitDistance(bot, target),
+		GetChaseApproachRange(bot, state, ability02),
+		not silenced and not SafeCall(bot, "IsRooted", false) and IsCastable(ability01),
+		state.rollCount or 0,
+		J.IsChasingTarget ~= nil and J.IsChasingTarget(bot, target),
+		DotaTime() - (state.lastRollAt or -90)
+	)
+	if shouldRoll and not CanUseChaseRoll(bot, target, enemies, rollLocation, towerContext) then
+		ClearCombo(bot)
+		return false
+	end
 	if not bot:HasModifier(ULTIMATE_MODIFIER)
 	and not state.ultimateIssued
 	and not silenced
@@ -341,13 +518,10 @@ local function ContinueCombo(bot, state, ability01, ability02, ability03, abilit
 		return UseAbility(bot, ability04)
 	end
 
-	if state.remote and not state.rollIssued
-	and not silenced
-	and not SafeCall(bot, "IsRooted", false)
-	and IsCastable(ability01)
-	then
-		state.rollIssued = true
-		return UseAbilityOnLocation(bot, ability01, GetPredictedRollLocation(bot, target, ability01))
+	if shouldRoll then
+		state.rollCount = (state.rollCount or 0) + 1
+		state.lastRollAt = DotaTime()
+		return UseAbilityOnLocation(bot, ability01, rollLocation)
 	end
 
 	local ability02Range = ability02 ~= nil and SafeCall(ability02, "GetCastRange", 400) or 400
@@ -388,7 +562,8 @@ local function TryUseWanbao(bot, target, state, ability01, ability02, ability03,
 		return UseAbility(bot, ability03)
 	end
 	if state ~= nil then
-		state.rollIssued = false
+		state.rollCount = 0
+		state.lastRollAt = -90
 		state.chen02Issued = false
 		state.chen03Issued = false
 		state.teethIssued = false
@@ -465,17 +640,28 @@ function AbilityUsageThink()
 	local ability04 = GetAbility(bot, CHEN04)
 	local wanbao = GetAbility(bot, CHEN_WANBAO)
 	local enemies = GetVisibleEnemyHeroes(bot, HERO_SCAN_RANGE)
+	local towerContext = {loaded = false}
 
 	if TrySeriousRetreat(bot, enemies, ability01, ability02, ability03, wanbao) then return end
 
 	local state = GetValidCombo(bot)
-	if state ~= nil and ContinueCombo(bot, state, ability01, ability02, ability03, ability04) then return end
+	if state ~= nil then
+		if TryUsePreEngagementItems(bot, enemies, state) then return end
+		if ContinueCombo(bot, state, ability01, ability02, ability03, ability04, enemies, towerContext) then
+			return
+		end
+	end
+	state = GetValidCombo(bot)
 
 	if state == nil then
-		local target = FindCombatTarget(bot, enemies, ability01)
+		local target = FindCombatTarget(bot, enemies, ability01, ability02, towerContext)
 		if target ~= nil then
-			state = StartCombo(bot, target, ability02)
-			if ContinueCombo(bot, state, ability01, ability02, ability03, ability04) then return end
+			state = StartCombo(bot, target)
+			if TryUsePreEngagementItems(bot, enemies, state) then return end
+			if ContinueCombo(bot, state, ability01, ability02, ability03, ability04, enemies, towerContext) then
+				return
+			end
+			state = GetValidCombo(bot)
 		end
 	end
 
@@ -517,6 +703,9 @@ if ORANGE_BOT_TEST_EXPORTS then
 		ShouldUseTeeth = ShouldUseTeeth,
 		CountSkillCooldowns = CountSkillCooldowns,
 		IsValidEnemyHero = IsValidEnemyHero,
+		ShouldUseChaseRoll = ShouldUseChaseRoll,
+		ShouldAllowTowerDive = ShouldAllowTowerDive,
+		ShouldUseDragonStar = ShouldUseDragonStar,
 	}
 end
 

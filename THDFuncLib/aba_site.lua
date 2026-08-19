@@ -109,6 +109,28 @@ local GetLocationToLocationDistance = ____utils.GetLocationToLocationDistance
 local GetOffsetLocationTowardsTargetLocation = ____utils.GetOffsetLocationTowardsTargetLocation
 local IsModeTurbo = ____utils.IsModeTurbo
 local IsValidCreep = ____utils.IsValidCreep
+
+local function GetVisibleCreepHealth(creep)
+    if creep == nil then return nil end
+
+    local ok, health = pcall(function()
+        if creep:IsNull()
+        or not creep:CanBeSeen()
+        or not creep:IsAlive()
+        or creep:IsInvulnerable()
+        or creep:IsHero()
+        or (GetBot():GetLevel() <= 9 and creep:IsAncientCreep())
+        then
+            return nil
+        end
+        local currentHealth = creep:GetHealth()
+        if currentHealth >= 5000 then return nil end
+        -- 通过上面的可见性检查后只读取一次，避免缓存句柄跨帧失效时重复触发原生诊断。
+        return currentHealth
+    end)
+    if not ok or type(health) ~= "number" then return nil end
+    return health
+end
 local visionRad = 2000
 local trueSightRad = 1000
 local RADIANT_RUNE_WARD = Vector(2606, -1547, 0)
@@ -476,12 +498,15 @@ ____exports.GetMaxHPCreep = function(creepList)
     local maxHP = 0
     local targetCreep = nil
     for ____, creep in ipairs(creepList) do
-        if not creep:IsNull() and ____exports.HasArmorReduction(creep) then
-            return creep
-        end
-        if IsValidCreep(creep) and creep:GetHealth() > maxHP then
-            maxHP = creep:GetHealth()
-            targetCreep = creep
+        local health = GetVisibleCreepHealth(creep)
+        if health ~= nil then
+            if ____exports.HasArmorReduction(creep) then
+                return creep
+            end
+            if health > maxHP then
+                maxHP = health
+                targetCreep = creep
+            end
         end
     end
     return targetCreep
@@ -490,12 +515,15 @@ ____exports.GetMinHPCreep = function(creepList)
     local minHP = 4000
     local targetCreep = nil
     for ____, creep in ipairs(creepList) do
-        if not creep:IsNull() and ____exports.HasArmorReduction(creep) then
-            return creep
-        end
-        if IsValidCreep(creep) and creep:GetHealth() < minHP then
-            minHP = creep:GetHealth()
-            targetCreep = creep
+        local health = GetVisibleCreepHealth(creep)
+        if health ~= nil then
+            if ____exports.HasArmorReduction(creep) then
+                return creep
+            end
+            if health < minHP then
+                minHP = health
+                targetCreep = creep
+            end
         end
     end
     return targetCreep
@@ -543,12 +571,10 @@ ____exports.ConsiderFarmNeutralType = {
     end,
     npc_dota_hero_tidehunter = function()
         local bot = GetBot()
-        local farmAbility = bot:GetAbilityByName("tidehunter_anchor_smash")
-        local ultimateAbility = bot:GetAbilityByName("tidehunter_ravage")
-        if farmAbility:IsTrained() and ultimateAbility:IsTrained() and bot:GetMana() > ultimateAbility:GetManaCost() + 200 then
-            return "maxHP"
-        end
-        return "minHP"
+        local farmAbility = bot:GetAbilityByName("ability_thdots_suika02")
+            or bot:GetAbilityByName("ability_thdots_suika02_ult")
+        -- 被动存在时优先攻击高生命单位，为范围触发保留更多普攻次数。
+        return farmAbility ~= nil and farmAbility:IsTrained() and "maxHP" or "minHP"
     end,
     npc_dota_hero_nevermore = function()
         local bot = GetBot()
@@ -1053,9 +1079,6 @@ ____exports.ConsiderIsTimeToFarm.npc_dota_hero_templar_assassin = function()
         end
     end
     return false
-end
-____exports.ConsiderIsTimeToFarm.npc_dota_hero_tidehunter = function()
-    return ____exports.ConsiderIsTimeToFarm.npc_dota_hero_sven()
 end
 ____exports.ConsiderIsTimeToFarm.npc_dota_hero_viper = function()
     local bot = GetBot()

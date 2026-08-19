@@ -3,6 +3,7 @@ local heroName = string.gsub(GetBot():GetUnitName(),"npc_dota_hero_","")
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
 require(GetScriptDirectory() ..  "/item_purchase_" .. heroName)
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -173,10 +174,20 @@ function ConsiderAbilityTojiko01()
 	end
 	if #tableAllMapEnemyHeroes > 0 and cachedCast01Location ~= 0 then
 		for _, npcEnemy in pairs(tableAllMapEnemyHeroes) do
-			if GetUnitToLocationDistance(npcEnemy,cachedCast01Location) < nRadius
-			and npcEnemy:GetHealth() < npcEnemy:GetActualIncomingDamage((abilityBaseDamage + 4*npcEnemy:GetArmor())*(1+npcBot:GetSpellAmp()),DAMAGE_TYPE_MAGICAL)
-			and CanCastTojiko01OnTarget(npcEnemy) then
-				return BOT_ACTION_DESIRE_HIGH, npcBot:GetLocation()
+			if CanCastTojiko01OnTarget(npcEnemy) then
+				local defense = CombatPower.GetDefenseSnapshot(npcEnemy)
+				local rawDamage = defense ~= nil
+					and math.max(0, abilityBaseDamage + 4 * defense.armor) * (1 + npcBot:GetSpellAmp())
+					or nil
+				local incomingDamage = rawDamage ~= nil
+					and CombatPower.EstimateIncomingDamageFromSnapshot(defense, rawDamage, DAMAGE_TYPE_MAGICAL)
+					or nil
+				if incomingDamage ~= nil
+				and defense.health < incomingDamage
+				and GetUnitToLocationDistance(npcEnemy,cachedCast01Location) < nRadius
+				then
+					return BOT_ACTION_DESIRE_HIGH, npcBot:GetLocation()
+				end
 			end
 		end
 	end
@@ -259,10 +270,20 @@ function ConsiderAbilityTojiko03()
 	end
 	if #tableAllMapEnemyHeroes > 0 and cachedCast03Location ~= 0 then
 		for _, npcEnemy in pairs(tableAllMapEnemyHeroes) do
-			if CanCastTojiko03OnTarget(npcEnemy)
-			and GetUnitToLocationDistance(npcEnemy,cachedCast03Location) < nRadius
-			and npcEnemy:GetHealth() < npcEnemy:GetActualIncomingDamage((abilityBaseDamage + 4*npcEnemy:GetArmor())*(1+npcBot:GetSpellAmp()),DAMAGE_TYPE_MAGICAL) then
-				return BOT_ACTION_DESIRE_HIGH, npcBot:GetLocation()
+			if CanCastTojiko03OnTarget(npcEnemy) then
+				local defense = CombatPower.GetDefenseSnapshot(npcEnemy)
+				local rawDamage = defense ~= nil
+					and math.max(0, abilityBaseDamage + 4 * defense.armor) * (1 + npcBot:GetSpellAmp())
+					or nil
+				local incomingDamage = rawDamage ~= nil
+					and CombatPower.EstimateIncomingDamageFromSnapshot(defense, rawDamage, DAMAGE_TYPE_MAGICAL)
+					or nil
+				if incomingDamage ~= nil
+				and defense.health < incomingDamage
+				and GetUnitToLocationDistance(npcEnemy,cachedCast03Location) < nRadius
+				then
+					return BOT_ACTION_DESIRE_HIGH, npcBot:GetLocation()
+				end
 			end
 		end
 	end
@@ -307,12 +328,19 @@ function ConsiderAbilityTojiko04()
 
 	if #tableAllMapEnemyHeroes > 0 then
 		for _, npcEnemy in pairs(tableAllMapEnemyHeroes) do
-			if CanCastTojiko04OnTarget(npcEnemy)
-			and npcEnemy:GetHealth() < npcEnemy:GetActualIncomingDamage(nDamage, DAMAGE_TYPE_MAGICAL) then
-				if npcEnemy:GetMovementDirectionStability() >= 0.75 then
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(nTime)
-				else
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+			if CanCastTojiko04OnTarget(npcEnemy) then
+				local defense = CombatPower.GetDefenseSnapshot(npcEnemy)
+				local incomingDamage = CombatPower.EstimateIncomingDamageFromSnapshot(
+					defense,
+					nDamage,
+					DAMAGE_TYPE_MAGICAL
+				)
+				if incomingDamage ~= nil and defense.health < incomingDamage then
+					if npcEnemy:GetMovementDirectionStability() >= 0.75 then
+						return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetExtrapolatedLocation(nTime)
+					else
+						return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+					end
 				end
 			end
 		end

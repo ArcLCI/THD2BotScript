@@ -1,4 +1,5 @@
 local NitoriCombat = {}
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 local EMPOWER_TALENT = "special_bonus_unique_nitori_4"
 
@@ -41,8 +42,8 @@ function NitoriCombat.GetHarvestActualDamage(bot, target, ability03)
 	if bot == nil or target == nil or ability03 == nil then return 0 end
 	local physicalRaw = NitoriCombat.GetEmpoweredAttackRawDamage(bot, ability03)
 	local magicalRaw = NitoriCombat.GetNitori03RawDamage(bot, ability03)
-	local physical = SafeCall(target, "GetActualIncomingDamage", physicalRaw, physicalRaw, DAMAGE_TYPE_PHYSICAL)
-	local magical = SafeCall(target, "GetActualIncomingDamage", magicalRaw, magicalRaw, DAMAGE_TYPE_MAGICAL)
+	local physical = CombatPower.EstimateIncomingDamage(target, physicalRaw, DAMAGE_TYPE_PHYSICAL, 0)
+	local magical = CombatPower.EstimateIncomingDamage(target, magicalRaw, DAMAGE_TYPE_MAGICAL, 0)
 	return physical + magical
 end
 

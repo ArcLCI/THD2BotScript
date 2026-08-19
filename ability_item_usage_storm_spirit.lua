@@ -1,6 +1,7 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -199,7 +200,14 @@ function ConsiderAbilityShikieiki02()
 				local nModifier = npcEnemy:GetModifierByName("modifier_thdots_shikieiki1_accusation")
 				local accCount = npcEnemy:GetModifierStackCount(nModifier)
 				local stunTime = 1 + (0.05 + 0.05*ability02:GetLevel())*accCount
-				local abilityDmg = npcEnemy:GetActualIncomingDamage((50 * ability02:GetLevel() + accCount * (50 + 10 * ability02:GetLevel()))*(1+npcBot:GetSpellAmp()),DAMAGE_TYPE_MAGICAL)
+				local rawDamage = (50 * ability02:GetLevel() + accCount * (50 + 10 * ability02:GetLevel()))
+					* (1 + npcBot:GetSpellAmp())
+				local abilityDmg = CombatPower.EstimateIncomingDamage(
+					npcEnemy,
+					rawDamage,
+					DAMAGE_TYPE_MAGICAL,
+					0
+				)
 
 				if accCount >= 8 then
 					return BOT_ACTION_DESIRE_HIGH, npcEnemy

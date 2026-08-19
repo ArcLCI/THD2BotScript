@@ -1,5 +1,6 @@
 local Retreat = {}
 local Capabilities = require(GetScriptDirectory()..'/THDFuncLib/aba_retreat_capabilities')
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 -- 总开关：false 时只停用统一撤退框架，技能和道具仍使用 Valve 撤退模式判断。
 Retreat.ENABLED = false
@@ -271,6 +272,7 @@ local function SimulateTower(bot, tower, record, incomingCount, horizon, protect
 	local currentPeriod = record.currentPeriod or 1.0
 	local currentIAS = record.currentIAS or 100
 	local baseIAS = math.max(20, currentIAS - attackSpeedPerStack * fervorStack)
+	local botDefense = CombatPower.GetDefenseSnapshot(bot)
 	local predictedDamage = 0
 	local unavoidableDamage = 0
 	local rawPredictedDamage = 0
@@ -286,7 +288,11 @@ local function SimulateTower(bot, tower, record, incomingCount, horizon, protect
 	end
 
 	for i = 1, incomingCount do
-		local rawDamage = bot:GetActualIncomingDamage(baseDamage + damagePerStack * rawFuryStack, DAMAGE_TYPE_PHYSICAL)
+		local rawDamage = CombatPower.EstimateIncomingDamageFromSnapshot(
+			botDefense,
+			baseDamage + damagePerStack * rawFuryStack,
+			DAMAGE_TYPE_PHYSICAL
+		) or math.huge
 		rawPredictedDamage = rawPredictedDamage + rawDamage
 		rawUnavoidableDamage = rawUnavoidableDamage + rawDamage
 		rawFuryStack = rawFuryStack + 1
@@ -296,8 +302,16 @@ local function SimulateTower(bot, tower, record, incomingCount, horizon, protect
 		if resolution.preventsHit then
 			preventedHitCount = preventedHitCount + 1
 		else
-			local damage = bot:GetActualIncomingDamage(baseDamage + damagePerStack * furyStack, DAMAGE_TYPE_PHYSICAL)
-				* resolution.damageMultiplier
+			local damage = CombatPower.EstimateIncomingDamageFromSnapshot(
+				botDefense,
+				baseDamage + damagePerStack * furyStack,
+				DAMAGE_TYPE_PHYSICAL
+			)
+			if damage == nil then
+				damage = math.huge
+			else
+				damage = damage * resolution.damageMultiplier
+			end
 			predictedDamage = predictedDamage + damage
 			unavoidableDamage = unavoidableDamage + damage
 			furyStack = furyStack + 1
@@ -313,7 +327,11 @@ local function SimulateTower(bot, tower, record, incomingCount, horizon, protect
 		if lastAttackTime < -80 or nextAttackAt < 0.05 then nextAttackAt = 0.05 end
 
 		while nextAttackAt <= horizon and hitCount < 20 do
-			local rawDamage = bot:GetActualIncomingDamage(baseDamage + damagePerStack * rawFuryStack, DAMAGE_TYPE_PHYSICAL)
+			local rawDamage = CombatPower.EstimateIncomingDamageFromSnapshot(
+				botDefense,
+				baseDamage + damagePerStack * rawFuryStack,
+				DAMAGE_TYPE_PHYSICAL
+			) or math.huge
 			rawPredictedDamage = rawPredictedDamage + rawDamage
 			rawFuryStack = rawFuryStack + 1
 
@@ -324,8 +342,16 @@ local function SimulateTower(bot, tower, record, incomingCount, horizon, protect
 				preventedHitCount = preventedHitCount + 1
 				if highGround then fervorStack = math.min(maxFervor, fervorStack + 1) end
 			else
-				local damage = bot:GetActualIncomingDamage(baseDamage + damagePerStack * furyStack, DAMAGE_TYPE_PHYSICAL)
-					* resolution.damageMultiplier
+				local damage = CombatPower.EstimateIncomingDamageFromSnapshot(
+					botDefense,
+					baseDamage + damagePerStack * furyStack,
+					DAMAGE_TYPE_PHYSICAL
+				)
+				if damage == nil then
+					damage = math.huge
+				else
+					damage = damage * resolution.damageMultiplier
+				end
 				predictedDamage = predictedDamage + damage
 				furyStack = furyStack + 1
 				if highGround then fervorStack = math.min(maxFervor, fervorStack + 1) end
@@ -571,10 +597,7 @@ local function IsRealVisibleHero(hero)
 end
 
 local function GetCombatPower(hero)
-	if not IsValidUnit(hero) then return 0 end
-	local attackPeriod = math.max(0.25, GetSafeAttackValue(hero, 'GetSecondsPerAttack', 1.7))
-	local rawPower = hero:GetAttackDamage() / attackPeriod + hero:GetMaxHealth() * 0.035 + hero:GetLevel() * 5
-	return rawPower * (0.25 + 0.75 * GetHealthPercent(hero))
+	return CombatPower.Estimate(hero)
 end
 
 local function GetEnemyContext(bot)
@@ -635,6 +658,7 @@ end
 
 local function GetNonHeroPredictedDamage(bot, horizon, protection)
 	local threat = { predictedDamage = 0, rawPredictedDamage = 0 }
+	local botDefense = CombatPower.GetDefenseSnapshot(bot)
 	for _, creep in pairs(GetUnitList(UNIT_LIST_ENEMIES)) do
 		if CanInspectUnit(creep)
 		and not creep:IsHero()
@@ -642,9 +666,16 @@ local function GetNonHeroPredictedDamage(bot, horizon, protection)
 		and GetUnitToUnitDistance(bot, creep) <= 1200
 		and creep:GetAttackTarget() == bot
 		then
-			local period = math.max(0.3, GetSafeAttackValue(creep, 'GetSecondsPerAttack', 1.5))
-			local hitCount = math.max(1, math.floor(horizon / period))
-			local rawPerHit = bot:GetActualIncomingDamage(creep:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+			local attack = CombatPower.GetAttackSnapshot(creep)
+			local period = attack ~= nil and math.max(0.3, attack.attackPeriod) or horizon
+			local hitCount = attack ~= nil and math.max(1, math.floor(horizon / period)) or 1
+			local rawPerHit = attack ~= nil
+				and CombatPower.EstimateIncomingDamageFromSnapshot(
+					botDefense,
+					attack.attackDamage,
+					DAMAGE_TYPE_PHYSICAL
+				)
+				or math.huge
 			for i = 1, hitCount do
 				local impactOffset = math.min(0.25, period) + (i - 1) * period
 				threat.rawPredictedDamage = threat.rawPredictedDamage + rawPerHit
@@ -660,6 +691,7 @@ end
 
 local function GetHeroAttackPredictedDamage(bot, visibleEnemies, horizon, protection)
 	local threat = { predictedDamage = 0, rawPredictedDamage = 0 }
+	local botDefense = CombatPower.GetDefenseSnapshot(bot)
 	for _, enemy in pairs(visibleEnemies) do
 		local distance = GetUnitToUnitDistance(bot, enemy)
 		local attackRange = GetSafeAttackValue(enemy, 'GetAttackRange', 150)
@@ -667,9 +699,16 @@ local function GetHeroAttackPredictedDamage(bot, visibleEnemies, horizon, protec
 			or bot:WasRecentlyDamagedByHero(enemy, 2.0)
 			or (distance <= attackRange + 180 and enemy:IsFacingLocation(bot:GetLocation(), 35))
 		if threatening then
-			local period = math.max(0.3, GetSafeAttackValue(enemy, 'GetSecondsPerAttack', 1.7))
-			local hitCount = math.max(1, math.floor(horizon / period))
-			local rawPerHit = bot:GetActualIncomingDamage(enemy:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+			local attack = CombatPower.GetAttackSnapshot(enemy)
+			local period = attack ~= nil and math.max(0.3, attack.attackPeriod) or horizon
+			local hitCount = attack ~= nil and math.max(1, math.floor(horizon / period)) or 1
+			local rawPerHit = attack ~= nil
+				and CombatPower.EstimateIncomingDamageFromSnapshot(
+					botDefense,
+					attack.attackDamage,
+					DAMAGE_TYPE_PHYSICAL
+				)
+				or math.huge
 			for i = 1, hitCount do
 				local impactOffset = math.min(0.25, period) + (i - 1) * period
 				threat.rawPredictedDamage = threat.rawPredictedDamage + rawPerHit
@@ -691,6 +730,7 @@ local function GetIncomingHeroAttackProjectileThreat(bot, protection)
 		lethal = false,
 		baseLethal = false,
 	}
+	local botDefense = CombatPower.GetDefenseSnapshot(bot)
 	local ok, projectiles = pcall(function() return bot:GetIncomingTrackingProjectiles() end)
 	if not ok or projectiles == nil then return threat end
 
@@ -699,7 +739,14 @@ local function GetIncomingHeroAttackProjectileThreat(bot, protection)
 		if projectile ~= nil and projectile.is_attack
 		and IsValidUnit(caster) and caster:IsHero() and not caster:IsTower()
 		then
-			local rawDamage = bot:GetActualIncomingDamage(caster:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+			local attack = CombatPower.GetAttackSnapshot(caster)
+			local rawDamage = attack ~= nil
+				and CombatPower.EstimateIncomingDamageFromSnapshot(
+					botDefense,
+					attack.attackDamage,
+					DAMAGE_TYPE_PHYSICAL
+				)
+				or math.huge
 			local impactOffset = 0.10
 			local speed = GetSafeAttackValue(caster, 'GetAttackProjectileSpeed', 0)
 			if speed > 0 and projectile.location ~= nil then
@@ -995,17 +1042,10 @@ local function GetCurrentCombatTarget(bot)
 	return target
 end
 
-local function SafeEstimatedDamage(attacker, target, horizon)
-	if not IsValidUnit(attacker) or not IsValidUnit(target) then return 0 end
-	if attacker.GetEstimatedDamageToTarget ~= nil then
-		local ok, damage = pcall(function()
-			return attacker:GetEstimatedDamageToTarget(true, target, horizon, DAMAGE_TYPE_ALL)
-		end)
-		if ok and damage ~= nil and damage >= 0 then return damage end
-	end
-	local period = math.max(0.3, GetSafeAttackValue(attacker, 'GetSecondsPerAttack', 1.7))
-	local hitCount = math.max(1, math.floor(horizon / period))
-	return target:GetActualIncomingDamage(attacker:GetAttackDamage() * hitCount, DAMAGE_TYPE_PHYSICAL)
+local function SafeEstimatedDamage(attacker, target, horizon, fallback)
+	fallback = fallback or 0
+	if not IsValidUnit(attacker) or not IsValidUnit(target) then return fallback end
+	return CombatPower.EstimateAttackDamage(attacker, target, horizon, 1, fallback)
 end
 
 local function RejectCounterKill(reason, target)
@@ -1044,10 +1084,10 @@ local function EvaluateCounterKill(bot, state, towerThreat, currentSeverity)
 		return RejectCounterKill('cannot_attack', target)
 	end
 
-	local outgoingDamage = SafeEstimatedDamage(bot, target, COUNTER_KILL_HORIZON)
+	local outgoingDamage = SafeEstimatedDamage(bot, target, COUNTER_KILL_HORIZON, 0)
 	local customDamage = Capabilities.GetCustomCounterDamage(bot, target, COUNTER_KILL_HORIZON)
 	outgoingDamage = math.max(outgoingDamage, customDamage or 0)
-	local incomingDamage = SafeEstimatedDamage(target, bot, COUNTER_KILL_HORIZON)
+	local incomingDamage = SafeEstimatedDamage(target, bot, COUNTER_KILL_HORIZON, math.huge)
 	local postTradeHealth = bot:GetHealth() - incomingDamage
 	local result = {
 		valid = false,

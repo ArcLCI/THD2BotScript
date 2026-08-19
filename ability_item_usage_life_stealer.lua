@@ -6,6 +6,21 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 local cast01Desire,cast04Desire = 0,0
 local ability01,ability04,cast04Target
 
+local function GetVisibleHealth(unit)
+	if unit == nil then return nil, nil end
+
+	local ok, health, maxHealth = pcall(function()
+		if unit:IsNull() or not unit:CanBeSeen() or not unit:IsAlive() then
+			return nil, nil
+		end
+		return unit:GetHealth(), unit:GetMaxHealth()
+	end)
+	if not ok or type(health) ~= "number" or type(maxHealth) ~= "number" or maxHealth <= 0 then
+		return nil, nil
+	end
+	return health, maxHealth
+end
+
 
 function MyItemUsageThink()
 
@@ -159,8 +174,10 @@ function ConsiderAbilityRumia04()
 	do
 		if ( CanCastRumia04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 		then
-			if (npcEnemy:HasModifier("modifier_item_kafziel_debuff") and nDamage + nKafzielDamage > npcEnemy:GetHealth())
-			or nDamage > npcEnemy:GetHealth() then
+			local enemyHealth = GetVisibleHealth(npcEnemy)
+			if enemyHealth ~= nil
+			and ((npcEnemy:HasModifier("modifier_item_kafziel_debuff") and nDamage + nKafzielDamage > enemyHealth)
+			or nDamage > enemyHealth) then
 				return BOT_ACTION_DESIRE_MODERATE, npcEnemy
 			end
 		end
@@ -177,23 +194,28 @@ function ConsiderAbilityRumia04()
         if #tableNearbylanecreeps > 0 then
             local highestHP = 0
             local highestHPTarget
-            for _,enemyCreep in pairs(tableNearbylanecreeps)
-            do
-                -- 先打旗手和炮车
-                if IsKeyWordUnit("flagbearer",enemyCreep) or IsKeyWordUnit("siege",enemyCreep) then
-                    highestHPTarget = enemyCreep
-                    break
-                -- 然后打远程兵
-                elseif IsKeyWordUnit("ranged",enemyCreep) then
-                    highestHPTarget = enemyCreep
-                    break
-                end
-                -- 最后打血多的
-                if enemyCreep:GetHealth() < highestHP and highestHPTarget:GetHealth()/highestHPTarget:GetMaxHealth() > 0.7 then
-                    highestHP = enemyCreep:GetHealth()
-                    highestHPTarget = enemyCreep
-                end
-            end
+			for _,enemyCreep in pairs(tableNearbylanecreeps)
+			do
+				local enemyHealth, enemyMaxHealth = GetVisibleHealth(enemyCreep)
+				if enemyHealth ~= nil then
+					-- 先打旗手和炮车；不可见的列表残留不会进入选目标分支。
+					if IsKeyWordUnit("flagbearer",enemyCreep) or IsKeyWordUnit("siege",enemyCreep) then
+						highestHPTarget = enemyCreep
+						break
+					-- 然后打远程兵
+					elseif IsKeyWordUnit("ranged",enemyCreep) then
+						highestHPTarget = enemyCreep
+						break
+					end
+					-- 最后从血量足够的普通兵中选择当前血量最高者，避免空目标解引用
+					if enemyMaxHealth > 0
+						and enemyHealth / enemyMaxHealth > 0.7
+						and (highestHPTarget == nil or enemyHealth > highestHP) then
+						highestHP = enemyHealth
+						highestHPTarget = enemyCreep
+					end
+				end
+			end
             if highestHPTarget ~= nil and CanCastRumia04OnTarget(highestHPTarget) then
                 return BOT_ACTION_DESIRE_HIGH, highestHPTarget
             end

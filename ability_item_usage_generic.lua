@@ -2,6 +2,7 @@ require(GetScriptDirectory() ..  "/thd2_item_usage")
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Scheduler = require(GetScriptDirectory()..'/thd2_scheduler')
 local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 
 local X = {}
@@ -567,8 +568,8 @@ function GetAlliesNearLoc( vLoc, nRadius )
 end
 
 function GetHP( unit )
-	local nCurHealth = unit:GetHealth()
-    local nMaxHealth = unit:GetMaxHealth()
+	local nCurHealth, nMaxHealth = J.Utils.GetVisibleHealth(unit)
+	if nCurHealth == nil then return 1 end
 	if nCurHealth <= 0 then return 0 end
 	return nCurHealth / nMaxHealth
 end
@@ -661,7 +662,13 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	if bot:GetHealth() < 240
 	then
 		local nProDamage = J.GetAttackProjectileDamageByRange( bot, 1600 ) * 2
-		if bot:GetHealth() < bot:GetActualIncomingDamage( nProDamage, DAMAGE_TYPE_PHYSICAL )
+		local incomingDamage = CombatPower.EstimateIncomingDamage(
+			bot,
+			nProDamage,
+			DAMAGE_TYPE_PHYSICAL,
+			math.huge
+		)
+		if bot:GetHealth() < incomingDamage
 		then return BOT_ACTION_DESIRE_NONE end
 	end
 
@@ -993,7 +1000,8 @@ function X.CanJuke()
 	local nEnemies = J.GetNearbyHeroes(bot, 1200, true, BOT_MODE_NONE )
 	for _, enemy in pairs( nEnemies )
 	do
-		local enemyDamage = enemy:GetEstimatedDamageToTarget( true, bot, 4.0, DAMAGE_TYPE_ALL )
+		local enemyDamage = CombatPower.EstimateAttackDamage(enemy, bot, 4.0, 1)
+		if enemyDamage == nil then return false end
 		totalDamage = totalDamage + enemyDamage
 		if bot:OriginalGetHealth() <= totalDamage then
 			return false

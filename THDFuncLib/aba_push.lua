@@ -2,6 +2,7 @@ local Push = {}
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 
 
@@ -18,7 +19,6 @@ local BOT_MODE_DESIRE_EXTRA_LOW = 0.02
 local PUSH_DESIRE_CACHE_INTERVAL = 1.5
 local PUSH_DESIRE_STAGGER_INTERVAL = 0.14
 local PUSH_LANE_STICKY_SECONDS = 3.0
-local PUSH_BACKDOOR_SCAN_CACHE_INTERVAL = 0.75
 local PUSH_HIGH_GROUND_TARGET_CACHE_INTERVAL = 0.75
 local PUSH_LOCAL_ENEMY_ADVANTAGE_TOLERANCE = 1
 local PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE = 1
@@ -397,6 +397,65 @@ function Push.WhichLaneToPush(bot, lane)
     return selectedLane
 end
 
+local function GetLaneBuildingIDs(lane)
+    if lane == LANE_TOP then
+        return TOWER_TOP_1, TOWER_TOP_2, TOWER_TOP_3, BARRACKS_TOP_MELEE, BARRACKS_TOP_RANGED
+    elseif lane == LANE_MID then
+        return TOWER_MID_1, TOWER_MID_2, TOWER_MID_3, BARRACKS_MID_MELEE, BARRACKS_MID_RANGED
+    elseif lane == LANE_BOT then
+        return TOWER_BOT_1, TOWER_BOT_2, TOWER_BOT_3, BARRACKS_BOT_MELEE, BARRACKS_BOT_RANGED
+    end
+end
+
+function Push.GetLaneBuildingTarget(lane)
+    local tower1ID, tower2ID, tower3ID, meleeBarracksID, rangedBarracksID = GetLaneBuildingIDs(lane)
+    if tower1ID == nil then return nil end
+
+    local enemyTeam = GetOpposingTeam()
+    return GetTower(enemyTeam, tower1ID)
+        or GetTower(enemyTeam, tower2ID)
+        or GetTower(enemyTeam, tower3ID)
+        or GetBarracks(enemyTeam, meleeBarracksID)
+        or GetBarracks(enemyTeam, rangedBarracksID)
+end
+
+function Push.GetLaneBarracks(lane)
+    local _, _, _, meleeBarracksID, rangedBarracksID = GetLaneBuildingIDs(lane)
+    if meleeBarracksID == nil then return nil, nil end
+
+    local enemyTeam = GetOpposingTeam()
+    return GetBarracks(enemyTeam, meleeBarracksID), GetBarracks(enemyTeam, rangedBarracksID)
+end
+
+function Push.TryAttackLaneBarracks(bot, lane)
+    local _, _, tower3ID = GetLaneBuildingIDs(lane)
+    if tower3ID == nil or GetTower(GetOpposingTeam(), tower3ID) ~= nil then return false end
+
+    local meleeBarracks, rangedBarracks = Push.GetLaneBarracks(lane)
+    local candidates = {
+        { unit = meleeBarracks, sticky = 'push_melee_barrack_'..tostring(lane), action = 'push_attack_melee_barrack' },
+        { unit = rangedBarracks, sticky = 'push_range_barrack_'..tostring(lane), action = 'push_attack_range_barrack' },
+    }
+
+    -- T3 拆除后锁定当前路兵营，避免全局防偷塔状态把 Bot 长期留在高地边界。
+    for _, candidate in ipairs(candidates) do
+        local barracks = candidate.unit
+        if J.IsValidBuilding(barracks)
+        and J.CanBeAttacked(barracks)
+        and not Push.HasBackdoorProtect(barracks)
+        then
+            barracks = J.GetStickyTarget(bot, candidate.sticky, barracks, 1.8, 2200)
+            if barracks ~= nil
+            and J.ActionAttackUnit(bot, candidate.action, barracks, true, 0.45)
+            then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 function Push.GetVisibleNearbyEnemyHeroes(bot, candidates, radius)
 	local enemies = {}
 	radius = radius or PUSH_LOCAL_HERO_RESPONSE_RANGE
@@ -452,9 +511,17 @@ end
 local fNextMovementTime = 0
 function Push.PushThink(bot, lane)
     if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
-    if J.CanNotUseAction(bot) then return end
+	if J.CanNotUseAction(bot) then return end
 
 	local retreatState = J.Retreat.GetState(bot)
+	local conversionUnsafe, conversionReason = Wasteland.ShouldWithdrawConversionPush(
+		bot, retreatState.towerThreat)
+	if conversionUnsafe then
+		-- gank 击杀转推塔时，不默认当前 Bot 继续吃塔伤；低血量或已被塔锁定都先退出。
+		local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
+		J.ActionMoveToLocation(bot, 'push_flee_conversion_' .. tostring(conversionReason or 'safety'), vLocation, 0.25, 260)
+		return
+	end
 	if retreatState.severity >= J.Retreat.HIGH then
 		-- 模式切换可能仍受缓存影响；塔风险期间先退出高地，禁止继续叠加伤害和攻速。
 		if retreatState.towerThreat ~= nil and retreatState.towerThreat.active then
@@ -487,7 +554,10 @@ function Push.PushThink(bot, lane)
     local nEnemyTowers = bot:GetNearbyTowers(1600, true)
     local nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
 
-    if #nearbyAllies < #nearbyEnemies or Push.IsBuildingGlyphedBackdoor() then
+    local hLaneBuildingTarget = Push.GetLaneBuildingTarget(lane)
+    local bLaneBuildingProtected = J.IsValidBuilding(hLaneBuildingTarget)
+        and Push.HasBackdoorProtect(hLaneBuildingTarget)
+    if #nearbyAllies < #nearbyEnemies or bLaneBuildingProtected then
         local nEnemyHeroLongestAttackRange = 0
         for _, enemyHero in pairs(nearbyEnemies) do
             if J.IsValidHero(enemyHero)
@@ -505,20 +575,12 @@ function Push.PushThink(bot, lane)
 
     local targetLoc = GetLaneFrontLocation(GetTeam(), lane, fDeltaFromFront)
 
-    if J.IsValidBuilding(nEnemyTowers[1])
-    and Push.HasDefenseGlyphBuff(nEnemyTowers[1])
-    and #J.GetEnemiesNearLoc(nEnemyTowers[1]:GetLocation(), 1600) == 0
+    if J.IsValidBuilding(hLaneBuildingTarget)
+    and Push.HasDefenseGlyphBuff(hLaneBuildingTarget)
+    and #J.GetEnemiesNearLoc(hLaneBuildingTarget:GetLocation(), 1600) == 0
     then
         local vRetreatLocation = GetLaneFrontLocation(GetTeam(), lane, -1800)
         J.ActionMoveToLocation(bot, 'push_retreat_glyphed_tower', vRetreatLocation, 0.45, 260)
-        return
-    end
-
-    if J.IsValidBuilding(nEnemyTowers[1])
-    and Push.HasBackdoorProtect(nEnemyTowers[1])
-    then
-        local vWaitLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
-        J.ActionMoveToLocation(bot, 'push_wait_for_creeps', vWaitLocation, 0.45, 220)
         return
     end
 
@@ -532,6 +594,16 @@ function Push.PushThink(bot, lane)
 		local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
 		J.ActionMoveToLocation(bot, 'push_flee_tower', vLocation, 0.35, 260)
 		return
+    end
+
+    if Push.TryAttackLaneBarracks(bot, lane) then return end
+
+    if J.IsValidBuilding(hLaneBuildingTarget)
+    and Push.HasBackdoorProtect(hLaneBuildingTarget)
+    then
+        local vWaitLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
+        J.ActionMoveToLocation(bot, 'push_wait_for_creeps', vWaitLocation, 0.45, 220)
+        return
     end
 
     if GetUnitToUnitDistance(bot, hEnemyAncient) <= 3200
@@ -587,26 +659,6 @@ function Push.PushThink(bot, lane)
             local targetCreep = J.GetStickyTarget(bot, 'push_creep', creep, 1.0, nRange + 300)
             J.ActionAttackUnit(bot, 'push_attack_creep', targetCreep, true, 0.35)
             return
-
-        end
-    end
-
-    local nBarracks = bot:GetNearbyBarracks(nRange, true)
-    if J.IsValidBuilding(nBarracks[1]) and J.CanBeAttacked(nBarracks[1]) and not Push.HasBackdoorProtect(nBarracks[1]) then
-        for _, barrack in pairs(nBarracks) do
-            if J.IsValid(barrack) and not Push.HasBackdoorProtect(barrack) and string.find(barrack:GetUnitName(), 'melee') then
-                barrack = J.GetStickyTarget(bot, 'push_melee_barrack', barrack, 1.8, nRange + 300)
-                J.ActionAttackUnit(bot, 'push_attack_melee_barrack', barrack, true, 0.45)
-                return
-            end
-
-        end
-        for _, barrack in pairs(nBarracks) do
-            if J.IsValid(barrack) and not Push.HasBackdoorProtect(barrack) and string.find(barrack:GetUnitName(), 'range') then
-                barrack = J.GetStickyTarget(bot, 'push_range_barrack', barrack, 1.8, nRange + 300)
-                J.ActionAttackUnit(bot, 'push_attack_range_barrack', barrack, true, 0.45)
-                return
-            end
 
         end
     end
@@ -753,7 +805,14 @@ function Push.IsInDangerWithinTower(hUnit, fThreshold, fDuration)
             if J.IsValid(enemy)
             and J.IsInRange(hUnit, enemy, 1600)
             and (enemy:GetAttackTarget() == hUnit or J.IsChasingTarget(enemy, hUnit)) then
-                totalDamage = totalDamage + hUnit:GetActualIncomingDamage(enemy:GetAttackDamage() * enemy:GetAttackSpeed() * fDuration, DAMAGE_TYPE_PHYSICAL)
+                local enemyDamage = CombatPower.EstimateAttackDamage(
+                    enemy,
+                    hUnit,
+                    fDuration,
+                    1,
+                    math.huge
+                )
+                totalDamage = totalDamage + enemyDamage
             end
         end
 
@@ -794,22 +853,6 @@ function Push.IsHealthyInsideFountain(hUnit)
     return hUnit:HasModifier('modifier_fountain_aura_buff')
         and J.GetHP(hUnit) > 0.90
         and J.GetMP(hUnit) > 0.85
-end
-
-function Push.IsBuildingGlyphedBackdoor()
-    local cacheKey = 'PushIsBuildingGlyphedBackdoor-'..tostring(GetTeam())
-    return J.Utils.GetCachedOrCompute(cacheKey, PUSH_BACKDOOR_SCAN_CACHE_INTERVAL, function()
-        local unitList = GetUnitList(UNIT_LIST_ENEMY_BUILDINGS)
-        for _, building in pairs(unitList) do
-            if J.IsValidBuilding(building)
-            and Push.HasBackdoorProtect(building)
-            then
-                return true
-            end
-        end
-
-        return false
-    end)
 end
 
 function Push.GetAllyHeroesAttackingUnit(hUnit)

@@ -18,6 +18,8 @@ Strategy.OUTER_PUSH_START_TIME = 9 * 60
 Strategy.OUTER_COMMIT_DURATION = 12.0
 Strategy.OUTER_COMMIT_DESIRE = 0.94
 Strategy.CONVERSION_OPPORTUNITY_DURATION = 12.0
+-- 击杀转推外塔时，低于此血量的 Bot 不再继续站在塔前承伤。
+Strategy.CONVERSION_PUSH_MIN_HEALTH = 0.45
 Strategy.DEBUG = true
 
 local outerCommitments = {}
@@ -51,6 +53,16 @@ end
 
 local function GetNow()
 	return Safe(0, function() return DotaTime() end) or 0
+end
+
+local function GetHealthFraction(unit)
+	if unit == nil then return nil end
+	local health = Safe(nil, function() return unit:GetHealth() end)
+	local maxHealth = Safe(nil, function() return unit:GetMaxHealth() end)
+	if type(health) ~= 'number' or type(maxHealth) ~= 'number' or maxHealth <= 0 then
+		return nil
+	end
+	return math.max(0, math.min(1, health / maxHealth))
 end
 
 local function GetPlayerID(bot)
@@ -211,6 +223,38 @@ function Strategy.GetConversionOpportunity()
 		return nil
 	end
 	return opportunity
+end
+
+local function HasActiveTowerAggro(towerThreat)
+	if type(towerThreat) ~= 'table' then return false end
+	if towerThreat.active == true then return true end
+	for _, detail in pairs(towerThreat.details or {}) do
+		if type(detail) == 'table'
+		and (detail.locked == true or (tonumber(detail.incomingCount) or 0) > 0)
+		then
+			return true
+		end
+	end
+	return false
+end
+
+function Strategy.ShouldWithdrawConversionPush(bot, towerThreat, commitment)
+	if not Strategy.IsEnabled() then return false, nil end
+	commitment = commitment or Strategy.GetOuterTowerCommitment()
+	if type(commitment) ~= 'table' or commitment.source ~= 'roam_kill' then
+		return false, nil
+	end
+
+	-- 转推塔只要确认当前 Bot 正在吃塔伤，就先离开塔射程，把承伤交给仍然安全的队友。
+	if HasActiveTowerAggro(towerThreat) then return true, 'tower_aggro' end
+
+	local healthFraction = GetHealthFraction(bot)
+	-- 自身血量不可读时也不继续推进，避免安全判断退化为默认满血。
+	if healthFraction == nil then return true, 'health_unknown' end
+	if healthFraction <= Strategy.CONVERSION_PUSH_MIN_HEALTH then
+		return true, 'low_health'
+	end
+	return false, nil
 end
 
 function Strategy.TryCreateOuterTowerCommitment(bot, lane, state)

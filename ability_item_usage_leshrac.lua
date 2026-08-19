@@ -21,10 +21,16 @@ local lilyMode = 0
 local lilyStatus = false
 
 local function GetVisibleHealth(unit)
-    if not SafeCanBeSeen(unit) then return nil, nil end
-    local health = unit:GetHealth()
-    local maxHealth = unit:GetMaxHealth()
-    if maxHealth == nil or maxHealth <= 0 then return nil, nil end
+    if unit == nil then return nil, nil end
+    local ok, health, maxHealth = pcall(function()
+        if unit:IsNull() or not unit:CanBeSeen() or not unit:IsAlive() then
+            return nil, nil
+        end
+        return unit:GetHealth(), unit:GetMaxHealth()
+    end)
+    if not ok or type(health) ~= "number" or type(maxHealth) ~= "number" or maxHealth <= 0 then
+        return nil, nil
+    end
     return health, maxHealth
 end
 
@@ -241,11 +247,12 @@ function ConsiderAbilityLily02()
             do
                 local enemyHealth = GetVisibleHealth(enemyCreep)
                 -- 先打旗手和炮车
-                if IsKeyWordUnit("flagbearer",enemyCreep) or IsKeyWordUnit("siege",enemyCreep) then
+                if enemyHealth ~= nil
+                and (IsKeyWordUnit("flagbearer",enemyCreep) or IsKeyWordUnit("siege",enemyCreep)) then
                     highestHPTarget = enemyCreep
                     break
                 -- 然后打远程兵
-                elseif IsKeyWordUnit("ranged",enemyCreep) then
+                elseif enemyHealth ~= nil and IsKeyWordUnit("ranged",enemyCreep) then
                     highestHPTarget = enemyCreep
                     break
                 end

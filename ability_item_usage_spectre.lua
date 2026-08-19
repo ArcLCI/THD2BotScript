@@ -47,8 +47,9 @@ local function SafeCall(object, methodName, fallback, ...)
 end
 
 local function GetHP(unit)
-	local maximum = SafeCall(unit, "GetMaxHealth", 1)
-	return maximum > 0 and SafeCall(unit, "GetHealth", 0) / maximum or 0
+	local current, maximum = J.Utils.GetVisibleHealth(unit)
+	if current == nil then return 0 end
+	return current / maximum
 end
 
 local function GetMP(unit)

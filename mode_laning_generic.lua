@@ -138,10 +138,13 @@ end
 function GetBestDenyCreep(hCreepList)
 	for _, creep in pairs(hCreepList)
 	do
+		local currentHealth, maxHealth = J.Utils.GetVisibleHealth(creep)
 		if J.IsValid(creep)
-		and J.GetHP(creep) < 0.49
+		and currentHealth ~= nil
+		and maxHealth > 0
+		and currentHealth / maxHealth < 0.49
 		and J.CanBeAttacked(creep)
-		and creep:GetHealth() <= attackDamage
+		and currentHealth <= attackDamage
 		then
 			return creep
 		end

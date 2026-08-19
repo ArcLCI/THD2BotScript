@@ -1,5 +1,6 @@
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 ModifierNamesTeleporting = {
 	"modifier_teleporting",
@@ -483,8 +484,8 @@ function GetCenterOfUnits( nUnits )
 end
 
 function GetHP( unit )
-	local nCurHealth = unit:GetHealth()
-    local nMaxHealth = unit:GetMaxHealth()
+	local nCurHealth, nMaxHealth = J.Utils.GetVisibleHealth(unit)
+	if nCurHealth == nil then return 1 end
 	if nCurHealth <= 0 then return 0 end
 	return nCurHealth / nMaxHealth
 end
@@ -563,23 +564,11 @@ end
 
 --战斗力估算(不包含主动技能)
 function GetCapability( npcHero )
-
-	local AttackDamage = npcHero:GetAttackDamage()
-	local AttackRange = npcHero:GetAttackRange()
-	local AttackSpeed = npcHero:GetSecondsPerAttack()
-
-	if npcHero:HasModifier( "passive_youmu02_attack" ) then
-		AttackDamage = AttackDamage*(4.0 * 1.0 / AttackSpeed)
-	else
-		AttackDamage = AttackDamage*0.5
-	end
-
-	return AttackDamage * (AttackRange/200 + 1) * (1.0 / AttackSpeed)
-
+	return CombatPower.EstimateLegacyCapability(npcHero)
 end
 
 function GetPhysicalDamageRemain( fArmor )
-	return 1.0 - ( 0.052*fArmor ) / ( 0.9 + 0.048*math.abs(fArmor) )
+	return CombatPower.PhysicalDamageMultiplier(fArmor) or 1
 end
 
 function SafeHasModifier(Target, ModifierName)

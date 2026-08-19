@@ -6,6 +6,7 @@ local Initiation = require(GetScriptDirectory()..'/THDFuncLib/roam_initiation')
 local Pickoff = require(GetScriptDirectory()..'/THDFuncLib/roam_pickoff')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 local MissionID = require(GetScriptDirectory()..'/THDFuncLib/roam_mission_id')
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 local Coordinator = {}
 local states = {}
@@ -51,6 +52,43 @@ local function GetPlayerID(unit)
 	return Safe(-1, function() return unit:GetPlayerID() end) or -1
 end
 
+local function GetEntityIndex(unit)
+	if unit == nil then return nil end
+	if unit.entindex ~= nil then
+		local index = Safe(nil, function() return unit:entindex() end)
+		if type(index) == 'number' and index >= 0 then return index end
+	end
+	if unit.GetEntityIndex ~= nil then
+		local index = Safe(nil, function() return unit:GetEntityIndex() end)
+		if type(index) == 'number' and index >= 0 then return index end
+	end
+	return nil
+end
+
+local function IsSamePlayer(first, second)
+	local firstID = GetPlayerID(first)
+	return firstID >= 0 and firstID == GetPlayerID(second)
+end
+
+local function IsSameEntity(first, second)
+	if first == nil or second == nil then return false end
+	local firstIndex = GetEntityIndex(first)
+	local secondIndex = GetEntityIndex(second)
+	if firstIndex ~= nil and secondIndex ~= nil then return firstIndex == secondIndex end
+	return first == second
+end
+
+local function IsCurrentBotHandle(bot)
+	if bot == nil then return false end
+	if type(GetBot) ~= 'function' then return true end
+	local current = Safe(nil, function() return GetBot() end)
+	if current == nil or not IsSamePlayer(bot, current) then return false end
+	local botIndex = GetEntityIndex(bot)
+	local currentIndex = GetEntityIndex(current)
+	if botIndex ~= nil and currentIndex ~= nil then return botIndex == currentIndex end
+	return bot == current
+end
+
 local function GetUnitName(unit)
 	if unit == nil or unit.GetUnitName == nil then return nil end
 	return Safe(nil, function() return unit:GetUnitName() end)
@@ -74,8 +112,21 @@ end
 
 local function GetState(bot)
 	local playerID = GetPlayerID(bot)
+	local entityIndex = GetEntityIndex(bot)
+	local handleChanged = states[playerID] ~= nil
+		and states[playerID].botEntityIndex ~= nil
+		and entityIndex ~= nil
+		and states[playerID].botEntityIndex ~= entityIndex
+	if handleChanged then
+		-- 同一玩家更换英雄实体后旧任务中的 Bot/目标 handle 全部失效，必须从空状态重建。
+		Initiation.Clear(bot)
+		if Pickoff.ResetBotState ~= nil then Pickoff.ResetBotState(bot) end
+		states[playerID] = nil
+	end
 	if states[playerID] == nil then
 		states[playerID] = {
+			botEntityIndex = entityIndex,
+			botHandleChanged = handleChanged,
 			pending = nil,
 			mission = nil,
 			lastObservedMissionStart = -9999,
@@ -89,6 +140,7 @@ local function GetState(bot)
 			lastDebugStatusTime = -9999,
 		}
 	end
+	if states[playerID].botEntityIndex == nil then states[playerID].botEntityIndex = entityIndex end
 	return states[playerID]
 end
 
@@ -145,10 +197,46 @@ local function IsRealEnemyHero(bot, target)
 	if not CanInspectUnit(target) then return false end
 	if target.IsHero == nil or not Safe(false, function() return target:IsHero() end) then return false end
 	if GetPlayerID(target) < 0 then return false end
-	if Safe(-1, function() return target:GetTeam() end) == Safe(-1, function() return bot:GetTeam() end) then return false end
+	local targetTeam = Safe(-1, function() return target:GetTeam() end)
+	local botTeam = Safe(-2, function() return bot:GetTeam() end)
+	local opposingTeam = Safe(nil, function() return GetOpposingTeam() end)
+	if targetTeam == botTeam or (opposingTeam ~= nil and targetTeam ~= opposingTeam) then return false end
 	if target.IsKnownIllusion ~= nil and Safe(false, function() return target:IsKnownIllusion() end) then return false end
 	if target.HasModifier ~= nil and Safe(false, function() return target:HasModifier('modifier_illusion') end) then return false end
 	return true
+end
+
+local function IsMissionTargetHandle(mission, target)
+	if mission == nil or target == nil then return false end
+	if mission.targetPlayerID ~= nil and mission.targetPlayerID >= 0
+		and GetPlayerID(target) ~= mission.targetPlayerID
+	then
+		return false
+	end
+	local expectedIndex = mission.targetEntityIndex
+	if expectedIndex ~= nil then
+		local actualIndex = GetEntityIndex(target)
+		if actualIndex == nil or actualIndex ~= expectedIndex then return false end
+	end
+	return true
+end
+
+function Coordinator.IsSamePlayer(first, second)
+	return IsSamePlayer(first, second)
+end
+
+function Coordinator.IsCurrentBot(bot)
+	return IsCurrentBotHandle(bot)
+end
+
+function Coordinator.IsValidEnemyHero(bot, target)
+	return IsCurrentBotHandle(bot) and IsRealEnemyHero(bot, target)
+end
+
+function Coordinator.IsMissionTargetValid(bot, mission, target)
+	return IsCurrentBotHandle(bot)
+		and IsRealEnemyHero(bot, target)
+		and IsMissionTargetHandle(mission, target)
 end
 
 local function IsTowerEngagingVisibleEnemyHero(bot, tower)
@@ -289,6 +377,7 @@ end
 local function IsSupportLaneSafe(bot)
 	local lane = GetAssignedLane(bot)
 	if lane == nil then return false end
+	local botID = GetPlayerID(bot)
 	local laneFront = Safe(nil, function() return GetLaneFrontLocation(GetTeam(), lane, 0) end)
 	if laneFront == nil then return false end
 
@@ -298,10 +387,11 @@ local function IsSupportLaneSafe(bot)
 		if IsValidUnit(member)
 			and GetAssignedLane(member) == lane
 		then
-			if member ~= bot and J.Retreat.ShouldYield(member, J.Retreat.HIGH) then return false end
+			local memberIsBot = GetPlayerID(member) == botID
+			if not memberIsBot and J.Retreat.ShouldYield(member, J.Retreat.HIGH) then return false end
 			if GetDistanceToLocation(member, laneFront) <= Config.LOCAL_FIGHT_RADIUS then
 				allies = allies + 1
-				if member ~= bot then remainingAllies = remainingAllies + 1 end
+				if not memberIsBot then remainingAllies = remainingAllies + 1 end
 			end
 		end
 	end
@@ -456,21 +546,10 @@ local function GetOwnSideDepth(bot, target, lane)
 	return amount
 end
 
-local function GetAllyOffensivePower(unit)
-	local power = Safe(0, function() return unit:GetOffensivePower() end) or 0
-	if power > 0 then return power end
-	return math.max(1, (Safe(1, function() return unit:GetLevel() end) or 1) * 100)
-end
-
-local function GetEnemyCombatPower(unit)
+local function GetUnitCombatPower(unit)
 	if not CanInspectUnit(unit) then return 0 end
-	local attackDamage = math.max(0, Safe(0, function() return unit:GetAttackDamage() end) or 0)
-	local attackPeriod = math.max(0.25, Safe(1.7, function() return unit:GetSecondsPerAttack() end) or 1.7)
-	local maxHealth = math.max(0, Safe(0, function() return unit:GetMaxHealth() end) or 0)
-	local level = math.max(1, Safe(1, function() return unit:GetLevel() end) or 1)
-	local rawPower = attackDamage / attackPeriod + maxHealth * 0.035 + level * 5
-	-- 敌方英雄不能调用仅限队友的 GetOffensivePower，使用可见的基础战斗参数估算战力。
-	return math.max(0, rawPower * (0.25 + 0.75 * GetHealthFraction(unit)))
+	-- 原生战力 API 会无目标解析自定义技能伤害；敌我统一按可见基础属性估算，避免进入 C++ 空目标路径。
+	return CombatPower.Estimate(unit)
 end
 
 local function AddUniqueUnit(list, seen, unit)
@@ -497,12 +576,12 @@ local function GetPowerRatio(target, participants, includeParticipants)
 	end
 
 	local allyPower = 0
-	for _, ally in ipairs(allies) do allyPower = allyPower + GetAllyOffensivePower(ally) end
+	for _, ally in ipairs(allies) do allyPower = allyPower + GetUnitCombatPower(ally) end
 	local enemyPower = 0
 	local enemyCount = 0
 	for _, enemy in ipairs(GetEnemyHeroes()) do
 		if GetDistanceToLocation(enemy, location) <= Config.LOCAL_FIGHT_RADIUS then
-			enemyPower = enemyPower + GetEnemyCombatPower(enemy)
+			enemyPower = enemyPower + GetUnitCombatPower(enemy)
 			enemyCount = enemyCount + 1
 		end
 	end
@@ -533,9 +612,9 @@ local function GetLocalPursuitBalance(bot, enemies)
 	end
 
 	local allyPower = 0
-	for _, ally in ipairs(allies) do allyPower = allyPower + GetAllyOffensivePower(ally) end
+	for _, ally in ipairs(allies) do allyPower = allyPower + GetUnitCombatPower(ally) end
 	local enemyPower = 0
-	for _, enemy in ipairs(enemies) do enemyPower = enemyPower + GetEnemyCombatPower(enemy) end
+	for _, enemy in ipairs(enemies) do enemyPower = enemyPower + GetUnitCombatPower(enemy) end
 	if enemyPower <= 0 then return 2.0, #allies, #enemies end
 	return allyPower / enemyPower, #allies, #enemies
 end
@@ -888,9 +967,8 @@ local function EstimateLocalTargetTTK(target, hosts, targetHealth, observedHealt
 			and Safe(nil, function() return host:GetAttackTarget() end)
 			or nil
 		if attackTarget == target then
-			local damage = math.max(0, Safe(0, function() return host:GetAttackDamage() end) or 0)
-			local attackPeriod = math.max(0.25, Safe(1.7, function() return host:GetSecondsPerAttack() end) or 1.7)
-			localAttackDPS = localAttackDPS + damage / attackPeriod
+			localAttackDPS = localAttackDPS
+				+ CombatPower.EstimateAttackDamage(host, target, 1, 1, 0)
 		end
 	end
 	local adjustedDPS = math.max(localAttackDPS * Config.TARGET_LOCAL_DAMAGE_FACTOR,
@@ -1017,6 +1095,7 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 		kind = 'lane_gank',
 		target = target,
 		targetPlayerID = targetPlayerID,
+		targetEntityIndex = GetEntityIndex(target),
 		targetLane = lane,
 		leader = participants[1].unit,
 		leaderID = participants[1].playerID,
@@ -1103,10 +1182,10 @@ function Coordinator.BuildBestProposal(bot)
 end
 
 local function IsMissionSignalValid(bot, source, target, ping, now, maxAge)
-	if source == nil or source == bot or ping == nil then return false end
+	if source == nil or IsSamePlayer(source, bot) or ping == nil then return false end
 	if source.IsBot == nil or not Safe(false, function() return source:IsBot() end) then return false end
 	if Safe(BOT_MODE_NONE, function() return source:GetActiveMode() end) ~= BOT_MODE_ROAM then return false end
-	if Safe(nil, function() return source:GetTarget() end) ~= target then return false end
+	if not IsSameEntity(Safe(nil, function() return source:GetTarget() end), target) then return false end
 	if not IsRealEnemyHero(bot, target) then return false end
 	if ping.normal_ping ~= true or type(ping.time) ~= 'number' or ping.location == nil then return false end
 	if now - ping.time < 0 or now - ping.time > (maxAge or Config.ANNOUNCEMENT_WINDOW) then return false end
@@ -1151,7 +1230,7 @@ local function ObserveAnnouncements(bot)
 	local gameNow = Safe(now, function() return GameTime() end) or now
 	local best = nil
 	for _, source in ipairs(GetTeamMembers()) do
-		if source ~= bot then
+		if not IsSamePlayer(source, bot) then
 			local target = Safe(nil, function() return source:GetTarget() end)
 			local ping = Safe(nil, function() return source:GetMostRecentPing() end)
 			local pickoffPlan = Pickoff.BuildAnnouncement(bot, source, ping, gameNow)
@@ -1203,7 +1282,7 @@ local function ObserveActiveTeamMission(bot)
 	local maxAge = math.max(Config.TEAM_COOLDOWN, Config.EARLY_ROAM_TEAM_COOLDOWN)
 		+ Config.ANNOUNCEMENT_WINDOW
 	for _, source in ipairs(GetTeamMembers()) do
-		if source ~= bot then
+		if not IsSamePlayer(source, bot) then
 			local target = Safe(nil, function() return source:GetTarget() end)
 			local ping = Safe(nil, function() return source:GetMostRecentPing() end)
 			local oldSignal = IsMissionSignalValid(bot, source, target, ping, gameNow, maxAge)
@@ -1386,7 +1465,7 @@ end
 
 local function ClearTargetIfMatches(bot, mission)
 	if mission == nil then return end
-	if Safe(nil, function() return bot:GetTarget() end) == mission.target then
+	if IsMissionTargetHandle(mission, Safe(nil, function() return bot:GetTarget() end)) then
 		Safe(nil, function() bot:SetTarget(nil) end)
 	end
 end
@@ -1404,6 +1483,7 @@ local function FormatAbortContext(context)
 end
 
 function Coordinator.Abort(bot, reason, context)
+	if not IsCurrentBotHandle(bot) then return false end
 	local state = GetState(bot)
 	local mission = state.mission or state.pending
 	local details = ''
@@ -1436,6 +1516,7 @@ function Coordinator.Abort(bot, reason, context)
 	state.mission = nil
 	state.lastAbortReason = reason
 	Debug(bot, 'release reason=' .. tostring(reason) .. details .. FormatAbortContext(context))
+	return true
 end
 
 local function DropMissionParticipant(bot, mission, playerID, reason, now)
@@ -1476,7 +1557,7 @@ end
 
 local function TryAdoptVisiblePatrolTarget(bot, mission, now)
 	if mission == nil or mission.kind ~= 'smoke_patrol' or mission.target ~= nil then return false end
-	if mission.leader == nil or mission.leader == bot then return false end
+	if mission.leader == nil or IsSamePlayer(mission.leader, bot) then return false end
 	local target = Safe(nil, function() return mission.leader:GetTarget() end)
 	if not IsRealEnemyHero(bot, target) then return false end
 	local location = Safe(nil, function() return target:GetLocation() end)
@@ -1490,6 +1571,7 @@ local function TryAdoptVisiblePatrolTarget(bot, mission, now)
 	-- 只接收本 Bot 也能看见的队长目标，避免在 Bot 之间传播隐藏单位句柄。
 	mission.target = target
 	mission.targetPlayerID = GetPlayerID(target)
+	mission.targetEntityIndex = GetEntityIndex(target)
 	mission.targetHeroName = GetUnitName(target)
 	mission.lastLocation = location
 	mission.rallyLocation = location
@@ -1564,15 +1646,32 @@ local function GetMissionDesire(bot, state)
 		return BOT_MODE_DESIRE_NONE
 	end
 
-	if mission.leader ~= bot then
+	local botID = GetPlayerID(bot)
+	for _, member in ipairs(GetTeamMembers()) do
+		if GetPlayerID(member) == mission.leaderID then
+			mission.leader = member
+			break
+		end
+	end
+	if mission.leaderID ~= botID then
+		local leaderTarget = Safe(nil, function() return mission.leader:GetTarget() end)
 		local leaderTargetMatches = mission.target == nil
-			or Safe(nil, function() return mission.leader:GetTarget() end) == mission.target
-		if not IsValidUnit(mission.leader)
+			or IsMissionTargetHandle(mission, leaderTarget)
+		local leaderMismatch = not IsValidUnit(mission.leader)
 			or Safe(BOT_MODE_NONE, function() return mission.leader:GetActiveMode() end) ~= BOT_MODE_ROAM
 			or not leaderTargetMatches
-		then
-			Coordinator.Abort(bot, 'leader_released')
-			return BOT_MODE_DESIRE_NONE
+		if leaderMismatch then
+			-- 队长模式/目标短暂切换不应让跟随者立刻离队；持续超过宽限期才释放任务。
+			if mission.leaderMismatchSince == nil then
+				mission.leaderMismatchSince = now
+				Debug(bot, string.format('leader_mismatch_wait mission=%s threshold=%.1f',
+					tostring(GetMissionID(mission)), Config.LEADER_MISMATCH_GRACE))
+			elseif now - mission.leaderMismatchSince >= Config.LEADER_MISMATCH_GRACE then
+				Coordinator.Abort(bot, 'leader_released')
+				return BOT_MODE_DESIRE_NONE
+			end
+		else
+			mission.leaderMismatchSince = nil
 		end
 	end
 
@@ -1581,12 +1680,12 @@ local function GetMissionDesire(bot, state)
 	mission.droppedParticipantIDs = mission.droppedParticipantIDs or {}
 	for _, member in ipairs(GetTeamMembers()) do
 		local memberID = GetPlayerID(member)
-		if member ~= bot
+		if memberID ~= botID
 			and IsParticipant(memberID, mission.plannedParticipantIDs)
 			and not mission.droppedParticipantIDs[memberID]
 		then
 			local matchingTarget = mission.target == nil
-				or Safe(nil, function() return member:GetTarget() end) == mission.target
+				or IsMissionTargetHandle(mission, Safe(nil, function() return member:GetTarget() end))
 			local matchingRoam = Safe(BOT_MODE_NONE, function() return member:GetActiveMode() end) == BOT_MODE_ROAM
 				and matchingTarget
 			if matchingRoam and not mission.joinedParticipantIDs[memberID] then
@@ -1635,9 +1734,7 @@ local function GetMissionDesire(bot, state)
 			Coordinator.Abort(bot, reason)
 			return BOT_MODE_DESIRE_NONE
 		end
-		if mission.target ~= nil
-			and Safe(false, function() return mission.target:CanBeSeen() end)
-		then
+		if Coordinator.IsMissionTargetValid(bot, mission, mission.target) then
 			J.SetTargetIfChanged(bot, mission.target, 0.2)
 		end
 		if previousPhase ~= mission.phase then
@@ -1656,7 +1753,7 @@ local function GetMissionDesire(bot, state)
 		Coordinator.Abort(bot, 'target_dead')
 		return BOT_MODE_DESIRE_NONE
 	end
-	local targetVisible = CanInspectUnit(mission.target)
+	local targetVisible = Coordinator.IsMissionTargetValid(bot, mission, mission.target)
 	if targetVisible then
 		mission.lastVisibleTime = now
 		local targetLocation = Safe(mission.lastLocation, function() return mission.target:GetLocation() end)
@@ -1722,7 +1819,17 @@ local function GetMissionDesire(bot, state)
 end
 
 function Coordinator.GetDesire(bot)
+	-- 原生 Bot 动作只能由当前脚本的 GetBot() 实体发出；旧英雄脚本直接失效关闭。
+	if not IsCurrentBotHandle(bot) then return BOT_MODE_DESIRE_NONE end
 	local state = GetState(bot)
+	if not IsValidUnit(bot) or not Safe(false, function() return bot:IsAlive() end) then
+		DebugStatus(bot, 'reason=invalid_or_dead')
+		return BOT_MODE_DESIRE_NONE
+	end
+	if state.botHandleChanged == true then
+		state.botHandleChanged = false
+		DebugStatus(bot, 'reason=bot_handle_refreshed')
+	end
 	if state.mission ~= nil then return GetMissionDesire(bot, state) end
 	if not IsEnabled() then
 		state.pending = nil
@@ -1755,10 +1862,6 @@ function Coordinator.GetDesire(bot)
 	if announcement ~= nil and objectiveLocked then
 		state.pending = nil
 		DebugStatus(bot, 'reason=signal_objective_lock objective=' .. tostring(objectiveReason))
-		return BOT_MODE_DESIRE_NONE
-	end
-	if not IsValidUnit(bot) or not Safe(false, function() return bot:IsAlive() end) then
-		DebugStatus(bot, 'reason=invalid_or_dead')
 		return BOT_MODE_DESIRE_NONE
 	end
 	local now = DotaTime()
@@ -1856,6 +1959,7 @@ function Coordinator.GetDesire(bot)
 end
 
 function Coordinator.OnStart(bot)
+	if not IsCurrentBotHandle(bot) or not IsValidUnit(bot) then return false end
 	local state = GetState(bot)
 	if not IsEnabled() or state.pending == nil then return false end
 	local mission = state.pending
@@ -1910,6 +2014,7 @@ function Coordinator.OnStart(bot)
 	mission.phase = mission.phase or (mission.kind == 'lane_gank' and 'approach' or 'assemble')
 	mission.phaseStartTime = mission.phaseStartTime or mission.startTime
 	mission.targetHeroName = mission.targetHeroName or GetUnitName(mission.target)
+	mission.targetEntityIndex = mission.targetEntityIndex or GetEntityIndex(mission.target)
 	mission.rallyLocation = mission.rallyLocation or mission.lastLocation
 	mission.plannedParticipantIDs = mission.plannedParticipantIDs or CopyParticipantIDs(mission.participantIDs)
 	mission.joinedParticipantIDs = mission.joinedParticipantIDs or {}
@@ -1926,9 +2031,7 @@ function Coordinator.OnStart(bot)
 	EnsureMissionMetrics(mission)
 	ObserveTeamMission(state, mission.missionID, mission.startTime,
 		mission.leaderID, mission.targetPlayerID, mission.signalTime)
-	if mission.target ~= nil
-		and Safe(false, function() return mission.target:CanBeSeen() end)
-	then
+	if Coordinator.IsMissionTargetValid(bot, mission, mission.target) then
 		J.SetTargetIfChanged(bot, mission.target, 0.1)
 	end
 	Pickoff.NoteMissionStart(mission)
@@ -1985,12 +2088,17 @@ function Coordinator.OnStart(bot)
 			mission.initiationCandidateCount or 0,
 			mission.initiationReadyCount > 0 and 'ready' or
 			(mission.initiationRegisteredCount > 0 and 'ability_unavailable' or 'no_mapped_hero')))
+		if mission.kind ~= nil and mission.kind ~= 'lane_gank' then
+			local assembleWindow, stagingEta = Pickoff.GetAssembleWindow(mission)
+			Debug(bot, string.format('assemble_schedule mission=%s window=%.1f staging_eta=%.1f',
+				tostring(mission.missionID), assembleWindow, stagingEta or 0))
+		end
 	end
 	return true
 end
 
 function Coordinator.DebugAction(bot, message)
-	Debug(bot, message)
+	if IsCurrentBotHandle(bot) then Debug(bot, message) end
 end
 
 function Coordinator.GetRallyLocation(mission)
@@ -1999,10 +2107,12 @@ function Coordinator.GetRallyLocation(mission)
 end
 
 function Coordinator.GetMission(bot)
+	if not IsCurrentBotHandle(bot) then return nil end
 	return GetState(bot).mission
 end
 
 function Coordinator.OnEnd(bot, reason)
+	if not IsCurrentBotHandle(bot) then return end
 	local state = GetState(bot)
 	if state.mission == nil and state.pending == nil then return end
 	Coordinator.Abort(bot, reason or 'mode_end')

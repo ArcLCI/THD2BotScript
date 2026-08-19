@@ -1,5 +1,6 @@
 require(GetScriptDirectory() .. "/bot_generic")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
+local CombatPower = require(GetScriptDirectory() .. "/THDFuncLib/combat_power")
 
 local bot = GetBot()
 local WOLF_UNIT_NAME = "ability_momiji_Spawn_unit"
@@ -192,9 +193,10 @@ local function GetWeakest(units)
 	local weakest = nil
 	local lowestHealth = math.huge
 	for _, unit in pairs(units) do
-		if IsValidUnit(unit) and J.CanBeAttacked(unit) and unit:GetHealth() < lowestHealth then
+		local health = J.Utils.GetVisibleHealth(unit)
+		if IsValidUnit(unit) and health ~= nil and J.CanBeAttacked(unit) and health < lowestHealth then
 			weakest = unit
-			lowestHealth = unit:GetHealth()
+			lowestHealth = health
 		end
 	end
 	return weakest
@@ -232,17 +234,21 @@ local function GetBestCombatTarget(wolf)
 	local enemies = bot:GetNearbyHeroes(MAX_WORK_DISTANCE, true, BOT_MODE_NONE)
 	for _, enemy in pairs(enemies) do
 		if IsValidEnemyHero(enemy) and IsHeroTargetSafe(wolf, enemy) then
-			local hp = J.GetHP(enemy)
-			local score = (1 - hp) * 140
-			if enemy:GetAttackRange() >= 400 then score = score + 40 end
-			score = score + math.max(0, 2200 - enemy:GetMaxHealth()) / 45
-			score = score + math.min(enemy:GetAttackDamage(), 300) / 10
-			if enemy:IsChanneling() then score = score + 60 end
-			if enemy == properTarget then score = score + 20 end
-			score = score - GetUnitToUnitDistance(wolf, enemy) / 80
-			if score > bestScore then
-				bestTarget = enemy
-				bestScore = score
+			local attack = CombatPower.GetAttackSnapshot(enemy)
+			local defense = CombatPower.GetDefenseSnapshot(enemy)
+			if attack ~= nil and defense ~= nil then
+				local hp = defense.maxHealth > 0 and defense.health / defense.maxHealth or 1
+				local score = (1 - hp) * 140
+				if attack.attackRange >= 400 then score = score + 40 end
+				score = score + math.max(0, 2200 - defense.maxHealth) / 45
+				score = score + math.min(attack.attackDamage, 300) / 10
+				if enemy:IsChanneling() then score = score + 60 end
+				if enemy == properTarget then score = score + 20 end
+				score = score - GetUnitToUnitDistance(wolf, enemy) / 80
+				if score > bestScore then
+					bestTarget = enemy
+					bestScore = score
+				end
 			end
 		end
 	end

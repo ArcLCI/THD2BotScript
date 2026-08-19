@@ -1,5 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -145,8 +146,10 @@ function CanCastYoumu03OnTarget( npcTarget )
 end
 
 function CanCastYoumu04OnTarget( npcTarget )
-	return IsValidCastTarget(npcTarget, false, false) and
-	npcTarget:GetArmor() < 200.0
+	local defense = CombatPower.GetDefenseSnapshot(npcTarget)
+	return defense ~= nil
+		and IsValidCastTarget(npcTarget, false, false)
+		and defense.armor < 200.0
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -312,11 +315,17 @@ function ConsiderAbilityYoumu04()
 
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
-			if ( CanCastYoumu04OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and
-					( nDamage * GetPhysicalDamageRemain( npcEnemy:GetArmor() )
-						+ exDamage > npcEnemy:GetHealth()
-					)
-				)
+			local defense = CombatPower.GetDefenseSnapshot(npcEnemy)
+			local incomingDamage = CombatPower.EstimateIncomingDamageFromSnapshot(
+				defense,
+				nDamage,
+				DAMAGE_TYPE_PHYSICAL
+			)
+			if ( defense ~= nil
+				and incomingDamage ~= nil
+				and CanCastYoumu04OnTarget( npcEnemy )
+				and not IsPossibleIllusion( npcEnemy )
+				and incomingDamage + exDamage > defense.health )
 			then
 --				print( nDamage * GetPhysicalDamageRemain( npcEnemy:GetArmor() ) )
 --				print( GetPhysicalDamageRemain( npcEnemy:GetArmor()  ) )
