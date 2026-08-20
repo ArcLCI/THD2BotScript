@@ -1,5 +1,6 @@
 require(GetScriptDirectory() .. "/bot_generic")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
+local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/wasteland_strategy")
 
 local owner = GetBot()
 local FIRE_UNIT = "npc_thdots_unit_patchouli_fire_fire"
@@ -34,15 +35,22 @@ local function GetEntityKey(unit)
 end
 
 local function ThrottledAttack(unit, target)
-	if not IsValidUnit(target) then return end
+	if not IsValidUnit(target) then return false end
+	local isBuilding = target.IsBuilding ~= nil
+		and select(2, pcall(function() return target:IsBuilding() end)) == true
+	if isBuilding then
+		local allowed = Wasteland.CanControlledUnitAttackBuilding(owner, target)
+		if not allowed then return false end
+	end
 	unit.patchouliMinionState = unit.patchouliMinionState or {}
 	local state = unit.patchouliMinionState
 	local key = GetEntityKey(target)
 	if state.action == "attack" and state.key == key
 	and DotaTime() - (state.time or -100) < ATTACK_INTERVAL
-	then return end
+	then return true end
 	unit:Action_AttackUnit(target, true)
 	state.action, state.key, state.time = "attack", key, DotaTime()
+	return true
 end
 
 local function ThrottledMove(unit, location)
@@ -269,7 +277,7 @@ local function FireElementThink(unit)
 	end
 	if J.IsPushing(owner) then
 		for _, building in pairs(unit:GetNearbyTowers(850, true) or {}) do
-			if IsValidUnit(building) then ThrottledAttack(unit, building); return end
+			if IsValidUnit(building) and ThrottledAttack(unit, building) then return end
 		end
 	end
 

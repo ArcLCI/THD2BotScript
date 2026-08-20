@@ -1,6 +1,7 @@
 local X = {}
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
+local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 local ownerBot
 
 local nEnemyAncient = GetAncient(GetOpposingTeam())
@@ -78,6 +79,12 @@ end
 local function MinionActionAttackUnit(unit, actionName, target, once, interval)
     if not CanIssueMinionAction(unit) then return false end
     if not IsValidUnit(target) then return false end
+	local isBuilding = target.IsBuilding ~= nil
+		and select(2, pcall(function() return target:IsBuilding() end)) == true
+	if isBuilding then
+		local allowed = Wasteland.CanControlledUnitAttackBuilding(ownerBot, target)
+		if not allowed then return false end
+	end
     local targetKey = GetMinionUnitKey(target)
     if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_ATTACK_INTERVAL) then return true end
     unit:Action_AttackUnit(target, once)
@@ -96,6 +103,11 @@ end
 local function MinionActionAttackMove(unit, actionName, vLoc, interval, bucket)
     if not CanIssueMinionAction(unit) then return false end
     if vLoc == nil then return false end
+	local allowed = Wasteland.CanControlledUnitAttackMove(ownerBot, vLoc)
+	if not allowed then
+		-- 高地或共享目标尚未开放时降级为普通移动，禁止自动索敌建筑。
+		return MinionActionMoveToLocation(unit, actionName .. '_managed_move', vLoc, interval, bucket)
+	end
     local targetKey = GetMinionLocationKey(vLoc, bucket)
     if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_MOVE_INTERVAL) then return true end
     unit:Action_AttackMove(vLoc)
@@ -137,8 +149,9 @@ function X.IllusionThink(owner, hMinionUnit)
 
     if hMinionUnit.attack_desire > 0 then
         if IsValidUnit(hMinionUnit.attack_target) then
-            MinionActionAttackUnit(hMinionUnit, 'illusion_attack', hMinionUnit.attack_target, false, MINION_ATTACK_INTERVAL)
-            return
+			if MinionActionAttackUnit(hMinionUnit, 'illusion_attack', hMinionUnit.attack_target, false, MINION_ATTACK_INTERVAL) then
+				return
+			end
         end
     end
 
@@ -196,8 +209,9 @@ function X.DemonThink(owner, hMinionUnit)
 
         if hMinionUnit.attack_desire > 0 then
             if IsValidUnit(hMinionUnit.attack_target) then
-                MinionActionAttackUnit(hMinionUnit, 'demon_attack', hMinionUnit.attack_target, false, MINION_ATTACK_INTERVAL)
-                return
+				if MinionActionAttackUnit(hMinionUnit, 'demon_attack', hMinionUnit.attack_target, false, MINION_ATTACK_INTERVAL) then
+					return
+				end
             end
         end
 

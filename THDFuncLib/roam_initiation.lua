@@ -3,6 +3,7 @@ local GeneratedHeroes = require(GetScriptDirectory() .. '/THDFuncLib/lane_assign
 
 local Initiation = {}
 local states = {}
+local CAST_START_GRACE = 0.35
 
 -- 这里只登记“能够作为 gank 开场控制”的英雄与技能；实际目标选择和施法仍由英雄脚本负责。
 local HERO_INITIATION = {
@@ -107,6 +108,20 @@ local function IsAbilityReady(ability)
 	if ability == nil then return false end
 	if ability.IsFullyCastable == nil then return true end
 	return Safe(false, function() return ability:IsFullyCastable() end) == true
+end
+
+local function IsAbilityInProgress(bot, ability)
+	if ability ~= nil then
+		if ability.IsInAbilityPhase ~= nil
+			and Safe(false, function() return ability:IsInAbilityPhase() end)
+		then return true end
+		if ability.IsChanneling ~= nil
+			and Safe(false, function() return ability:IsChanneling() end)
+		then return true end
+	end
+	return (bot.IsCastingAbility ~= nil and Safe(false, function() return bot:IsCastingAbility() end))
+		or (bot.IsUsingAbility ~= nil and Safe(false, function() return bot:IsUsingAbility() end))
+		or (bot.IsChanneling ~= nil and Safe(false, function() return bot:IsChanneling() end))
 end
 
 local function GetDistance(first, second)
@@ -262,11 +277,22 @@ function Initiation.GetStatus(bot, mission)
 	if not IsOwner(bot, mission) then
 		return MakeResult(state, 'non_owner', false, 'another_opener_selected')
 	end
+	local now = GetNow()
+	if state.status == 'completed' then
+		return MakeResult(state, 'completed', false, 'cast_finished')
+	end
 	if state.status == 'issued' then
-		return MakeResult(state, 'issued', true, nil, mission.target, nil, false)
+		local ability = GetAbility(bot, state.info)
+		local issuedElapsed = now - (state.issuedTime or now)
+		if issuedElapsed < CAST_START_GRACE or IsAbilityInProgress(bot, ability) then
+			return MakeResult(state, 'issued', true, nil, mission.target, nil, false)
+		end
+		-- 发令后只保护起手和真实施法过程；技能结束后必须恢复追击，不能锁到整次 gank 超时。
+		state.status = 'completed'
+		SetEvent(state, 'complete')
+		return MakeResult(state, 'completed', false, 'cast_finished')
 	end
 
-	local now = GetNow()
 	local engageStart = mission.engageStartTime or now
 	if now - engageStart >= Config.INITIATION_TIMEOUT then
 		state.status = 'fallback'

@@ -3,6 +3,8 @@ local Scheduler = {}
 local DEFAULT_PHASE_INTERVAL = 0.12
 local BASE_ENEMY_SCAN_RANGE = 1800
 local OBJECTIVE_THINK_INTERVAL = 0.25
+Scheduler.DEBUG_OBJECTIVE_INTERVAL = false
+local OBJECTIVE_DEBUG_LOG_INTERVAL = 5.0
 
 local OBJECTIVE_MODES = {}
 local function RegisterObjectiveMode(mode)
@@ -113,6 +115,15 @@ function Scheduler.GetLowPowerThinkInterval(bot, normalInterval, lowPowerInterva
 
     -- 六个实际推塔/守塔模式采用固定目标周期，避免误落入 1.25 秒以上的低功耗分支。
     if bot ~= nil and Scheduler.IsObjectiveMode(bot:GetActiveMode()) then
+		if Scheduler.DEBUG_OBJECTIVE_INTERVAL == true then
+			local now = Scheduler.Now()
+			if now - (bot.SchedulerObjectiveIntervalLogAt or -9999) >= OBJECTIVE_DEBUG_LOG_INTERVAL then
+				bot.SchedulerObjectiveIntervalLogAt = now
+				print(string.format('[BOT][Scheduler] pid=%s action=objective_interval mode=%s interval=%.2f game_time=%.1f',
+					tostring(Scheduler.GetPlayerId(bot)), tostring(bot:GetActiveMode()),
+					OBJECTIVE_THINK_INTERVAL, now))
+			end
+		end
         return OBJECTIVE_THINK_INTERVAL
     end
     if Scheduler.IsHighPriorityState(bot) then return normalInterval end
