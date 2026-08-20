@@ -165,7 +165,13 @@ end
 
 local function HasTeamObjectiveCommitment(bot)
 	local outerCommitment = Wasteland.GetOuterTowerCommitment()
-	if outerCommitment ~= nil then return true, 'outer_tower_commit' end
+	if outerCommitment ~= nil then
+		-- 统一推进目标只锁定正式参与者；未分配成员仍可进入其他常规模。
+		if Wasteland.IsPushObjectiveParticipant(bot, outerCommitment) then
+			return true, 'push_objective_participant'
+		end
+		return false, nil
+	end
 	local now = DotaTime()
 	local shared = GetSharedTeamState()
 	local doingRoshan = J.IsDoingRoshan(bot)
@@ -1955,7 +1961,7 @@ function Coordinator.GetDesire(bot)
 		tostring(proposal.requiresDust == true)
 	))
 	-- 只压低尚未接受的新提案；已发信号的参与者和活动任务继续保持原高优先级。
-	return Wasteland.AdjustRoamProposalDesire(PROPOSAL_DESIRE)
+	return Wasteland.AdjustRoamProposalDesire(PROPOSAL_DESIRE, nil, bot)
 end
 
 function Coordinator.OnStart(bot)

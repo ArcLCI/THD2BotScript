@@ -461,7 +461,7 @@ local function BuildTravelCandidate(unit, targetLocation, strategyState)
 	local number = POSITION_NUMBER[position]
 	if number == nil then return nil, 'position_unknown' end
 	local activeMode = Safe(BOT_MODE_NONE, function() return unit:GetActiveMode() end)
-	if Wasteland.ShouldProtectOuterPushParticipant(position, activeMode, strategyState) then
+	if Wasteland.ShouldProtectOuterPushParticipant(position, activeMode, strategyState, unit) then
 		return nil, 'wasteland_outer_push_commitment'
 	end
 	local distance = LocationDistance(unit, targetLocation)

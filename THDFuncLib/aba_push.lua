@@ -165,6 +165,21 @@ local function CountVisibleCreepsNearLocation(listType, location, radius)
 	return count
 end
 
+local function GetClosestVisibleCreepDistance(listType, location, radius)
+	if listType == nil or location == nil then return nil end
+	local closestDistance = nil
+	for _, creep in pairs(GetUnitList(listType)) do
+		local visibleHealth = J.Utils.GetVisibleHealth(creep)
+		if visibleHealth ~= nil then
+			local distance = GetUnitToLocationDistance(creep, location)
+			if distance <= radius and (closestDistance == nil or distance < closestDistance) then
+				closestDistance = distance
+			end
+		end
+	end
+	return closestDistance
+end
+
 local function SumLocalCombatPower(units)
 	local total = 0
 	for _, unit in pairs(units or {}) do
@@ -203,7 +218,14 @@ function Push.BuildPushSnapshot(bot, lane, objective, objectiveLocation, laneBui
 	if wastelandState ~= nil then
 		Wasteland.ObserveOuterTowerSnapshot(bot, wastelandState)
 		if wastelandState.outerCommitment == nil then
-			wastelandState.outerCommitment = Wasteland.TryCreateOuterTowerCommitment(bot, lane, wastelandState)
+			wastelandState.outerCommitment = Wasteland.TryCreatePushObjective(
+				bot,
+				lane,
+				wastelandState,
+				objective,
+				laneBuildingTier
+			)
+			wastelandState.objective = wastelandState.outerCommitment
 		end
 	end
 	return {
@@ -259,6 +281,13 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 		)
 	end
 	immediateSafety = immediateSafety or Push.GetImmediateSafetyState(bot)
+	local ancientDefenseState = snapshot.ancientDefenseState or {}
+	local baseDefenseRequired = (immediateSafety.baseEnemyPressure or 0) > 0
+		or (ancientDefenseState.enemyPressure or 0) > 0
+	Wasteland.InvalidateObjectiveForBaseDefense(bot, baseDefenseRequired)
+	if Wasteland.ShouldYieldPushObjective(bot, lane) then
+		return BOT_MODE_DESIRE_EXTRA_LOW
+	end
 
 	if bot:GetAssignedLane() == LANE_MID and J.IsInLaningPhase() then
 		return BOT_MODE_DESIRE_EXTRA_LOW
@@ -301,7 +330,6 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 		nPushDesire = nPushDesire + 0.04
 	end
 
-	local ancientDefenseState = snapshot.ancientDefenseState or {}
 	if immediateSafety.baseEmergency
 	or ((ancientDefenseState.enemyPressure or 0) > 0
 		and (ancientDefenseState.effectiveAllyCount or 0) < 1)
@@ -340,7 +368,8 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 			snapshot.laneBuildingTier,
 			snapshot.wastelandState,
 			lane,
-			nSafetyMaxDesire
+			nSafetyMaxDesire,
+			bot
 		)
 	end
 
@@ -360,7 +389,8 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 			snapshot.laneBuildingTier,
 			snapshot.wastelandState,
 			lane,
-			nSafetyMaxDesire
+			nSafetyMaxDesire,
+			bot
 		)
 	end
 
@@ -600,6 +630,21 @@ function Push.PushThink(bot, lane)
     if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
 	if J.CanNotUseAction(bot) then return end
 	local hEnemyAncient = GetAncient(GetOpposingTeam())
+	local immediateSafety = Push.GetImmediateSafetyState(bot)
+	if Wasteland.InvalidateObjectiveForBaseDefense(
+		bot,
+		(immediateSafety.baseEnemyPressure or 0) > 0
+	) then
+		-- 基地出现防守压力时先释放统一目标；本帧不再沿用缓存中的推进模式下单。
+		return
+	end
+	local pushObjective = Wasteland.GetPushObjective()
+	if pushObjective ~= nil
+	and pushObjective.lane == lane
+	and not Wasteland.IsPushObjectiveParticipant(bot, pushObjective)
+	then
+		return
+	end
 
 	local retreatState = J.Retreat.GetState(bot)
 	local conversionUnsafe, conversionReason = Wasteland.ShouldWithdrawConversionPush(
@@ -645,6 +690,27 @@ function Push.PushThink(bot, lane)
     local hLaneBuildingTarget = Push.GetLaneBuildingTarget(lane)
     local bLaneBuildingProtected = J.IsValidBuilding(hLaneBuildingTarget)
         and Push.HasBackdoorProtect(hLaneBuildingTarget)
+	local observedTarget = pushObjective ~= nil and pushObjective.target or (hLaneBuildingTarget or hEnemyAncient)
+	if pushObjective ~= nil and pushObjective.lane == lane and Push.IsObjectiveValid(observedTarget) then
+		local objectiveLocation = Push.GetObjectiveLocation(lane, observedTarget)
+		local targetHealth, targetMaxHealth = J.Utils.GetVisibleHealth(observedTarget)
+		local botDistance = GetUnitToUnitDistance(bot, observedTarget)
+		local attackableDistance = math.min(1600, botAttackRange + 400)
+		pushObjective = Wasteland.ObservePushObjective(bot, lane, observedTarget, {
+			botDistance = botDistance,
+			allyCreepDistance = GetClosestVisibleCreepDistance(
+				UNIT_LIST_ALLIED_CREEPS, objectiveLocation, 5000),
+			targetHealth = targetHealth,
+			targetMaxHealth = targetMaxHealth,
+			backdoorProtected = J.IsValidBuilding(observedTarget)
+				and Push.HasBackdoorProtect(observedTarget),
+			attackable = J.IsValidBuilding(observedTarget)
+				and J.CanBeAttacked(observedTarget)
+				and botDistance <= attackableDistance,
+		})
+		if pushObjective == nil then return end
+	end
+	local objectiveRole = Wasteland.GetPushObjectiveRole(bot, pushObjective)
     if #nearbyAllies < #nearbyEnemies or bLaneBuildingProtected then
         local nEnemyHeroLongestAttackRange = 0
         for _, enemyHero in pairs(nearbyEnemies) do
@@ -682,7 +748,27 @@ function Push.PushThink(bot, lane)
 		local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
 		J.ActionMoveToLocation(bot, 'push_flee_tower', vLocation, 0.35, 260)
 		return
-    end
+	end
+
+	-- 分工只改变动作优先级：建筑输出位进入 SIEGE 后先打统一目标，其他角色保留兵线/掩护顺序。
+	if pushObjective ~= nil
+	and pushObjective.phase == Wasteland.PHASE_SIEGE
+	and objectiveRole == Wasteland.ROLE_BUILDING_DAMAGE
+	and Push.IsObjectiveValid(observedTarget)
+	and J.IsValidBuilding(observedTarget)
+	and J.CanBeAttacked(observedTarget)
+	and not Push.HasBackdoorProtect(observedTarget)
+	and GetUnitToUnitDistance(bot, observedTarget) <= math.min(1600, botAttackRange + 400)
+	then
+		local buildingTarget = J.GetStickyTarget(
+			bot, 'push_objective_building_damage', observedTarget, 1.8, botAttackRange + 500)
+		if buildingTarget ~= nil then
+			Wasteland.NoteOuterTowerAttack(bot, lane, buildingTarget)
+			J.SetTargetIfChanged(bot, buildingTarget, 0.6)
+			J.ActionAttackUnit(bot, 'push_objective_building_damage', buildingTarget, true, 0.45)
+			return
+		end
+	end
 
 	-- 欲望函数只决定优先级；远古目标与所有攻击指令统一在动作阶段下达。
 	if Push.IsObjectiveValid(hEnemyAncient)

@@ -34,6 +34,14 @@ local LANE_TOSS_MOVE_INTERVAL = 0.20
 local LANE_TOSS_RETRY_DELAY = 4.0
 local LANE_TOSS_SCAN_INTERVAL = 0.30
 local LANE_TOSS_ACTIVE_THINK_INTERVAL = 0.03
+local HERO_TOSS_START_RANGE = 500
+local HERO_TOSS_CHASE_RANGE = 650
+local HERO_TOSS_STATE_DURATION = 1.0
+local HERO_TOSS_MOVE_INTERVAL = 0.15
+local HERO_TOSS_SCAN_INTERVAL = 0.20
+local HERO_TOSS_ACTIVE_THINK_INTERVAL = 0.05
+local HERO_TOSS_RETRY_DELAY = 2.5
+local HERO_TOSS_MIN_REPOSITION = 300
 
 -- 仅允许耐久、近身且具备开团职责的队友被主动投向敌阵。
 local OFFENSIVE_ALLY_TOSS_WHITELIST = {
@@ -43,6 +51,8 @@ local OFFENSIVE_ALLY_TOSS_WHITELIST = {
 	["npc_dota_hero_ogre_magi"] = true,     -- 诹访子
 	["npc_dota_hero_sven"] = true,          -- 依姬
 }
+
+local GetTossDamage
 
 local function SafeCall(defaultValue, fn)
 	local ok, result = pcall(fn)
@@ -345,6 +355,20 @@ local function CastToss(bot, ability, target)
 		return UseOnLocation(bot, ability, target:GetLocation(), nil)
 	end
 	return UseOnEntity(bot, ability, target, nil)
+end
+
+local function UseTossDestination(bot, ability, destination)
+	if destination == nil then return false end
+	if HasNoTargetTossTalent(bot) then
+		local location = destination.location
+		if location == nil and destination.entity ~= nil then
+			location = destination.entity:GetLocation()
+		end
+		if location == nil then return false end
+		return UseOnLocation(bot, ability, location, nil)
+	end
+	if destination.entity == nil then return false end
+	return UseOnEntity(bot, ability, destination.entity, nil)
 end
 
 local function ConsiderEmergencyMist(bot, ability, profile)
@@ -688,6 +712,263 @@ local function TryLaneTowerToss(bot, ability)
 	return true
 end
 
+local function IsSafeTacticalAlly(bot, ally, target, radius, castRange)
+	return IsValidRescueAlly(bot, ally)
+		and J.GetHP(ally) >= 0.45
+		and not SafeCall(false, function() return J.IsSeriouslyRetreating(ally) end)
+		and GetUnitToUnitDistance(bot, ally) > radius + PAYLOAD_SELECTION_MARGIN
+		and GetUnitToUnitDistance(bot, ally) <= castRange
+		and GetUnitToUnitDistance(target, ally) >= HERO_TOSS_MIN_REPOSITION
+		and not IsEnemyTowerNearLaneTarget(bot, ally)
+end
+
+local function FindTeamTossDestination(bot, target, radius, castRange)
+	local best = nil
+	local bestScore = -math.huge
+	for _, ally in pairs(CachedGetNearbyHeroes(bot, castRange, false, BOT_MODE_NONE)) do
+		if IsSafeTacticalAlly(bot, ally, target, radius, castRange) then
+			local durableInitiator = OFFENSIVE_ALLY_TOSS_WHITELIST[SafeCall("", function()
+				return ally:GetUnitName()
+			end)] and 10000 or 0
+			local score = durableInitiator + J.GetHP(ally) * 1000 + GetUnitToUnitDistance(target, ally)
+			if score > bestScore then
+				best = ally
+				bestScore = score
+			end
+		end
+	end
+	if best == nil then return nil end
+	return {entity = best, location = best:GetLocation(), motive = "team"}
+end
+
+local function FindTowerTossDestination(bot, target, radius, castRange)
+	local tower = FindClosestAlliedLaneTower(bot)
+	if tower == nil then return nil end
+	local targetTowerDistance = GetUnitToUnitDistance(target, tower)
+	if targetTowerDistance < LANE_TOSS_ANCHOR_TOWER_RANGE + LANE_TOSS_MIN_TOWER_GAIN then
+		return nil
+	end
+
+	if HasNoTargetTossTalent(bot)
+		and GetUnitToUnitDistance(bot, tower) <= castRange
+		and (IsLocationPassable == nil
+			or SafeCall(false, function() return IsLocationPassable(tower:GetLocation()) end))
+	then
+		return {location = tower:GetLocation(), motive = "tower"}
+	end
+
+	local anchor = FindLaneTowerAnchor(bot, target, tower, radius, castRange)
+	if anchor == nil then return nil end
+	return {entity = anchor, location = anchor:GetLocation(), motive = "tower"}
+end
+
+local function FindTacticalEnemyTossDestination(bot, target, ability)
+	local radius = GetTossRadius(ability)
+	local castRange = GetTossCastRange(ability)
+	return FindTowerTossDestination(bot, target, radius, castRange)
+		or FindTeamTossDestination(bot, target, radius, castRange)
+end
+
+local function HasSafeHeroTossNumbers(bot)
+	local enemyCount = CountVisibleEnemies(bot, 900)
+	local allyCount = 1
+	for _, ally in pairs(CachedGetNearbyHeroes(bot, 900, false, BOT_MODE_NONE)) do
+		if IsValidRescueAlly(bot, ally) then allyCount = allyCount + 1 end
+	end
+	return enemyCount > 0 and enemyCount <= allyCount
+end
+
+local function IsHeroTossApproachContext(bot, target, ability, profile, chaseRange)
+	local laning = J.IsInLaningPhase()
+		and SafeCall(BOT_MODE_NONE, function() return bot:GetActiveMode() end) == BOT_MODE_LANING
+	local hpLimit = profile == BotProfile.DAMAGE and 0.65 or 0.55
+	return IsCastable(ability)
+		and not bot:IsSilenced()
+		and not laning
+		and not J.IsRetreating(bot)
+		and J.IsGoingOnSomeone(bot)
+		and J.GetHP(bot) >= hpLimit
+		and IsValidEnemyHero(bot, target)
+		and not IsHardDisabled(target)
+		and GetUnitToUnitDistance(bot, target) <= chaseRange
+		and not IsEnemyTowerNearLaneTarget(bot, target)
+		and HasSafeHeroTossNumbers(bot)
+		and (profile ~= BotProfile.DAMAGE or J.WeAreStronger(bot, 900))
+end
+
+local function ClearPreferredEnemyToss(bot, retryDelay)
+	bot.suikaPreferredEnemyToss = nil
+	if retryDelay ~= nil then
+		bot.suikaNextPreferredEnemyTossTime = DotaTime() + retryDelay
+	end
+end
+
+local function FindVisibleEnemyHeroByPlayerID(bot, playerID, range)
+	if playerID == nil or playerID < 0 then return nil end
+	for _, enemy in pairs(CachedGetNearbyHeroes(bot, range, true, BOT_MODE_NONE)) do
+		if IsValidEnemyHero(bot, enemy)
+		and SafeCall(-1, function() return enemy:GetPlayerID() end) == playerID
+		then
+			return enemy
+		end
+	end
+	return nil
+end
+
+local function TryPreferredEnemyHeroToss(bot, ability, profile)
+	local now = DotaTime()
+	local state = bot.suikaPreferredEnemyToss
+	if state == nil then
+		if now < (bot.suikaNextPreferredEnemyTossTime or -90)
+			or now < (bot.suikaNextPreferredEnemyTossScanAt or -90)
+		then
+			return false
+		end
+		bot.suikaNextPreferredEnemyTossScanAt = now + HERO_TOSS_SCAN_INTERVAL
+
+		local target = J.GetProperTarget(bot)
+		if not IsHeroTossApproachContext(bot, target, ability, profile, HERO_TOSS_START_RANGE) then
+			return false
+		end
+		local destination = FindTacticalEnemyTossDestination(bot, target, ability)
+		if destination == nil then return false end
+
+		local radius = GetTossRadius(ability)
+		local payloadState = CapturePayloadState(bot, radius)
+		local payload = GetOffensivePayload(bot, target, radius, true, payloadState)
+		if payload ~= nil and payload ~= target
+		and not IsKillProtected(target)
+		and J.CanKillTarget(target, GetTossDamage(bot, ability), DAMAGE_TYPE_MAGICAL)
+		then
+			-- 击杀窗口优先于位移优化，交回普通 Toss 立即使用现有小兵载荷。
+			return false
+		end
+
+		if IsSafeEnemyPayload(bot, target, radius, payloadState) then
+			ClearPreferredEnemyToss(bot, HERO_TOSS_RETRY_DELAY)
+			return UseTossDestination(bot, ability, destination)
+		end
+
+		local targetPlayerID = SafeCall(-1, function() return target:GetPlayerID() end)
+		if targetPlayerID < 0 then return false end
+		state = {
+			targetPlayerID = targetPlayerID,
+			deadline = now + HERO_TOSS_STATE_DURATION,
+			nextMoveAt = now,
+			nextCheckAt = now,
+		}
+		bot.suikaPreferredEnemyToss = state
+	end
+
+	if now < state.nextCheckAt then return true end
+	state.nextCheckAt = now + HERO_TOSS_ACTIVE_THINK_INTERVAL
+	local target = FindVisibleEnemyHeroByPlayerID(bot, state.targetPlayerID, HERO_TOSS_CHASE_RANGE)
+	if now > state.deadline
+		or target == nil
+		or not IsHeroTossApproachContext(bot, target, ability, profile, HERO_TOSS_CHASE_RANGE)
+	then
+		ClearPreferredEnemyToss(bot, HERO_TOSS_RETRY_DELAY)
+		return false
+	end
+
+	local destination = FindTacticalEnemyTossDestination(bot, target, ability)
+	if destination == nil then
+		ClearPreferredEnemyToss(bot, HERO_TOSS_RETRY_DELAY)
+		return false
+	end
+
+	local radius = GetTossRadius(ability)
+	if IsSafeEnemyPayload(bot, target, radius, CapturePayloadState(bot, radius)) then
+		ClearPreferredEnemyToss(bot, HERO_TOSS_RETRY_DELAY)
+		return UseTossDestination(bot, ability, destination)
+	end
+
+	-- 短时贴近只为让敌方英雄成为唯一最近载荷；超时后立即回退普通小兵 Toss。
+	if now >= state.nextMoveAt then
+		bot:Action_MoveToLocation(target:GetLocation())
+		state.nextMoveAt = now + HERO_TOSS_MOVE_INTERVAL
+	end
+	return true
+end
+
+local function GetOppositeRetreatLocation(bot, castRange)
+	local fountain = J.GetTeamFountain()
+	if fountain == nil or GetUnitToLocationDistance(bot, fountain) <= 1 then return nil end
+	local location = J.GetLocationTowardDistanceLocation(bot, fountain, -math.max(castRange - 50, 1))
+	if IsLocationPassable ~= nil
+	and not SafeCall(false, function() return IsLocationPassable(location) end)
+	then
+		return nil
+	end
+	return location
+end
+
+local function IsRetreatTossDestinationUnit(bot, target, unit, radius, castRange, fountain)
+	return unit ~= nil
+		and unit ~= target
+		and IsPayloadCandidate(bot, unit, castRange)
+		and GetUnitToUnitDistance(bot, unit) > radius + PAYLOAD_SELECTION_MARGIN
+		and GetUnitToLocationDistance(unit, fountain)
+			>= GetUnitToLocationDistance(target, fountain) + HERO_TOSS_MIN_REPOSITION
+end
+
+local function FindOppositeRetreatDestination(bot, target, ability)
+	local radius = GetTossRadius(ability)
+	local castRange = GetTossCastRange(ability)
+	local location = GetOppositeRetreatLocation(bot, castRange)
+	if location == nil then return nil end
+	if HasNoTargetTossTalent(bot) then
+		return {location = location, motive = "retreat_opposite"}
+	end
+
+	local fountain = J.GetTeamFountain()
+	local best = nil
+	local bestDistance = math.huge
+	local groups = {
+		CachedGetNearbyHeroes(bot, castRange, true, BOT_MODE_NONE),
+		CachedGetNearbyHeroes(bot, castRange, false, BOT_MODE_NONE),
+		bot:GetNearbyCreeps(castRange, true),
+		bot:GetNearbyCreeps(castRange, false),
+	}
+	for _, units in pairs(groups) do
+		for _, unit in pairs(units or {}) do
+			if IsRetreatTossDestinationUnit(bot, target, unit, radius, castRange, fountain) then
+				local distance = GetUnitToLocationDistance(unit, location)
+				if distance < bestDistance then
+					best = unit
+					bestDistance = distance
+				end
+			end
+		end
+	end
+	if best == nil then return nil end
+	return {entity = best, location = best:GetLocation(), motive = "retreat_opposite"}
+end
+
+local function TryRetreatEnemyHeroToss(bot, ability)
+	if not IsCastable(ability)
+		or bot:IsSilenced()
+		or not J.IsSeriouslyRetreating(bot)
+		or not bot:WasRecentlyDamagedByAnyHero(2.0)
+	then
+		return false
+	end
+
+	local radius = GetTossRadius(ability)
+	local payloadState = CapturePayloadState(bot, radius)
+	local target = payloadState.nearest
+	if payloadState.kind ~= "enemy_hero"
+		or not IsSafeEnemyPayload(bot, target, radius, payloadState)
+		or IsHardDisabled(target)
+		or not bot:WasRecentlyDamagedByHero(target, 2.5)
+	then
+		return false
+	end
+
+	local destination = FindOppositeRetreatDestination(bot, target, ability)
+	return destination ~= nil and UseTossDestination(bot, ability, destination)
+end
+
 local function ConsiderTossInterrupt(bot, ability)
 	if not IsCastable(ability) then return nil end
 	local radius = GetTossRadius(ability)
@@ -704,7 +985,7 @@ local function ConsiderTossInterrupt(bot, ability)
 	return nil
 end
 
-local function GetTossDamage(bot, ability)
+GetTossDamage = function(bot, ability)
 	local level = SafeCall(0, function() return ability:GetLevel() end)
 	local damage = TOSS_DAMAGE_BY_LEVEL[level]
 	if damage == nil then return 0 end
@@ -722,30 +1003,23 @@ local function ConsiderToss(bot, ability)
 
 	-- 参考 Tiny：可用身边友/敌小兵作为载荷，但击杀分支不牺牲友方英雄。
 	for _, enemy in pairs(enemies) do
-		if GetOffensivePayload(bot, enemy, radius, false, payloadState) ~= nil
+		local payload = GetOffensivePayload(bot, enemy, radius, false, payloadState)
+		if payload ~= nil
 		and not IsKillProtected(enemy)
 		and J.CanKillTarget(enemy, GetTossDamage(bot, ability), DAMAGE_TYPE_MAGICAL)
 		then
-			return enemy
-		end
-	end
-
-	if J.IsSeriouslyRetreating(bot) and bot:WasRecentlyDamagedByAnyHero(2.0) then
-		for _, enemy in pairs(enemies) do
-			if IsSafeEnemyPayload(bot, enemy, radius, payloadState)
-			and not IsHardDisabled(enemy)
-			and bot:WasRecentlyDamagedByHero(enemy, 2.5)
-			then
-				return enemy
-			end
+			local destination = payload == enemy
+				and FindTacticalEnemyTossDestination(bot, enemy, ability) or nil
+			return enemy, destination
 		end
 	end
 
 	local target = J.GetProperTarget(bot)
+	local payload = GetOffensivePayload(bot, target, radius, true, payloadState)
 	if not J.IsGoingOnSomeone(bot)
 		or not IsValidEnemyHero(bot, target)
 		or GetUnitToUnitDistance(bot, target) > castRange
-		or GetOffensivePayload(bot, target, radius, true, payloadState) == nil
+		or payload == nil
 		or IsHardDisabled(target)
 	then
 		return nil
@@ -753,7 +1027,9 @@ local function ConsiderToss(bot, ability)
 	local allies = #CachedGetNearbyHeroes(bot, 1000, false, BOT_MODE_NONE) + 1
 	local nearbyEnemies = CountVisibleEnemies(bot, 1000)
 	if nearbyEnemies > allies + 1 then return nil end
-	return target
+	local destination = payload == target
+		and FindTacticalEnemyTossDestination(bot, target, ability) or nil
+	return target, destination
 end
 
 local function TryUseShield(bot)
@@ -914,6 +1190,7 @@ function AbilityUsageThink()
 	if not bot:IsSilenced() and ConsiderEmergencyMist(bot, mist, profile) then
 		ClearRescueToss(bot)
 		ClearLaneTowerToss(bot, LANE_TOSS_RETRY_DELAY)
+		ClearPreferredEnemyToss(bot, HERO_TOSS_RETRY_DELAY)
 		UseNoTarget(bot, mist, MIST_MODIFIER)
 		return
 	end
@@ -921,28 +1198,46 @@ function AbilityUsageThink()
 	if not bot:IsSilenced() then
 		local interruptTarget = ConsiderTossInterrupt(bot, toss)
 		if interruptTarget ~= nil then
+			ClearPreferredEnemyToss(bot, HERO_TOSS_RETRY_DELAY)
 			CastToss(bot, toss, interruptTarget)
 			return
 		end
 	end
 
-	if not bot:IsSilenced() and TryRescueAlly(bot, toss) then return end
-	if TryLaneTowerToss(bot, toss) then return end
+	if not bot:IsSilenced() and TryRescueAlly(bot, toss) then
+		ClearPreferredEnemyToss(bot, HERO_TOSS_RETRY_DELAY)
+		return
+	end
+	if TryLaneTowerToss(bot, toss) then
+		ClearPreferredEnemyToss(bot, HERO_TOSS_RETRY_DELAY)
+		return
+	end
+	if bot.suikaPreferredEnemyToss ~= nil
+	and TryPreferredEnemyHeroToss(bot, toss, profile)
+	then
+		return
+	end
 
 	if TryUseActiveItems(bot, profile, mist) then return end
 	if bot:IsSilenced() then
 		ConsiderNeutralItems()
 		return
 	end
+	if TryRetreatEnemyHeroToss(bot, toss) then return end
 
 	if ConsiderUltimate(bot, ultimate, profile) then
 		UseNoTarget(bot, ultimate, ULTIMATE_MODIFIER)
 		return
 	end
+	if TryPreferredEnemyHeroToss(bot, toss, profile) then return end
 
-	local tossTarget = ConsiderToss(bot, toss)
+	local tossTarget, tossDestination = ConsiderToss(bot, toss)
 	if tossTarget ~= nil then
-		CastToss(bot, toss, tossTarget)
+		if tossDestination ~= nil then
+			UseTossDestination(bot, toss, tossDestination)
+		else
+			CastToss(bot, toss, tossTarget)
+		end
 		return
 	end
 
