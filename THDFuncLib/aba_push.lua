@@ -6,25 +6,20 @@ local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 
 
-local pingTimeDelta = 5
-local StartToPushTime = 9 * 60 -- after x mins, start considering to push.
-local weAreStronger = false
-local nEffctiveEnemyHeroesNearPushLoc = 0
-local teamAveLvl = 0
-local enemyTeamAveLvl = 0
-local nInRangeAlly
-local nInRangeEnemy
-local hEnemyAncient
 local BOT_MODE_DESIRE_EXTRA_LOW = 0.02
-local PUSH_DESIRE_CACHE_INTERVAL = 1.5
-local PUSH_DESIRE_STAGGER_INTERVAL = 0.14
+local PUSH_SNAPSHOT_CACHE_INTERVAL = 0.75
 local PUSH_LANE_STICKY_SECONDS = 3.0
 local PUSH_HIGH_GROUND_TARGET_CACHE_INTERVAL = 0.75
-local PUSH_LOCAL_ENEMY_ADVANTAGE_TOLERANCE = 1
 local PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE = 1
 local PUSH_MIN_LOCAL_ALLIES_WHEN_OUTNUMBERED = 2
 local PUSH_OUTNUMBERED_MAX_DESIRE = 0.72
+local PUSH_BASE_DEFENSE_MAX_DESIRE = 0.55
+local PUSH_RECENT_ENEMY_MAX_DESIRE = 0.72
+local PUSH_MISSING_ENEMY_MAX_DESIRE = 0.68
 local PUSH_LOCAL_HERO_RESPONSE_RANGE = 1600
+local PUSH_OBJECTIVE_SNAPSHOT_RANGE = 2000
+local PUSH_BASE_EMERGENCY_RANGE = 1800
+local PUSH_LAST_SEEN_MAX_AGE = 3.0
 local PUSH_LOCAL_HERO_RETREAT_OFFSET = -1200
 local PUSH_ENEMY_PRESSURE_SCORE_PER_HERO = 0.18
 local PUSH_LANE_SWITCH_IMPROVEMENT_RATIO = 0.88
@@ -104,183 +99,272 @@ function Push.SelectLaneByScores(bot, topLaneScore, midLaneScore, botLaneScore)
 end
 
 function Push.GetPushDesire(bot, lane)
-	-- 撤退状态在推进缓存之前判断，避免高地塔锁定后继续沿用旧的推进欲望。
-	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+	-- 安全门不缓存；模式缓存窗口内发生撤退、基地告急或高地门槛变化时必须立即生效。
+	if bot == nil
+	or J.Retreat.ShouldYield(bot, J.Retreat.HIGH)
+	or J.CanNotUseAction(bot)
+	or J.IsDoingRoshan(bot)
+	then
 		return BOT_MODE_DESIRE_NONE
 	end
 
-    local stablePushLane = Push.GetStablePushLane(bot, lane)
-    if stablePushLane ~= lane then
-        return BOT_MODE_DESIRE_NONE
-    end
-
-    return Timer.GetOrComputeBotLane('PushDesire', bot, lane, PUSH_DESIRE_CACHE_INTERVAL, function()
-        return Push.ComputePushDesire(bot, lane)
-    end, PUSH_DESIRE_STAGGER_INTERVAL)
-end
-
-local function CanPushWithLocalNumbers()
-    local allyCount = #nInRangeAlly
-    local enemyCount = #nInRangeEnemy
-    if enemyCount == 0 then return true end
-    if allyCount < PUSH_MIN_LOCAL_ALLIES_WHEN_OUTNUMBERED then return false end
-    return enemyCount - allyCount <= PUSH_LOCAL_ENEMY_ADVANTAGE_TOLERANCE
-end
-
-function Push.ComputePushDesire(bot, lane)
-    if bot.laneToPush == nil then bot.laneToPush = lane end
-	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then return BOT_MODE_DESIRE_NONE end
-
-    local nMaxDesire = 0.9
-    local nSearchRange = 2000
-    local botActiveMode = bot:GetActiveMode()
-    local nModeDesire = bot:GetActiveModeDesire()
-    local bMyLane = bot:GetAssignedLane() == lane
-    local isMidOrEarlyGame = J.IsEarlyGame() or J.IsMidGame()
-    hEnemyAncient = GetAncient(GetOpposingTeam())
-    nInRangeAlly = J.GetAlliesNearLoc(bot:GetLocation(), 1600)
-    nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), 1600)
-
-    if botActiveMode == BOT_MODE_PUSH_TOWER_TOP then
-		bot.laneToPush = LANE_TOP
-	elseif botActiveMode == BOT_MODE_PUSH_TOWER_MID then
-		bot.laneToPush = LANE_MID
-	elseif botActiveMode == BOT_MODE_PUSH_TOWER_BOT then
-		bot.laneToPush = LANE_BOT
+	local laneBuildingTier = Push.GetLaneBuildingTier(lane)
+	local objective = Push.GetLaneBuildingTarget(lane) or GetAncient(GetOpposingTeam())
+	if not Push.IsObjectiveValid(objective) then return BOT_MODE_DESIRE_NONE end
+	if Wasteland.ShouldHoldHighGround(laneBuildingTier, Wasteland.GetStrictTeamAverageLevel()) then
+		return BOT_MODE_DESIRE_NONE
 	end
 
-    -- do not push too early.
-    local currentTime = DotaTime()
+	local stablePushLane = Push.GetStablePushLane(bot, lane)
+	if stablePushLane ~= lane then return BOT_MODE_DESIRE_NONE end
 
-	if (bot:GetAssignedLane() == LANE_MID and J.IsInLaningPhase())
-    or (J.IsDoingRoshan(bot) and J.GetRoshanTeamState(2800).isDoingRoshanWithTeam)
+	local objectiveLocation = Push.GetObjectiveLocation(lane, objective)
+	local snapshotKey = 'PushSnapshot-' .. Push.GetObjectiveKey(objective)
+	local snapshot = Timer.GetOrCompute(
+		Timer.GetBotLaneKey(snapshotKey, bot, lane),
+		PUSH_SNAPSHOT_CACHE_INTERVAL,
+		function()
+			return Push.BuildPushSnapshot(bot, lane, objective, objectiveLocation, laneBuildingTier)
+		end
+	)
+	local immediateSafety = Push.GetImmediateSafetyState(bot)
+	return Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
+end
+
+function Push.IsObjectiveValid(objective)
+	if objective == nil then return false end
+	if objective.IsNull ~= nil and objective:IsNull() then return false end
+	if objective.IsAlive ~= nil and not objective:IsAlive() then return false end
+	return true
+end
+
+function Push.GetObjectiveKey(objective)
+	if objective ~= nil and objective.entindex ~= nil then
+		local index = objective:entindex()
+		if index ~= nil then return tostring(index) end
+	end
+	return tostring(objective)
+end
+
+function Push.GetObjectiveLocation(lane, objective)
+	if Push.IsObjectiveValid(objective) and objective.GetLocation ~= nil then
+		return objective:GetLocation()
+	end
+	return GetLaneFrontLocation(GetTeam(), lane, 0)
+end
+
+local function CountVisibleCreepsNearLocation(listType, location, radius)
+	if listType == nil then return 0 end
+	local count = 0
+	for _, creep in pairs(GetUnitList(listType)) do
+		local visibleHealth = J.Utils.GetVisibleHealth(creep)
+		if visibleHealth ~= nil and GetUnitToLocationDistance(creep, location) <= radius then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+local function SumLocalCombatPower(units)
+	local total = 0
+	for _, unit in pairs(units or {}) do
+		total = total + CombatPower.Estimate(unit)
+	end
+	return total
+end
+
+function Push.GetImmediateSafetyState(bot)
+	local ancient = GetAncient(GetTeam())
+	if ancient == nil then return {baseEmergency = true} end
+	local location = ancient:GetLocation()
+	local enemyHeroPressure = J.CountLastSeenEnemiesNearLoc(location, PUSH_BASE_EMERGENCY_RANGE, PUSH_LAST_SEEN_MAX_AGE)
+	local enemyTpPressure = #J.Utils.GetEnemyIdsInTpToLocation(location, PUSH_BASE_EMERGENCY_RANGE)
+	local effectiveAllies = #J.GetAlliesNearLoc(location, 4500)
+		+ #J.Utils.GetAllyIdsInTpToLocation(location, 4500)
+	return {
+		baseEmergency = enemyHeroPressure + enemyTpPressure > 0 and effectiveAllies < 1,
+		baseEnemyPressure = enemyHeroPressure + enemyTpPressure,
+		effectiveBaseAllies = effectiveAllies,
+	}
+end
+
+function Push.BuildPushSnapshot(bot, lane, objective, objectiveLocation, laneBuildingTier)
+	local allies = J.GetAlliesNearLoc(objectiveLocation, PUSH_OBJECTIVE_SNAPSHOT_RANGE)
+	local enemies = J.GetEnemiesNearLoc(objectiveLocation, PUSH_OBJECTIVE_SNAPSHOT_RANGE)
+	local allyPower = SumLocalCombatPower(allies)
+	local enemyPower = SumLocalCombatPower(enemies)
+	local teamMinLevel = math.huge
+	for i = 1, #GetTeamPlayers(GetTeam()) do
+		local member = GetTeamMember(i)
+		if member ~= nil then teamMinLevel = math.min(teamMinLevel, member:GetLevel()) end
+	end
+	if teamMinLevel == math.huge then teamMinLevel = 0 end
+	local wastelandState = Wasteland.IsEnabled() and Wasteland.GetState() or nil
+	if wastelandState ~= nil then
+		Wasteland.ObserveOuterTowerSnapshot(bot, wastelandState)
+		if wastelandState.outerCommitment == nil then
+			wastelandState.outerCommitment = Wasteland.TryCreateOuterTowerCommitment(bot, lane, wastelandState)
+		end
+	end
+	return {
+		objective = objective,
+		objectiveLocation = objectiveLocation,
+		laneBuildingTier = laneBuildingTier,
+		allyCount = #allies,
+		enemyCount = #enemies,
+		allyPower = allyPower,
+		enemyPower = enemyPower,
+		localPowerAdvantage = #enemies == 0
+			or (#allies >= #enemies and allyPower > 0 and enemyPower > 0 and allyPower >= enemyPower),
+		recentEnemyCount = J.CountLastSeenEnemiesNearLoc(
+			objectiveLocation, PUSH_OBJECTIVE_SNAPSHOT_RANGE, PUSH_LAST_SEEN_MAX_AGE),
+		enemyTpCount = #J.Utils.GetEnemyIdsInTpToLocation(objectiveLocation, PUSH_OBJECTIVE_SNAPSHOT_RANGE),
+		missingEnemyCount = J.Utils.CountMissingEnemyHeroes(),
+		allyCreepCount = CountVisibleCreepsNearLocation(
+			UNIT_LIST_ALLIED_CREEPS, objectiveLocation, PUSH_OBJECTIVE_SNAPSHOT_RANGE),
+		enemyCreepCount = CountVisibleCreepsNearLocation(
+			UNIT_LIST_ENEMY_CREEPS, objectiveLocation, PUSH_OBJECTIVE_SNAPSHOT_RANGE),
+		allyAlive = J.GetNumOfAliveHeroes(false),
+		enemyAlive = J.GetNumOfAliveHeroes(true),
+		allyAverageLevel = J.GetAverageLevel(false),
+		enemyAverageLevel = J.GetAverageLevel(true),
+		allyKills = J.GetNumOfTeamTotalKills(false) + 1,
+		enemyKills = J.GetNumOfTeamTotalKills(true) + 1,
+		teamMinLevel = teamMinLevel,
+		baseLaneDesire = GetPushLaneDesire(lane),
+		doesTeamHaveAegis = J.DoesTeamHaveAegis(),
+		ancientDefenseState = J.GetAncientDefenseState(4500),
+		shouldWaitForImportantItems = Push.ShouldWaitForImportantItemsSpells(
+			GetLaneFrontLocation(GetOpposingTeam(), lane, 0)),
+		wastelandState = wastelandState,
+	}
+end
+
+function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
+	if bot == nil
+	or J.Retreat.ShouldYield(bot, J.Retreat.HIGH)
+	or J.CanNotUseAction(bot)
+	or J.IsDoingRoshan(bot)
+	then
+		return BOT_MODE_DESIRE_NONE
+	end
+	if snapshot == nil then
+		local objective = Push.GetLaneBuildingTarget(lane) or GetAncient(GetOpposingTeam())
+		snapshot = Push.BuildPushSnapshot(
+			bot,
+			lane,
+			objective,
+			Push.GetObjectiveLocation(lane, objective),
+			Push.GetLaneBuildingTier(lane)
+		)
+	end
+	immediateSafety = immediateSafety or Push.GetImmediateSafetyState(bot)
+
+	if bot:GetAssignedLane() == LANE_MID and J.IsInLaningPhase() then
+		return BOT_MODE_DESIRE_EXTRA_LOW
+	end
+	if snapshot.teamMinLevel < 7 then return BOT_MODE_DESIRE_EXTRA_LOW end
+	if snapshot.enemyTpCount > 0 then return BOT_MODE_DESIRE_EXTRA_LOW end
+	-- 守军出现时只在目标点人数与本地可见属性战力均不劣时继续推进。
+	if snapshot.enemyCount > 0 and not snapshot.localPowerAdvantage then
+		return BOT_MODE_DESIRE_EXTRA_LOW
+	end
+
+	local nMaxDesire = 0.9
+	local nSafetyMaxDesire = 1.0
+	local nModeDesire = bot:GetActiveModeDesire()
+	if J.IsDefending(bot) and nModeDesire >= 0.8 then
+		nSafetyMaxDesire = math.min(nSafetyMaxDesire, 0.75)
+	end
+
+	local aAliveCount = snapshot.allyAlive
+	local eAliveCount = snapshot.enemyAlive
+	local nPushDesire = snapshot.baseLaneDesire
+	local teamKillsRatio = snapshot.allyKills / snapshot.enemyKills
+	local canPushWithAliveNumbers = eAliveCount == 0
+		or aAliveCount >= eAliveCount
+		or (aAliveCount >= PUSH_MIN_LOCAL_ALLIES_WHEN_OUTNUMBERED
+			and eAliveCount - aAliveCount <= PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE)
+
+	if eAliveCount > aAliveCount then
+		nSafetyMaxDesire = math.min(nSafetyMaxDesire, PUSH_OUTNUMBERED_MAX_DESIRE)
+	end
+	if snapshot.recentEnemyCount > snapshot.enemyCount then
+		nSafetyMaxDesire = math.min(nSafetyMaxDesire, PUSH_RECENT_ENEMY_MAX_DESIRE)
+	end
+	if snapshot.missingEnemyCount >= 3 and snapshot.allyCount < 3 then
+		nSafetyMaxDesire = math.min(nSafetyMaxDesire, PUSH_MISSING_ENEMY_MAX_DESIRE)
+	end
+	if snapshot.enemyCreepCount > snapshot.allyCreepCount + 2 then
+		nSafetyMaxDesire = math.min(nSafetyMaxDesire, PUSH_OUTNUMBERED_MAX_DESIRE)
+	elseif snapshot.allyCreepCount > snapshot.enemyCreepCount then
+		nPushDesire = nPushDesire + 0.04
+	end
+
+	local ancientDefenseState = snapshot.ancientDefenseState or {}
+	if immediateSafety.baseEmergency
+	or ((ancientDefenseState.enemyPressure or 0) > 0
+		and (ancientDefenseState.effectiveAllyCount or 0) < 1)
+	then
+		nSafetyMaxDesire = math.min(nSafetyMaxDesire, PUSH_BASE_DEFENSE_MAX_DESIRE)
+	end
+	if (ancientDefenseState.effectiveAllyCount or 0) >= 1 then
+		nPushDesire = nPushDesire * 0.5
+	end
+
+	if snapshot.shouldWaitForImportantItems
+	and eAliveCount > aAliveCount + PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE
+	then
+		return BOT_MODE_DESIRE_VERYLOW
+	end
+
+	local botTarget = bot:GetAttackTarget()
+	if J.IsValidBuilding(botTarget)
+	and not string.find(botTarget:GetUnitName(), 'tower1')
+	and not string.find(botTarget:GetUnitName(), 'tower2')
+	and Push.HasBackdoorProtect(botTarget)
 	then
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
 
-	for i = 1, #GetTeamPlayers( GetTeam() )
-    do
-		local member = GetTeamMember(i)
-        if member ~= nil and member:GetLevel() < 7 then return BOT_MODE_DESIRE_EXTRA_LOW end
-    end
-
-    weAreStronger = J.WeAreStronger(bot, nSearchRange)
-    local laneFront = GetLaneFrontLocation(GetTeam(), lane, 0)
-    local distanceToLaneFront = GetUnitToLocationDistance(bot, laneFront)
-    local lEnemyHeroesAroundLoc = J.GetLastSeenEnemiesNearLoc(laneFront, nSearchRange)
-    nEffctiveEnemyHeroesNearPushLoc = #lEnemyHeroesAroundLoc + #J.Utils.GetAllyIdsInTpToLocation(laneFront, nSearchRange)
-    local nMissingEnemyHeroes = J.Utils.CountMissingEnemyHeroes()
-    teamAveLvl = J.GetAverageLevel( false )
-    enemyTeamAveLvl = J.GetAverageLevel( true )
-	local laneBuildingTier = Push.GetLaneBuildingTier(lane)
-	local wastelandState = Wasteland.IsEnabled() and Wasteland.GetState() or nil
-	if wastelandState ~= nil then Wasteland.ObserveOuterTowerSnapshot(bot, wastelandState) end
-	if Wasteland.ShouldHoldHighGround(laneBuildingTier,
-		wastelandState ~= nil and wastelandState.allyAverageLevel or nil)
+	local enemyAncient = GetAncient(GetOpposingTeam())
+	if Push.IsObjectiveValid(enemyAncient)
+	and GetUnitToUnitDistance(bot, enemyAncient) < PUSH_OBJECTIVE_SNAPSHOT_RANGE * 0.8
+	and J.CanBeAttacked(enemyAncient)
+	and not bot:WasRecentlyDamagedByAnyHero(1)
+	and J.GetHP(bot) > 0.5
+	and not Push.HasBackdoorProtect(enemyAncient)
 	then
-		return BOT_MODE_DESIRE_NONE
-	end
-	-- 视野内已有敌方英雄时交给攻击/撤退模式，避免高推塔欲望压住战斗响应。
-	if #nInRangeEnemy > 0 then
-		return BOT_MODE_DESIRE_VERYLOW
-	end
-
-    if not CanPushWithLocalNumbers() then
-        return BOT_MODE_DESIRE_EXTRA_LOW
-    end
-
-	if J.IsDefending(bot) and nModeDesire >= 0.8
-    then
-        nMaxDesire = 0.75
-    end
-
-    local aAliveCount = J.GetNumOfAliveHeroes(false)
-    local eAliveCount = J.GetNumOfAliveHeroes(true)
-    local hAncient = GetAncient(GetTeam())
-    local nPushDesire = GetPushLaneDesire(lane)
-    local allyKills = J.GetNumOfTeamTotalKills(false) + 1
-    local enemyKills = J.GetNumOfTeamTotalKills(true) + 1
-    local teamKillsRatio = allyKills / enemyKills
-    local canPushWithAliveNumbers = eAliveCount == 0
-        or aAliveCount >= eAliveCount
-        or (aAliveCount >= PUSH_MIN_LOCAL_ALLIES_WHEN_OUTNUMBERED
-            and eAliveCount - aAliveCount <= PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE)
-
-    if eAliveCount > aAliveCount then
-        nMaxDesire = math.min(nMaxDesire, PUSH_OUTNUMBERED_MAX_DESIRE)
-    end
-	if wastelandState ~= nil then
-		local commitment = Wasteland.TryCreateOuterTowerCommitment(bot, lane, wastelandState)
-		if commitment ~= nil then wastelandState.outerCommitment = commitment end
+		return Wasteland.AdjustPushDesire(
+			BOT_ACTION_DESIRE_ABSOLUTE * 0.98,
+			snapshot.laneBuildingTier,
+			snapshot.wastelandState,
+			lane,
+			nSafetyMaxDesire
+		)
 	end
 
-    local distanceToEnemyAncient = GetUnitToUnitDistance(bot, hEnemyAncient)
-    local ancientDefenseState = J.GetAncientDefenseState(4500)
-    local nEffctiveAllyHeroesNearAncient = ancientDefenseState.effectiveAllyCount
-	local nEnemyUnitsAroundAncient = ancientDefenseState.enemyPressure
-    if nEnemyUnitsAroundAncient > 0 and nEffctiveAllyHeroesNearAncient < 1
-    then
-        nMaxDesire = 0.55
-    end
-    if nEffctiveAllyHeroesNearAncient >= 1 then
-        nPushDesire = nPushDesire * 0.5
-    end
+	if canPushWithAliveNumbers then
+		if snapshot.doesTeamHaveAegis then nPushDesire = nPushDesire + 0.3 end
+		local aliveLead = aAliveCount - eAliveCount
+		if aliveLead > 0 then nPushDesire = nPushDesire + math.min(0.18, aliveLead * 0.12) end
+		if snapshot.localPowerAdvantage and snapshot.enemyCount > 0 then
+			nPushDesire = nPushDesire + 0.08
+		end
+		local levelLead = snapshot.allyAverageLevel - snapshot.enemyAverageLevel
+		if levelLead >= 1 then nPushDesire = nPushDesire + math.min(0.12, levelLead * 0.04) end
+		if teamKillsRatio >= 1.25 then nPushDesire = nPushDesire + 0.05 end
+		local desire = RemapValClamped(nPushDesire, 0, 1, 0, nMaxDesire)
+		return Wasteland.AdjustPushDesire(
+			desire,
+			snapshot.laneBuildingTier,
+			snapshot.wastelandState,
+			lane,
+			nSafetyMaxDesire
+		)
+	end
 
-    -- 如果有重要物品或技能在cd，且敌人英雄数量大于我方英雄数量，则不上高
-    local vEnemyLaneFrontLocation = GetLaneFrontLocation(GetOpposingTeam(), lane, 0)
-    if Push.ShouldWaitForImportantItemsSpells(vEnemyLaneFrontLocation)
-    and eAliveCount > aAliveCount + PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE then
-        return BOT_MODE_DESIRE_VERYLOW
-    end
-
-    local botTarget = bot:GetAttackTarget()
-    if J.IsValidBuilding(botTarget)
-    and not string.find(botTarget:GetUnitName(), 'tower1')
-    and not string.find(botTarget:GetUnitName(), 'tower2')
-    then
-        if Push.HasBackdoorProtect(botTarget)
-        then
-            return BOT_MODE_DESIRE_EXTRA_LOW
-        end
-    end
-    
-    if distanceToEnemyAncient < nSearchRange * 0.8
-    and J.CanBeAttacked(hEnemyAncient)
-    and not bot:WasRecentlyDamagedByAnyHero(1)
-    and J.GetHP(bot) > 0.5
-    and not Push.HasBackdoorProtect(hEnemyAncient)
-    then
-        J.SetTargetIfChanged(bot, hEnemyAncient, 0.6)
-        J.ActionAttackUnit(bot, 'push_attack_enemy_ancient_desire', hEnemyAncient, true, 0.45)
-        return BOT_ACTION_DESIRE_ABSOLUTE * 0.98
-
-    end
-
-    local pushLane = Push.WhichLaneToPush(bot, lane)
-    local isCurrentLanePushLane = pushLane == lane
-
-    -- General Push
-    if isCurrentLanePushLane
-    or ((J.IsLateGame() and isCurrentLanePushLane) or isMidOrEarlyGame)
-    then
-        if canPushWithAliveNumbers
-        then
-            if J.DoesTeamHaveAegis() then
-                nPushDesire = nPushDesire + 0.3
-            end
-			-- 优势只作为有界增益；原逻辑在敌方存活更多时反而加欲望，方向与注释及目标相反。
-			local aliveLead = aAliveCount - eAliveCount
-			if aliveLead > 0 then nPushDesire = nPushDesire + math.min(0.18, aliveLead * 0.12) end
-			if weAreStronger then nPushDesire = nPushDesire + 0.08 end
-			local levelLead = teamAveLvl - enemyTeamAveLvl
-			if levelLead >= 1 then nPushDesire = nPushDesire + math.min(0.12, levelLead * 0.04) end
-			if teamKillsRatio >= 1.25 then nPushDesire = nPushDesire + 0.05 end
-			local desire = RemapValClamped(nPushDesire, 0, 1, 0, nMaxDesire)
-			return Wasteland.AdjustPushDesire(desire, laneBuildingTier, wastelandState, lane)
-        end
-    end
-
-    return lane == LANE_MID and BOT_MODE_DESIRE_VERYLOW or BOT_MODE_DESIRE_EXTRA_LOW
+	return lane == LANE_MID and BOT_MODE_DESIRE_VERYLOW or BOT_MODE_DESIRE_EXTRA_LOW
 end
 
 function Push.WhichLaneToPush(bot, lane)
@@ -288,7 +372,7 @@ function Push.WhichLaneToPush(bot, lane)
 	if commitment ~= nil then return commitment.lane end
 
     local cacheKey = 'PushWhichLaneToPush-'..tostring(GetTeam())
-    local cachedLane = J.Utils.GetCachedVars(cacheKey, 1.0)
+    local cachedLane = J.Utils.GetCachedVars(cacheKey, PUSH_SNAPSHOT_CACHE_INTERVAL)
     if cachedLane ~= nil then
         return cachedLane
     end
@@ -325,8 +409,11 @@ function Push.WhichLaneToPush(bot, lane)
             local info = GetHeroLastSeenInfo(id)
             if info ~= nil then
                 local dInfo = info[1]
-                if dInfo ~= nil then
-                    if     J.GetDistance(vLaneFrontLocationTop, dInfo.location) <= 1600 then
+                if dInfo ~= nil
+                and type(dInfo.time_since_seen) == 'number'
+                and dInfo.time_since_seen <= PUSH_LAST_SEEN_MAX_AGE
+                then
+                    if J.GetDistance(vLaneFrontLocationTop, dInfo.location) <= 1600 then
                         count1 = count1 + 1
                     elseif J.GetDistance(vLaneFrontLocationMid, dInfo.location) <= 1600 then
                         count2 = count2 + 1
@@ -512,6 +599,7 @@ local fNextMovementTime = 0
 function Push.PushThink(bot, lane)
     if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
 	if J.CanNotUseAction(bot) then return end
+	local hEnemyAncient = GetAncient(GetOpposingTeam())
 
 	local retreatState = J.Retreat.GetState(bot)
 	local conversionUnsafe, conversionReason = Wasteland.ShouldWithdrawConversionPush(
@@ -596,6 +684,19 @@ function Push.PushThink(bot, lane)
 		return
     end
 
+	-- 欲望函数只决定优先级；远古目标与所有攻击指令统一在动作阶段下达。
+	if Push.IsObjectiveValid(hEnemyAncient)
+	and GetUnitToUnitDistance(bot, hEnemyAncient) < PUSH_OBJECTIVE_SNAPSHOT_RANGE * 0.8
+	and J.CanBeAttacked(hEnemyAncient)
+	and not bot:WasRecentlyDamagedByAnyHero(1)
+	and J.GetHP(bot) > 0.5
+	and not Push.HasBackdoorProtect(hEnemyAncient)
+	then
+		J.SetTargetIfChanged(bot, hEnemyAncient, 0.6)
+		J.ActionAttackUnit(bot, 'push_attack_enemy_ancient', hEnemyAncient, true, 0.45)
+		return
+	end
+
     if Push.TryAttackLaneBarracks(bot, lane) then return end
 
     if J.IsValidBuilding(hLaneBuildingTarget)
@@ -606,7 +707,8 @@ function Push.PushThink(bot, lane)
         return
     end
 
-    if GetUnitToUnitDistance(bot, hEnemyAncient) <= 3200
+    if Push.IsObjectiveValid(hEnemyAncient)
+    and GetUnitToUnitDistance(bot, hEnemyAncient) <= 3200
     and (   GetTower(GetOpposingTeam(), TOWER_TOP_2) == nil
         and GetTower(GetOpposingTeam(), TOWER_MID_2) == nil
         and GetTower(GetOpposingTeam(), TOWER_BOT_2) == nil)
@@ -620,8 +722,11 @@ function Push.PushThink(bot, lane)
 
     end
 
-    local ancientAllies = J.GetAlliesNearLoc(hEnemyAncient:GetLocation(), 1600)
-    if GetUnitToUnitDistance(bot, hEnemyAncient) < 1600
+    local ancientAllies = Push.IsObjectiveValid(hEnemyAncient)
+        and J.GetAlliesNearLoc(hEnemyAncient:GetLocation(), 1600)
+        or {}
+    if Push.IsObjectiveValid(hEnemyAncient)
+    and GetUnitToUnitDistance(bot, hEnemyAncient) < 1600
     and J.CanBeAttacked(hEnemyAncient)
     and not Push.HasBackdoorProtect(hEnemyAncient)
     and (#Push.GetAllyHeroesAttackingUnit(hEnemyAncient) >= 3

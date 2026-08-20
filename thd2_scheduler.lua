@@ -2,6 +2,18 @@ local Scheduler = {}
 
 local DEFAULT_PHASE_INTERVAL = 0.12
 local BASE_ENEMY_SCAN_RANGE = 1800
+local OBJECTIVE_THINK_INTERVAL = 0.25
+
+local OBJECTIVE_MODES = {}
+local function RegisterObjectiveMode(mode)
+    if mode ~= nil then OBJECTIVE_MODES[mode] = true end
+end
+RegisterObjectiveMode(BOT_MODE_PUSH_TOWER_TOP)
+RegisterObjectiveMode(BOT_MODE_PUSH_TOWER_MID)
+RegisterObjectiveMode(BOT_MODE_PUSH_TOWER_BOT)
+RegisterObjectiveMode(BOT_MODE_DEFEND_TOWER_TOP)
+RegisterObjectiveMode(BOT_MODE_DEFEND_TOWER_MID)
+RegisterObjectiveMode(BOT_MODE_DEFEND_TOWER_BOT)
 
 local function HasVisibleEnemyHeroWithinRange(bot, range)
     for _, enemy in pairs(GetUnitList(UNIT_LIST_ENEMY_HEROES)) do
@@ -68,13 +80,16 @@ function Scheduler.IsInCombat(bot)
     return false
 end
 
+function Scheduler.IsObjectiveMode(mode)
+    return OBJECTIVE_MODES[mode] == true
+end
+
 function Scheduler.IsHighPriorityState(bot)
     if Scheduler.IsInCombat(bot) then return true end
     if bot == nil or not bot:IsAlive() then return false end
 
     local mode = bot:GetActiveMode()
-    if mode == BOT_MODE_DEFEND_TOWER
-        or mode == BOT_MODE_PUSH_TOWER
+    if Scheduler.IsObjectiveMode(mode)
         or mode == BOT_MODE_ATTACK
         or mode == BOT_MODE_RETREAT
         or mode == BOT_MODE_ROSHAN
@@ -92,9 +107,15 @@ function Scheduler.IsHighPriorityState(bot)
 end
 
 function Scheduler.GetLowPowerThinkInterval(bot, normalInterval, lowPowerInterval)
-    if Scheduler.IsHighPriorityState(bot) then
+    if Scheduler.IsInCombat(bot) then
         return normalInterval
     end
+
+    -- 六个实际推塔/守塔模式采用固定目标周期，避免误落入 1.25 秒以上的低功耗分支。
+    if bot ~= nil and Scheduler.IsObjectiveMode(bot:GetActiveMode()) then
+        return OBJECTIVE_THINK_INTERVAL
+    end
+    if Scheduler.IsHighPriorityState(bot) then return normalInterval end
 
     local gameTime = DotaTime()
     if gameTime > 40 * 60 then

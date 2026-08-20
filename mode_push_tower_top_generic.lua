@@ -8,10 +8,8 @@ if bot.PushLaneDesire == nil then bot.PushLaneDesire = {0, 0, 0} end
 
 function GetDesire()
 	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then return BOT_MODE_DESIRE_NONE end
-    return Utils.GetCachedModeDesire(bot, 'push_top', function()
-        bot.PushLaneDesire[LANE_TOP] = Push.GetPushDesire(bot, LANE_TOP)
-        return bot.PushLaneDesire[LANE_TOP]
-    end)
+    bot.PushLaneDesire[LANE_TOP] = Push.GetPushDesire(bot, LANE_TOP)
+    return bot.PushLaneDesire[LANE_TOP]
 end
 function OnStart() Utils.NoteModeStart(bot, 'push_top') end
 function Think() Push.PushThink(bot, LANE_TOP) end

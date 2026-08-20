@@ -361,8 +361,11 @@ function Strategy.ShouldHoldHighGround(laneBuildingTier, averageLevel)
 	return level == nil or level < Strategy.MIN_TEAM_AVERAGE_LEVEL_FOR_HIGH_GROUND
 end
 
-function Strategy.AdjustPushDesire(baseDesire, laneBuildingTier, state, lane)
-	if not Strategy.IsEnabled() then return baseDesire end
+function Strategy.AdjustPushDesire(baseDesire, laneBuildingTier, state, lane, safetyCap)
+	local adjustedDesire = baseDesire or BOT_MODE_DESIRE_NONE
+	if not Strategy.IsEnabled() then
+		return safetyCap ~= nil and math.min(adjustedDesire, safetyCap) or adjustedDesire
+	end
 	if Strategy.ShouldHoldHighGround(laneBuildingTier,
 		state ~= nil and state.allyAverageLevel or nil)
 	then
@@ -371,7 +374,7 @@ function Strategy.AdjustPushDesire(baseDesire, laneBuildingTier, state, lane)
 	state = state or Strategy.GetState()
 	local commit = state.outerCommitment or Strategy.GetOuterTowerCommitment()
 	if commit ~= nil and (lane == nil or commit.lane == lane) and (tonumber(laneBuildingTier) or 3) <= 2 then
-		return math.max(baseDesire or BOT_MODE_DESIRE_NONE, Strategy.OUTER_COMMIT_DESIRE)
+		adjustedDesire = math.max(baseDesire or BOT_MODE_DESIRE_NONE, Strategy.OUTER_COMMIT_DESIRE)
 	end
 	local now = tonumber(state.time) or 0
 	if (tonumber(laneBuildingTier) or 3) <= 2
@@ -379,9 +382,11 @@ function Strategy.AdjustPushDesire(baseDesire, laneBuildingTier, state, lane)
 		and now < Strategy.OUTER_TOWER_DEADLINE
 		and (state.teamAhead == true or Strategy.IsTeamAhead(state))
 	then
-		return math.max(baseDesire or BOT_MODE_DESIRE_NONE, Strategy.ADVANTAGE_OUTER_PUSH_DESIRE)
+		adjustedDesire = math.max(adjustedDesire or BOT_MODE_DESIRE_NONE, Strategy.ADVANTAGE_OUTER_PUSH_DESIRE)
 	end
-	return baseDesire
+	-- Wasteland 只能抬高通过安全检查后的基础欲望，不能越过基地、人数或敌情上限。
+	if safetyCap ~= nil then adjustedDesire = math.min(adjustedDesire, safetyCap) end
+	return adjustedDesire
 end
 
 function Strategy.AdjustRoamProposalDesire(baseDesire, state)
