@@ -816,7 +816,7 @@ local function TryStartSingleSpell(target, enemies)
 		local creeps = bot:GetNearbyLaneCreeps(850, true) or {}
 		if #creeps >= 4 and StartSingle("QER", creeps[1]) then return true end
 	end
-	if J.IsDoingRoshan(bot) or J.IsPushing(bot) or mode == BOT_MODE_FARM then
+	if J.IsRoshanCommitmentActive(bot) or J.IsPushing(bot) or mode == BOT_MODE_FARM then
 		if StartSingle("QQR", bot) then return true end
 	end
 	return false
@@ -945,6 +945,9 @@ end
 function AbilityUsageThink()
 	-- 帕秋莉连段需要逐帧输入属性，不能使用IsBotAwake内置的0.25秒全局门控。
 	if bot == nil or bot:IsIllusion() or bot:IsHexed() or bot:IsStunned() then return end
+	if type(ObserveAbilityUsageTask) == 'function' then
+		ObserveAbilityUsageTask(bot, 'ability_usage_unthrottled', 0)
+	end
 	-- 元素切换可以取消合成技能后摇；仅让既有连段越过IsUsingAbility，不放宽施法前摇、控制或排队动作。
 	if comboState ~= nil
 	and bot:IsAlive()

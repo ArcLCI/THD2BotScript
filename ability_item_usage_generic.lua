@@ -577,9 +577,10 @@ end
 function CourierUsageThink()
 	if bot:IsIllusion() or not bot:IsAlive() then return end
 	if bot.lastCourierFrameProcessTime == nil then bot.lastCourierFrameProcessTime = DotaTime() end
-	local courierThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime, 2.0)
+	local courierThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime, 2.0, 'courier_usage_generic')
 	if DotaTime() - bot.lastCourierFrameProcessTime < courierThinkInterval then return end
 	bot.lastCourierFrameProcessTime = DotaTime()
+	Scheduler.ObserveTaskRun(bot, 'courier_usage_generic', courierThinkInterval)
 	CourierUsageComplement()
 end
 
@@ -656,7 +657,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	if bot:GetActiveMode() == BOT_MODE_RUNE
 		or ( bot:IsRooted() )
 		or ( bot:HasModifier( "modifier_teleporting" ) )
-		or (J.IsDoingRoshan(bot) and GetUnitToLocationDistance(bot, J.GetCurrentRoshanLocation()) <= 2800)
+		or (J.IsRoshanCommitmentActive(bot) and GetUnitToLocationDistance(bot, J.GetCurrentRoshanLocation()) <= 2800)
 	then return BOT_ACTION_DESIRE_NONE end
 
 	if bot:GetHealth() < 240
@@ -808,7 +809,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 	--支援团战和守家
 	if bot:GetLevel() > 10
-		and nMode ~= BOT_MODE_ROSHAN
+		and not J.IsRoshanCommitmentActive(bot)
 		and nMode ~= BOT_MODE_ATTACK
 		and ( botTarget == nil or not botTarget:IsHero() )
 	then
@@ -1015,10 +1016,11 @@ function ItemUsageThink()
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 	if bot.lastItemFrameProcessTime == nil then bot.lastItemFrameProcessTime = DotaTime() end
 
-	local itemThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25)
+	local itemThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25, 'item_usage_generic')
 	if DotaTime() > 30 and (DotaTime() - bot.lastItemFrameProcessTime < itemThinkInterval) then return end
 
 	bot.lastItemFrameProcessTime = DotaTime()
+	Scheduler.ObserveTaskRun(bot, 'item_usage_generic', itemThinkInterval)
 	if not J.IsNoItemIllution(bot) then ItemUsageComplement() end
 end
 
@@ -1029,10 +1031,11 @@ function AbilityUsageThink()
 	if Consumables.IsCastConfirmationPending(bot) then return end
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end
 
-	local abilityThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25)
+	local abilityThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25, 'ability_usage_generic')
 	if DotaTime() > 30 and (DotaTime() - bot.lastAbilityFrameProcessTime < abilityThinkInterval) and bot.isBear == nil then return end
 
 	bot.lastAbilityFrameProcessTime = DotaTime()
+	Scheduler.ObserveTaskRun(bot, 'ability_usage_generic', abilityThinkInterval)
 	J.PrintActionPressureStats(300)
 	if BotBuild ~= nil and not J.IsNoAbilityIllution(bot) then BotBuild.SkillsComplement() end
 end

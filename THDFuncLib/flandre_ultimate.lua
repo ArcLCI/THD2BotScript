@@ -503,6 +503,20 @@ function X.GetLockedTarget(bot)
 	return state.lockedTarget
 end
 
+function X.SetLockedTarget(bot, target)
+	if bot:GetUnitName() ~= HERO_NAME or not IsValidHeroTarget(bot, target) then return false end
+	local state = X.Update(bot)
+	if state.phase ~= "active" or state.remainingAttacks <= 0 then return false end
+	-- 位移装备切入前同步锁定目标，下一次大招 Think 会继续攻击而不是走回旧目标。
+	state.lockedTarget = target
+	state.preferredTarget = target
+	state.controlReleased = false
+	state.noTargetSince = nil
+	state.lastThinkTime = -90
+	RememberTarget(state, target)
+	return true
+end
+
 function X.GetModeDesire(bot)
 	if bot:GetUnitName() ~= HERO_NAME then return BOT_MODE_DESIRE_NONE end
 	local state = X.Update(bot)

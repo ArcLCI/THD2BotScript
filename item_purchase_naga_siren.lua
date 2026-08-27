@@ -2,52 +2,34 @@ require(GetScriptDirectory() .. "/thd2_item_purchase")
 
 local tableItemsToBuy = {
 	"item_horse_red",
+	"item_mystia_wings",
 	"item_inaba_illusion_weapon",
-	"item_anchor",
 	"item_dragon_star",
+	"item_touhou_banana",
+	"item_cat_foot",
+	"item_recipe_brother_sharp",
 	"item_ganggenier",
-	"item_horse_king_compressor",
-	"item_recipe_horse_king",
 	"item_wanbaochui2",
-	"item_yukkuri_stick",
 	"item_glutton_spork",
 	"item_recipe_trinity",
+	"item_horse_king_compressor",
+	"item_recipe_horse_king",
+	"item_wanmeitiaoyuezhuangzhi",
+	"item_gap_creator",
 }
 
 local seedID = nil
 local nextPurchase = -1
 
-local function HasItem(bot, itemName)
-	return bot:FindItemSlot(itemName) >= 0
-end
-
-local function TryEquipTrinity(bot)
-	local trinitySlot = bot:FindItemSlot("item_trinity")
-	if trinitySlot < 6 or trinitySlot > 8 then return false end
+local function TryEquipFromBackpack(bot, itemName)
+	local itemSlot = bot:FindItemSlot(itemName)
+	if itemSlot < 6 or itemSlot > 8 then return false end
 	for slot = 0, 5 do
 		if bot:GetItemInSlot(slot) == nil then
-			bot:ActionImmediate_SwapItems(trinitySlot, slot)
+			bot:ActionImmediate_SwapItems(itemSlot, slot)
 			return true
 		end
 	end
-	return false
-end
-
-local function TrySellAnchorForTrinity(bot)
-	local anchorSlot = bot:FindItemSlot("item_anchor")
-	if anchorSlot < 0 then return false end
-
-	-- 饕餮叉勺是三位一体的第一件下位；买到后船锚完成过渡职责并让出装备格。
-	if HasItem(bot, "item_yukkuri_stick")
-	and (HasItem(bot, "item_glutton_spork") or HasItem(bot, "item_trinity"))
-	then
-		local anchor = bot:GetItemInSlot(anchorSlot)
-		if anchor ~= nil then
-			bot:ActionImmediate_SellItem(anchor)
-			return true
-		end
-	end
-
 	return false
 end
 
@@ -55,8 +37,9 @@ function ItemPurchaseThink()
 	if seedID == nil then seedID = RandomInt(1, 999999999) end
 
 	local bot = GetBot()
-	if TryEquipTrinity(bot) then return end
-	if TrySellAnchorForTrinity(bot) then return end
+	-- 合成会腾出主装备格；若终装落在背包，下一次购买 Think 立即换回主栏。
+	if TryEquipFromBackpack(bot, "item_trinity") then return end
+	if TryEquipFromBackpack(bot, "item_nb9ball") then return end
 
 	local tableEdible = {
 		"item_mushroom_pie_immediate",

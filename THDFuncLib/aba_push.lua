@@ -36,6 +36,13 @@ end
 function Push.GetStablePushLane(bot, lane)
     if bot == nil then return lane end
 
+	local continuationLane = Wasteland.GetPushContinuationLane ~= nil
+		and Wasteland.GetPushContinuationLane() or nil
+	if continuationLane ~= nil then
+		bot.StablePushLane = continuationLane
+		bot.StablePushLaneUntil = GameTime() + PUSH_LANE_STICKY_SECONDS
+		return continuationLane
+	end
 	local conversion = Wasteland.GetConversionOpportunity()
 	local commitment = Wasteland.GetOuterTowerCommitment()
 	if conversion ~= nil and conversion.lane ~= nil
@@ -103,7 +110,7 @@ function Push.GetPushDesire(bot, lane)
 	if bot == nil
 	or J.Retreat.ShouldYield(bot, J.Retreat.HIGH)
 	or J.CanNotUseAction(bot)
-	or J.IsDoingRoshan(bot)
+	or J.IsRoshanCommitmentActive(bot)
 	then
 		return BOT_MODE_DESIRE_NONE
 	end
@@ -285,7 +292,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	if bot == nil
 	or J.Retreat.ShouldYield(bot, J.Retreat.HIGH)
 	or J.CanNotUseAction(bot)
-	or J.IsDoingRoshan(bot)
+	or J.IsRoshanCommitmentActive(bot)
 	then
 		return BOT_MODE_DESIRE_NONE
 	end
@@ -426,6 +433,9 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 end
 
 function Push.WhichLaneToPush(bot, lane)
+	local continuationLane = Wasteland.GetPushContinuationLane ~= nil
+		and Wasteland.GetPushContinuationLane() or nil
+	if continuationLane ~= nil then return continuationLane end
 	local commitment = Wasteland.GetOuterTowerCommitment()
 	if commitment ~= nil then return commitment.lane end
 
@@ -552,18 +562,32 @@ local function GetLaneBuildingIDs(lane)
     end
 end
 
+local function GetLiveTower(team, towerID)
+	if towerID == nil then return nil end
+	local tower = GetTower(team, towerID)
+	if not Wasteland.IsEnabled() then return tower end
+	return Push.IsObjectiveValid(tower) and tower or nil
+end
+
+local function GetLiveBarracks(team, barracksID)
+	if barracksID == nil then return nil end
+	local building = GetBarracks(team, barracksID)
+	if not Wasteland.IsEnabled() then return building end
+	return Push.IsObjectiveValid(building) and building or nil
+end
+
 function Push.GetLaneBuildingTarget(lane)
     local tower1ID, tower2ID, tower3ID, meleeBarracksID, rangedBarracksID = GetLaneBuildingIDs(lane)
     if tower1ID == nil then return nil end
 
     local enemyTeam = GetOpposingTeam()
-    return GetTower(enemyTeam, tower1ID)
-        or GetTower(enemyTeam, tower2ID)
-        or GetTower(enemyTeam, tower3ID)
-        or GetBarracks(enemyTeam, meleeBarracksID)
-        or GetBarracks(enemyTeam, rangedBarracksID)
-		or (Wasteland.IsEnabled() and TOWER_BASE_1 ~= nil and GetTower(enemyTeam, TOWER_BASE_1) or nil)
-		or (Wasteland.IsEnabled() and TOWER_BASE_2 ~= nil and GetTower(enemyTeam, TOWER_BASE_2) or nil)
+    return GetLiveTower(enemyTeam, tower1ID)
+        or GetLiveTower(enemyTeam, tower2ID)
+        or GetLiveTower(enemyTeam, tower3ID)
+        or GetLiveBarracks(enemyTeam, meleeBarracksID)
+        or GetLiveBarracks(enemyTeam, rangedBarracksID)
+		or (Wasteland.IsEnabled() and GetLiveTower(enemyTeam, TOWER_BASE_1) or nil)
+		or (Wasteland.IsEnabled() and GetLiveTower(enemyTeam, TOWER_BASE_2) or nil)
 end
 
 function Push.GetLaneBarracks(lane)
@@ -571,7 +595,7 @@ function Push.GetLaneBarracks(lane)
     if meleeBarracksID == nil then return nil, nil end
 
     local enemyTeam = GetOpposingTeam()
-    return GetBarracks(enemyTeam, meleeBarracksID), GetBarracks(enemyTeam, rangedBarracksID)
+    return GetLiveBarracks(enemyTeam, meleeBarracksID), GetLiveBarracks(enemyTeam, rangedBarracksID)
 end
 
 function Push.CanAttackManagedBuilding(bot, lane, target, objective)
@@ -586,7 +610,7 @@ end
 
 function Push.TryAttackLaneBarracks(bot, lane, objective)
     local _, _, tower3ID = GetLaneBuildingIDs(lane)
-    if tower3ID == nil or GetTower(GetOpposingTeam(), tower3ID) ~= nil then return false end
+    if tower3ID == nil or GetLiveTower(GetOpposingTeam(), tower3ID) ~= nil then return false end
 
     local meleeBarracks, rangedBarracks = Push.GetLaneBarracks(lane)
     local candidates = {
@@ -1186,39 +1210,39 @@ end
 
 function Push.GetLaneBuildingTier(nLane)
     if nLane == LANE_TOP then
-        if GetTower(GetOpposingTeam(), TOWER_TOP_1) ~= nil then
+        if GetLiveTower(GetOpposingTeam(), TOWER_TOP_1) ~= nil then
             return 1
-        elseif GetTower(GetOpposingTeam(), TOWER_TOP_2) ~= nil then
+        elseif GetLiveTower(GetOpposingTeam(), TOWER_TOP_2) ~= nil then
             return 2
-        elseif GetTower(GetOpposingTeam(), TOWER_TOP_3) ~= nil
-            or GetBarracks(GetOpposingTeam(), BARRACKS_TOP_MELEE) ~= nil
-            or GetBarracks(GetOpposingTeam(), BARRACKS_TOP_RANGED) ~= nil
+        elseif GetLiveTower(GetOpposingTeam(), TOWER_TOP_3) ~= nil
+            or GetLiveBarracks(GetOpposingTeam(), BARRACKS_TOP_MELEE) ~= nil
+            or GetLiveBarracks(GetOpposingTeam(), BARRACKS_TOP_RANGED) ~= nil
         then
             return 3
         else
             return 4
         end
     elseif nLane == LANE_MID then
-        if GetTower(GetOpposingTeam(), TOWER_MID_1) ~= nil then
+        if GetLiveTower(GetOpposingTeam(), TOWER_MID_1) ~= nil then
             return 1
-        elseif GetTower(GetOpposingTeam(), TOWER_MID_2) ~= nil then
+        elseif GetLiveTower(GetOpposingTeam(), TOWER_MID_2) ~= nil then
             return 2
-        elseif GetTower(GetOpposingTeam(), TOWER_MID_3) ~= nil
-            or GetBarracks(GetOpposingTeam(), BARRACKS_MID_MELEE) ~= nil
-            or GetBarracks(GetOpposingTeam(), BARRACKS_MID_RANGED) ~= nil
+        elseif GetLiveTower(GetOpposingTeam(), TOWER_MID_3) ~= nil
+            or GetLiveBarracks(GetOpposingTeam(), BARRACKS_MID_MELEE) ~= nil
+            or GetLiveBarracks(GetOpposingTeam(), BARRACKS_MID_RANGED) ~= nil
         then
             return 3
         else
             return 4
         end
     elseif nLane == LANE_BOT then
-        if GetTower(GetOpposingTeam(), TOWER_BOT_1) ~= nil then
+        if GetLiveTower(GetOpposingTeam(), TOWER_BOT_1) ~= nil then
             return 1
-        elseif GetTower(GetOpposingTeam(), TOWER_BOT_2) ~= nil then
+        elseif GetLiveTower(GetOpposingTeam(), TOWER_BOT_2) ~= nil then
             return 2
-        elseif GetTower(GetOpposingTeam(), TOWER_BOT_3) ~= nil
-            or GetBarracks(GetOpposingTeam(), BARRACKS_BOT_MELEE) ~= nil
-            or GetBarracks(GetOpposingTeam(), BARRACKS_BOT_RANGED) ~= nil
+        elseif GetLiveTower(GetOpposingTeam(), TOWER_BOT_3) ~= nil
+            or GetLiveBarracks(GetOpposingTeam(), BARRACKS_BOT_MELEE) ~= nil
+            or GetLiveBarracks(GetOpposingTeam(), BARRACKS_BOT_RANGED) ~= nil
         then
             return 3
         else
@@ -1255,13 +1279,25 @@ function Push.IsAntiBackdoorStopBuilding(target)
         or target == GetBarracks(enemyTeam, BARRACKS_BOT_RANGED)
 end
 
-function Push.HasDefenseGlyphBuff(target)
+local function CanInspectBuilding(target)
     if target == nil then return false end
+    local ok, visible = pcall(function()
+        if target.IsNull ~= nil and target:IsNull() then return false end
+        if target.CanBeSeen == nil or not target:CanBeSeen() then return false end
+        return target.IsAlive == nil or target:IsAlive()
+    end)
+    return ok and visible == true
+end
+
+function Push.HasDefenseGlyphBuff(target)
+    if not CanInspectBuilding(target) then return false end
     return target:HasModifier('modifier_fountain_glyph')
 end
 
 function Push.HasBackdoorProtect(target)
     if target == nil then return false end
+    -- 不可见建筑的保护状态不可读，动作层必须失败关闭。
+    if not CanInspectBuilding(target) then return true end
     if Push.HasDefenseGlyphBuff(target)
         or target:HasModifier('modifier_backdoor_protection')
         or target:HasModifier('modifier_backdoor_protection_in_base')

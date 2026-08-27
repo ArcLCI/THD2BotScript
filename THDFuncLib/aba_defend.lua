@@ -336,7 +336,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 	if #state.nInRangeEnemy > 0 and distanceToDefendLoc < 1200
 	or bot:GetLevel() < 3
 	or (bot:GetAssignedLane() == LANE_MID and bot:GetLevel() < 10)
-	or (J.IsDoingRoshan(bot) and J.GetRoshanTeamState(2800).isDoingRoshanWithTeam)
+	or (J.IsRoshanCommitmentActive(bot) and J.GetRoshanTeamState(2800).isDoingRoshanWithTeam)
 	then
 		return BOT_MODE_DESIRE_NONE
 	end

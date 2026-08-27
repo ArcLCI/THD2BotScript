@@ -14,6 +14,14 @@ local UNDODGEABLE_CONTROL_RANGE = 320
 local LOW_HP_PROJECTILE_DODGE_RATIO = 0.18
 local DODGEABLE_DAMAGE_RANGE = 520
 local UNDODGEABLE_DAMAGE_RANGE = 260
+local WINGS_CHASE_RANGE = 1200
+local WINGS_RETREAT_RANGE = 1000
+local WINGS_ATTACK_MARGIN = 125
+local DRAGON_STAR_MODIFIER = "modifier_item_dragon_star_buff"
+local PERFECT_JUMP_RANGE = 499
+local NB_JUMP_RANGE = 999
+local ULTIMATE_JUMP_LOW_HP = 0.55
+local ULTIMATE_JUMP_BACKLINE_ATTACK_RANGE = 400
 
 -- 当前地图中已确认会产生追踪弹道的控制；同时保留常见原版点控名用于兼容。
 local TRACKING_CONTROL_ABILITIES = {
@@ -126,11 +134,6 @@ local function GetExpectedUltimateAttackCount(bot, ability)
 	return baseCount + #GetOwnedIllusions(bot, ULTIMATE_ILLUSION_RANGE)
 end
 
-local function IsTeleporting(enemy)
-	return enemy:HasModifier("modifier_teleporting")
-		or enemy:HasModifier("modifier_teleporting_root_logic")
-end
-
 local function GetAbilityName(ability)
 	if ability == nil then return nil end
 	if ability.GetName ~= nil then
@@ -208,11 +211,6 @@ local function CanUseEmergencyMirror(bot, ability)
 		and not bot:IsChanneling()
 end
 
-local function HasUsefulDisableRemaining(enemy)
-	return enemy:IsHexed()
-		or GetModifiersTimeLeft(enemy, ModifierNamesStun) >= 0.5
-end
-
 local function CountNearbyEnemies(bot, enemies, radius)
 	local count = 0
 	for _, enemy in pairs(enemies) do
@@ -238,11 +236,16 @@ end
 
 local function ConsiderDragonStar(bot, enemies)
 	local item = IsItemAvailable("item_dragon_star")
-	if item == nil or not item:IsFullyCastable() then return false end
+	if item == nil
+	or not item:IsFullyCastable()
+	or bot:HasModifier(DRAGON_STAR_MODIFIER)
+	then
+		return false
+	end
 	local ultimateTarget = FlandreUltimate.GetLockedTarget(bot)
 	if FlandreUltimate.IsActive(bot)
 	and IsValidEnemyHero(ultimateTarget)
-	and GetUnitToUnitDistance(bot, ultimateTarget) <= 950
+	and GetUnitToUnitDistance(bot, ultimateTarget) <= WINGS_CHASE_RANGE
 	then
 		bot:Action_UseAbility(item)
 		return true
@@ -268,6 +271,152 @@ local function ConsiderDragonStar(bot, enemies)
 	return false
 end
 
+local function GetReadyWings()
+	local item = IsItemAvailable("item_brother_sharp")
+		or IsItemAvailable("item_mystia_wings")
+	if item == nil or not item:IsFullyCastable() then return nil end
+	return item
+end
+
+local function ShouldUseWings(bot, enemies)
+	if bot.IsRooted ~= nil and bot:IsRooted() then return false end
+
+	local ultimateTarget = FlandreUltimate.GetLockedTarget(bot)
+	if FlandreUltimate.IsActive(bot)
+	and IsValidEnemyHero(ultimateTarget)
+	then
+		local distance = GetUnitToUnitDistance(bot, ultimateTarget)
+		-- 大招攻击次数有持续时间限制，只在确实需要贴近目标时消耗翅膀主动。
+		if distance > bot:GetAttackRange() + WINGS_ATTACK_MARGIN
+		and distance <= WINGS_CHASE_RANGE
+		then
+			return true
+		end
+	end
+
+	if J.IsSeriouslyRetreating(bot)
+	and bot:WasRecentlyDamagedByAnyHero(2.0)
+	and CountNearbyEnemies(bot, enemies, WINGS_RETREAT_RANGE) > 0
+	then
+		return true
+	end
+
+	local target = GetProperEnemyHero(bot)
+	if target ~= nil
+	and (J.IsGoingOnSomeone(bot) or J.IsInTeamFight(bot, WINGS_CHASE_RANGE))
+	and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
+	then
+		local distance = GetUnitToUnitDistance(bot, target)
+		return distance > bot:GetAttackRange() + WINGS_ATTACK_MARGIN
+			and distance <= WINGS_CHASE_RANGE
+	end
+
+	return false
+end
+
+local function TryUseWings(bot, enemies)
+	local item = GetReadyWings()
+	if item == nil or not ShouldUseWings(bot, enemies) then return false end
+	bot:Action_UseAbility(item)
+	return true
+end
+
+local function GetReadyDirectedJump()
+	local item = IsItemAvailable("item_nb9ball")
+		or IsItemAvailable("item_wanmeitiaoyuezhuangzhi")
+	if item == nil or not item:IsFullyCastable() then return nil end
+	return item
+end
+
+local function GetDirectedJumpRange(item)
+	return item:GetName() == "item_nb9ball" and NB_JUMP_RANGE or PERFECT_JUMP_RANGE
+end
+
+local function IsSafeJumpLocation(location)
+	if location == nil then return false end
+	if IsLocationPassable == nil then return true end
+	local ok, result = pcall(function() return IsLocationPassable(location) end)
+	return ok and result == true
+end
+
+local function GetUltimateJumpTargetScore(bot, enemy, jumpRange, lockedTarget)
+	if not IsValidEnemyHero(enemy)
+	or enemy:IsInvulnerable()
+	or enemy:IsAttackImmune()
+	or enemy:HasModifier("modifier_fountain_aura_buff")
+	or enemy:HasModifier("modifier_fountain_invulnerability")
+	then
+		return nil
+	end
+
+	local distance = GetUnitToUnitDistance(bot, enemy)
+	if distance <= bot:GetAttackRange() + WINGS_ATTACK_MARGIN
+	or distance > jumpRange + bot:GetAttackRange() + WINGS_ATTACK_MARGIN
+	then
+		return nil
+	end
+
+	local healthRatio = J.GetHP(enemy)
+	local isBackline = enemy:GetAttackRange() >= ULTIMATE_JUMP_BACKLINE_ATTACK_RANGE
+	if healthRatio > ULTIMATE_JUMP_LOW_HP and not isBackline then return nil end
+	if IsUnderEnemyTower(bot, enemy)
+	and J.GetHP(bot) < 0.55
+	and healthRatio > 0.25
+	then
+		return nil
+	end
+
+	local score = (1 - healthRatio) * 240 - distance / 100
+	if isBackline then score = score + 60 end
+	if enemy == lockedTarget then score = score + 20 end
+	return score
+end
+
+local function GetBestUltimateJumpTarget(bot, enemies, item)
+	local bestTarget = nil
+	local bestScore = -math.huge
+	local jumpRange = GetDirectedJumpRange(item)
+	local lockedTarget = FlandreUltimate.GetLockedTarget(bot)
+	for _, enemy in pairs(enemies) do
+		local score = GetUltimateJumpTargetScore(bot, enemy, jumpRange, lockedTarget)
+		if score ~= nil and score > bestScore then
+			bestTarget = enemy
+			bestScore = score
+		end
+	end
+	return bestTarget
+end
+
+local function TryUseUltimateJump(bot, enemies)
+	if not FlandreUltimate.IsActive(bot)
+	or (bot.IsRooted ~= nil and bot:IsRooted())
+	then
+		return false
+	end
+	local item = GetReadyDirectedJump()
+	if item == nil then return false end
+	local target = GetBestUltimateJumpTarget(bot, enemies, item)
+	if target == nil or not FlandreUltimate.SetLockedTarget(bot, target) then return false end
+
+	-- 大招命中次数受持续时间限制，跳到后排或残血目标身边后由大招模式继续攻击。
+	bot:Action_UseAbilityOnLocation(item, target:GetLocation())
+	return true
+end
+
+local function TryUseDirectedJump(bot)
+	local item = GetReadyDirectedJump()
+	if item == nil then return false end
+	local desire, location = ConsiderItemJump(item, 100, 600, GetDirectedJumpRange(item))
+	if desire == nil
+	or desire <= BOT_ACTION_DESIRE_NONE
+	or not IsSafeJumpLocation(location)
+	then
+		return false
+	end
+	bot:Action_UseAbilityOnLocation(item, location)
+	return true
+end
+
 local function TryUseTrinity()
 	local item = IsItemAvailable("item_trinity")
 	if item ~= nil
@@ -275,41 +424,6 @@ local function TryUseTrinity()
 	and ConsiderItemShield(item) > BOT_ACTION_DESIRE_NONE
 	then
 		GetBot():Action_UseAbility(item)
-		return true
-	end
-	return false
-end
-
-local function ConsiderYukkuriInterrupt(bot, enemies)
-	local item = IsItemAvailable("item_yukkuri_stick")
-	if item == nil or not item:IsFullyCastable() then return false end
-	local castRange = item:GetCastRange()
-
-	for _, enemy in pairs(enemies) do
-		if GetUnitToUnitDistance(bot, enemy) <= castRange
-		and CanCastStunOnTarget(enemy)
-		and not HasUsefulDisableRemaining(enemy)
-		and (enemy:IsChanneling() or IsTeleporting(enemy))
-		then
-			bot:Action_UseAbilityOnEntity(item, enemy)
-			return true
-		end
-	end
-	return false
-end
-
-local function ConsiderYukkuriOffensive(bot)
-	local item = IsItemAvailable("item_yukkuri_stick")
-	if item == nil or not item:IsFullyCastable() then return false end
-	local target = GetProperEnemyHero(bot)
-	if target ~= nil
-	and J.IsGoingOnSomeone(bot)
-	and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH
-	and GetUnitToUnitDistance(bot, target) <= item:GetCastRange()
-	and CanCastStunOnTarget(target)
-	and not HasUsefulDisableRemaining(target)
-	then
-		bot:Action_UseAbilityOnEntity(item, target)
 		return true
 	end
 	return false
@@ -512,11 +626,11 @@ function AbilityUsageThink()
 
 	if TryUseTrinity() then return end
 	if ConsiderDragonStar(bot, enemies) then return end
-	if ConsiderYukkuriInterrupt(bot, enemies) then return end
 
 	-- 大招期间保留全部物品逻辑，只停止普通镜像和重复大招施法。
 	if FlandreUltimate.IsActive(bot) then
-		if ConsiderYukkuriOffensive(bot) then return end
+		if TryUseUltimateJump(bot, enemies) then return end
+		if TryUseWings(bot, enemies) then return end
 		if TryUseHorseKing() then return end
 		if TryUseHorseRed() then return end
 		ConsiderNeutralItems()
@@ -537,8 +651,6 @@ function AbilityUsageThink()
 		return
 	end
 
-	if ConsiderYukkuriOffensive(bot) then return end
-
 	desire, target, reason = ConsiderUltimateNormal(bot, ultimate, enemies)
 	if desire > BOT_ACTION_DESIRE_NONE then
 		FlandreUltimate.BeginCast(bot, ultimate, target, reason, GetExpectedUltimateAttackCount(bot, ultimate))
@@ -546,11 +658,23 @@ function AbilityUsageThink()
 		return
 	end
 
+	if TryUseDirectedJump(bot) then return end
+	if TryUseWings(bot, enemies) then return end
 	if TryUseHorseKing() then return end
 	if TryUseHorseRed() then return end
 
 	-- 中立物品放在末尾，之后不再提交任何 action。
 	ConsiderNeutralItems()
+end
+
+if FLANDRE_BOT_TEST_EXPORTS then
+	FlandreBotTest = {
+		ConsiderDragonStar = ConsiderDragonStar,
+		ShouldUseWings = ShouldUseWings,
+		TryUseWings = TryUseWings,
+		GetBestUltimateJumpTarget = GetBestUltimateJumpTarget,
+		TryUseUltimateJump = TryUseUltimateJump,
+	}
 end
 
 ----------------------------------------------------------------------------------------------------

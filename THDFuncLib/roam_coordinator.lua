@@ -7,6 +7,8 @@ local Pickoff = require(GetScriptDirectory()..'/THDFuncLib/roam_pickoff')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 local MissionID = require(GetScriptDirectory()..'/THDFuncLib/roam_mission_id')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
+local YumemiFlight = require(GetScriptDirectory()..'/THDFuncLib/yumemi_gank_flight')
+local RoamDebug = require(GetScriptDirectory()..'/THDFuncLib/roam_debug')
 
 local Coordinator = {}
 local states = {}
@@ -136,8 +138,7 @@ local function GetState(bot)
 			lastTeamMissionTargetID = nil,
 			lastTeamMissionSignalTime = -9999,
 			lastAbortReason = nil,
-			lastDebugStatus = nil,
-			lastDebugStatusTime = -9999,
+			debugStatus = {},
 		}
 	end
 	if states[playerID].botEntityIndex == nil then states[playerID].botEntityIndex = entityIndex end
@@ -166,15 +167,18 @@ end
 local function HasTeamObjectiveCommitment(bot)
 	local outerCommitment = Wasteland.GetOuterTowerCommitment()
 	if outerCommitment ~= nil then
-		-- 统一推进目标只锁定正式参与者；未分配成员仍可进入其他常规模。
-		if Wasteland.IsPushObjectiveParticipant(bot, outerCommitment) then
+		-- 使用租约成员而非“当前仍可推进”成员，避免暂时防守/撤退时被 Roam 二次分配。
+		local reserved = Wasteland.IsPushObjectiveReservedParticipant ~= nil
+			and Wasteland.IsPushObjectiveReservedParticipant(bot, outerCommitment)
+			or Wasteland.IsPushObjectiveParticipant(bot, outerCommitment)
+		if reserved then
 			return true, 'push_objective_participant'
 		end
 		return false, nil
 	end
 	local now = DotaTime()
 	local shared = GetSharedTeamState()
-	local doingRoshan = J.IsDoingRoshan(bot)
+	local doingRoshan = J.IsRoshanCommitmentActive(bot)
 	local pushing = J.Utils.IsTeamPushingSecondTierOrHighGround(bot)
 	if doingRoshan or pushing then
 		shared.objectiveLockUntil = math.max(shared.objectiveLockUntil or -9999,
@@ -334,7 +338,7 @@ end
 local function IsBusyMode(unit)
 	local mode = Safe(BOT_MODE_NONE, function() return unit:GetActiveMode() end)
 	return mode == BOT_MODE_RETREAT
-		or mode == BOT_MODE_ROSHAN
+		or J.IsRoshanCommitmentActive(unit)
 end
 
 local function GetAssignedLane(unit)
@@ -813,7 +817,10 @@ local function GetTravelCandidate(member, target, targetLane)
 	end
 	local speed = math.max(1, Safe(1, function() return member:GetCurrentMovementSpeed() end) or 1)
 	local tpPlan = BuildTPTravelPlan(member, target, distance, speed)
-	local travelTime = tpPlan ~= nil and tpPlan.travelTime or distance / speed
+	local flightPlan = YumemiFlight.BuildPlan(member, target, {maxTravelTime = Config.APPROACH_TIMEOUT})
+	local walkTime = distance / speed
+	-- 万宝槌落地会自动触发强化 E，允许飞船略慢于纯赶路路线，并提高其 gank 候选优先级。
+	local route, travelTime = YumemiFlight.SelectRoute(walkTime, tpPlan, flightPlan)
 	if travelTime > Config.APPROACH_TIMEOUT then return nil, 'travel_too_long' end
 	local earlyRoam = IsEarlyRoamer(member)
 	if earlyRoam and travelTime > Config.EARLY_ROAM_MAX_TRAVEL_TIME then
@@ -828,17 +835,32 @@ local function GetTravelCandidate(member, target, targetLane)
 		earlyRoam = earlyRoam,
 		position = position,
 		travelTime = travelTime,
-		effectiveTravelTime = travelTime + (rule.travelBias or 0),
-		useTP = tpPlan ~= nil,
+		effectiveTravelTime = travelTime + (rule.travelBias or 0)
+			- (route == YumemiFlight.ROUTE and flightPlan.hasScepter == true
+				and YumemiFlight.SCEPTER_CANDIDATE_BIAS or 0),
+		route = route,
+		useTP = route == 'tp',
 		walkDistance = distance,
 		remainingLaneAllies = eligibilityContext ~= nil and eligibilityContext.remainingLaneAllies or nil,
 		homeLaneEnemyCount = eligibilityContext ~= nil and eligibilityContext.homeLaneEnemyCount or nil,
 	}
-	if tpPlan ~= nil then
+	if route == 'tp' then
 		candidate.tpLocation = tpPlan.tpLocation
 		candidate.tpTargetLocation = tpPlan.targetLocation
 		candidate.landingDistance = tpPlan.landingDistance
 		candidate.tpChannelTime = tpPlan.channelTime
+	elseif route == YumemiFlight.ROUTE then
+		candidate.flightTargetLocation = flightPlan.targetLocation
+		candidate.flightLocation = flightPlan.flightLocation
+		candidate.flightDistance = flightPlan.distance
+		candidate.flightDuration = flightPlan.flightDuration
+		candidate.flightRequiredMana = flightPlan.requiredMana
+		candidate.flightHasScepter = flightPlan.hasScepter
+		candidate.flightMoonDuringFlight = flightPlan.flightMoonDuringFlight
+		candidate.flightMoonItemName = flightPlan.flightMoonItemName
+		candidate.flightMoonActivationDelay = flightPlan.flightMoonActivationDelay
+		candidate.flightMoonFlightRegenDuration = flightPlan.flightMoonFlightRegenDuration
+		candidate.flightMoonPostLandingDuration = flightPlan.flightMoonPostLandingDuration
 	end
 	return candidate
 end
@@ -870,6 +892,124 @@ function Coordinator.RefreshTPTravelPlan(bot, mission)
 	plan.walkDistance = refreshed.walkDistance
 	plan.landingDistance = refreshed.landingDistance
 	plan.channelTime = refreshed.channelTime
+	return plan, nil, movedDistance
+end
+
+local function ClearTPFields(plan)
+	plan.useTP = false
+	plan.tpLocation = nil
+	plan.landingDistance = nil
+	plan.channelTime = nil
+end
+
+local function ClearYumemiFlightFields(plan)
+	plan.flightLocation = nil
+	plan.flightDistance = nil
+	plan.flightDuration = nil
+	plan.flightRequiredMana = nil
+	plan.flightHasScepter = nil
+	plan.flightMoonDuringFlight = nil
+	plan.flightMoonItemName = nil
+	plan.flightMoonActivationDelay = nil
+	plan.flightMoonFlightRegenDuration = nil
+	plan.flightMoonPostLandingDuration = nil
+end
+
+local function ApplyWalkTravelPlan(plan, targetLocation, walkDistance, travelTime)
+	plan.route = 'walk'
+	plan.targetLocation = targetLocation
+	plan.walkDistance = walkDistance
+	plan.travelTime = travelTime
+	ClearTPFields(plan)
+	ClearYumemiFlightFields(plan)
+end
+
+local function ApplyTPTravelPlan(plan, refreshed)
+	plan.route = 'tp'
+	plan.useTP = true
+	plan.tpLocation = refreshed.tpLocation
+	plan.targetLocation = refreshed.targetLocation
+	plan.travelTime = refreshed.travelTime
+	plan.walkDistance = refreshed.walkDistance
+	plan.landingDistance = refreshed.landingDistance
+	plan.channelTime = refreshed.channelTime
+	ClearYumemiFlightFields(plan)
+end
+
+local function ApplyYumemiFlightTravelPlan(plan, refreshed, walkDistance)
+	plan.route = YumemiFlight.ROUTE
+	plan.targetLocation = refreshed.targetLocation
+	plan.flightLocation = refreshed.flightLocation
+	plan.flightDistance = refreshed.distance
+	plan.flightDuration = refreshed.flightDuration
+	plan.flightRequiredMana = refreshed.requiredMana
+	plan.flightHasScepter = refreshed.hasScepter
+	plan.flightMoonDuringFlight = refreshed.flightMoonDuringFlight
+	plan.flightMoonItemName = refreshed.flightMoonItemName
+	plan.flightMoonActivationDelay = refreshed.flightMoonActivationDelay
+	plan.flightMoonFlightRegenDuration = refreshed.flightMoonFlightRegenDuration
+	plan.flightMoonPostLandingDuration = refreshed.flightMoonPostLandingDuration
+	plan.travelTime = refreshed.travelTime
+	plan.walkDistance = walkDistance
+	ClearTPFields(plan)
+end
+
+function Coordinator.RefreshYumemiFlightTravelPlan(bot, mission)
+	if mission == nil or mission.phase ~= 'approach' or type(mission.travelPlans) ~= 'table' then
+		return nil, 'invalid_mission'
+	end
+	local playerID = GetPlayerID(bot)
+	local plan = mission.travelPlans[playerID]
+	if plan == nil or plan.route ~= YumemiFlight.ROUTE or plan.flightIssued == true then
+		return nil, 'already_issued_or_missing'
+	end
+	if not CanInspectUnit(mission.target) then return nil, 'target_not_visible' end
+	if IsInEnemyTowerDanger(bot, mission.target, mission.targetLane) then
+		return nil, 'tower_danger'
+	end
+
+	local now = DotaTime()
+	local remainingApproach = Config.APPROACH_TIMEOUT
+		- math.max(0, now - (mission.startTime or now))
+	local distance = GetDistance(bot, mission.target)
+	local speed = math.max(1, Safe(1, function() return bot:GetCurrentMovementSpeed() end) or 1)
+	local oldTargetLocation = plan.targetLocation
+	local targetLocation = Safe(mission.rallyLocation, function() return mission.target:GetLocation() end)
+	local walkTime = distance / speed
+	if type(mission.allyCount) == 'number' and type(mission.enemyCount) == 'number'
+		and mission.allyCount < mission.enemyCount
+	then
+		ApplyWalkTravelPlan(plan, targetLocation, distance, walkTime)
+		return nil, 'local_numbers_disadvantage'
+	end
+	local refreshed, flightReason = YumemiFlight.BuildPlan(bot, mission.target, {
+		maxTravelTime = remainingApproach,
+	})
+	local tpPlan = BuildTPTravelPlan(bot, mission.target, distance, speed)
+	if tpPlan ~= nil and tpPlan.travelTime > remainingApproach then tpPlan = nil end
+	local alternativeRoute = 'walk'
+	local alternativeTime = walkTime
+	if tpPlan ~= nil and tpPlan.travelTime < alternativeTime then
+		alternativeRoute = 'tp'
+		alternativeTime = tpPlan.travelTime
+	end
+
+	local selectedRoute = YumemiFlight.SelectRoute(walkTime, tpPlan, refreshed)
+	if refreshed == nil or selectedRoute ~= YumemiFlight.ROUTE then
+		if alternativeRoute == 'tp' then
+			ApplyTPTravelPlan(plan, tpPlan)
+		else
+			ApplyWalkTravelPlan(plan, targetLocation, distance, walkTime)
+		end
+		return nil, refreshed == nil
+			and ('flight_' .. tostring(flightReason))
+			or ('better_' .. alternativeRoute)
+	end
+
+	ApplyYumemiFlightTravelPlan(plan, refreshed, distance)
+	local movedDistance = oldTargetLocation ~= nil
+		and GetLocationDistance(oldTargetLocation, refreshed.targetLocation)
+		or 0
 	return plan, nil, movedDistance
 end
 
@@ -1060,6 +1200,7 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 		table.insert(participantLevels, tostring(participant.playerID) .. ':' .. tostring(participant.level))
 		if participant.earlyRoam then earlyRoam = true end
 		travelPlans[participant.playerID] = {
+			route = participant.route or (participant.useTP and 'tp' or 'walk'),
 			useTP = participant.useTP == true,
 			tpLocation = participant.tpLocation,
 			targetLocation = participant.tpTargetLocation,
@@ -1067,6 +1208,16 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 			walkDistance = participant.walkDistance,
 			landingDistance = participant.landingDistance,
 			channelTime = participant.tpChannelTime,
+			flightLocation = participant.flightLocation,
+			flightDistance = participant.flightDistance,
+			flightDuration = participant.flightDuration,
+			flightRequiredMana = participant.flightRequiredMana,
+			flightHasScepter = participant.flightHasScepter,
+			flightMoonDuringFlight = participant.flightMoonDuringFlight,
+			flightMoonItemName = participant.flightMoonItemName,
+			flightMoonActivationDelay = participant.flightMoonActivationDelay,
+			flightMoonFlightRegenDuration = participant.flightMoonFlightRegenDuration,
+			flightMoonPostLandingDuration = participant.flightMoonPostLandingDuration,
 		}
 	end
 	local initiationDescription = Initiation.DescribeMission({participantIDs = participantIDs}, GetTeamMembers())
@@ -1126,6 +1277,7 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 		observedHealthDPS = observedHealthDPS,
 		rallyLocation = Safe(nil, function() return target:GetLocation() end),
 		travelPlans = travelPlans,
+		route = participants[1].route or (participants[1].useTP and 'tp' or 'walk'),
 		useTP = participants[1].useTP == true,
 		tpLandingDistance = participants[1].landingDistance,
 	}
@@ -1316,7 +1468,7 @@ local function ObserveActiveTeamMission(bot)
 	return best
 end
 
-local function FormatGameTime(value)
+local function FormatDotaClock(value)
 	if type(value) ~= 'number' then return 'unknown' end
 	local sign = value < 0 and '-' or ''
 	local tenths = math.floor(math.abs(value) * 10 + 0.5)
@@ -1327,9 +1479,14 @@ end
 
 local function Debug(bot, message)
 	if Config.DEBUG ~= true then return end
-	local gameTime = FormatGameTime(Safe(nil, function() return DotaTime() end))
-	print('[BOT][Roam] pid=' .. tostring(GetPlayerID(bot)) .. ' ' .. tostring(message)
-		.. ' game_time=' .. gameTime)
+	local dotaTime = Safe(nil, function() return DotaTime() end)
+	local gameTime = Safe(dotaTime, function() return GameTime() end)
+	local dotaValue = type(dotaTime) == 'number' and string.format('%.1f', dotaTime) or 'unknown'
+	local gameValue = type(gameTime) == 'number' and string.format('%.1f', gameTime) or 'unknown'
+	print('[BOT][Roam] schema=2 pid=' .. tostring(GetPlayerID(bot)) .. ' ' .. tostring(message)
+		.. ' dota_time=' .. dotaValue
+		.. ' game_time=' .. gameValue
+		.. ' dota_clock=' .. FormatDotaClock(dotaTime))
 end
 
 local function FormatMetric(value, decimals)
@@ -1461,12 +1618,22 @@ local function DebugStatus(bot, message)
 	if Config.DEBUG ~= true then return end
 	local state = GetState(bot)
 	local now = Safe(-9999, function() return DotaTime() end) or -9999
-	local repeated = state.lastDebugStatus == message
-	local interval = repeated and 5.0 or 1.0
-	if now - state.lastDebugStatusTime < interval then return end
-	state.lastDebugStatus = message
-	state.lastDebugStatusTime = now
-	Debug(bot, 'idle ' .. tostring(message))
+	state.debugStatus = state.debugStatus or {}
+	local shouldLog, event, key, metadata = RoamDebug.ShouldLogStatus(
+		state.debugStatus, message, now, Config.DEBUG_STATUS_HEARTBEAT_INTERVAL, false, {
+			debounceInterval = Config.DEBUG_STATUS_DEBOUNCE_INTERVAL,
+			useReasonFamilies = true,
+			useImmediateReasons = true,
+			suppressHeartbeatFamilies = {
+				invalid_or_dead = true,
+			},
+		})
+	if not shouldLog then return end
+	local family = metadata ~= nil and metadata.family or key
+	local suppressedChanges = metadata ~= nil and metadata.suppressedChanges or 0
+	Debug(bot, 'idle event=' .. tostring(event) .. ' ' .. tostring(message)
+		.. ' reason_family=' .. tostring(family)
+		.. ' suppressed_changes=' .. tostring(suppressedChanges))
 end
 
 local function ClearTargetIfMatches(bot, mission)
@@ -1516,7 +1683,21 @@ function Coordinator.Abort(bot, reason, context)
 			metrics.cumulativeHealthDrop or 0, tostring(metrics.attackTargetSeen == true),
 			metrics.attackTargetTime or 0)
 	end
+	local cancelledInitiation = Initiation.Cancel(bot, mission, reason)
+	if cancelledInitiation ~= nil then
+		Debug(bot, string.format('initiation_status mission=%s target=%s hero=%s owner=%s status=%s reason=%s hold=false need_move=false',
+			tostring(GetMissionID(mission)), tostring(mission.targetPlayerID),
+			tostring(GetUnitName(bot) or 'unknown'), tostring(mission.initiationOwnerID or 'none'),
+			tostring(cancelledInitiation.status), tostring(cancelledInitiation.reason)))
+		if cancelledInitiation.event ~= nil then
+			Debug(bot, string.format('initiation_%s mission=%s target=%s reason=%s',
+				tostring(cancelledInitiation.event), tostring(GetMissionID(mission)),
+				tostring(mission.targetPlayerID), tostring(cancelledInitiation.reason)))
+		end
+	end
 	Initiation.Clear(bot, mission)
+	bot.yumemiGankFlightRouteActive = nil
+	bot.yumemiGankFlightMissionID = nil
 	ClearTargetIfMatches(bot, mission)
 	state.pending = nil
 	state.mission = nil
@@ -1611,13 +1792,24 @@ local function NoteAttributedRoamKill(bot, mission)
 	return Wasteland.NoteRoamKill(mission.targetLane, GetMissionID(mission), bot)
 end
 
-local function IsTPReacquireProtected(bot, mission, now)
+local function IsTravelReacquireProtected(bot, mission, now)
 	if mission == nil or type(mission.travelPlans) ~= 'table' then return false end
 	local plan = mission.travelPlans[GetPlayerID(bot)]
-	if plan == nil or plan.tpIssued ~= true then return false end
-	if plan.useTP == true then return true end
-	return plan.tpLanded == true
-		and now - (plan.tpEndedTime or now) <= Config.TP_TARGET_REACQUIRE_GRACE
+	if plan == nil then return false end
+	if plan.tpIssued == true then
+		if plan.useTP == true then return true end
+		if plan.tpLanded == true
+			and now - (plan.tpEndedTime or now) <= Config.TP_TARGET_REACQUIRE_GRACE
+		then
+			return true
+		end
+	end
+	if plan.flightIssued == true then
+		if plan.route == YumemiFlight.ROUTE then return true end
+		return plan.flightLanded == true
+			and now - (plan.flightEndedTime or now) <= YumemiFlight.TARGET_REACQUIRE_GRACE
+	end
+	return false
 end
 
 local function GetMissionDesire(bot, state)
@@ -1764,10 +1956,10 @@ local function GetMissionDesire(bot, state)
 		mission.lastVisibleTime = now
 		local targetLocation = Safe(mission.lastLocation, function() return mission.target:GetLocation() end)
 		mission.lastLocation = targetLocation
-		-- 可见目标的位置就是当前集合点；步行和尚未发出的 TP 都消费同一份动态坐标。
+		-- 可见目标的位置就是当前集合点；步行、TP 和尚未发出的梦美飞船都消费同一份动态坐标。
 		UpdateMissionRally(bot, mission, targetLocation, now)
 		RecordMissionObservation(bot, mission, now, true)
-	elseif not IsTPReacquireProtected(bot, mission, now)
+	elseif not IsTravelReacquireProtected(bot, mission, now)
 		and now - (mission.lastVisibleTime or mission.startTime) > Config.LOST_TARGET_GRACE
 	then
 		Coordinator.Abort(bot, 'target_lost')
@@ -2033,6 +2225,15 @@ function Coordinator.OnStart(bot)
 	mission.initiationCandidates = initiationDescription.candidates
 	Initiation.Begin(bot, mission)
 	mission.joinedParticipantIDs[playerID] = true
+	local ownTravelPlan = type(mission.travelPlans) == 'table' and mission.travelPlans[playerID] or nil
+	if ownTravelPlan ~= nil and ownTravelPlan.route == YumemiFlight.ROUTE then
+		-- 英雄技能 Think 在正式 gank 飞行下单前让出常规输出，避免 Q 或物品消耗进场蓝量。
+		bot.yumemiGankFlightRouteActive = true
+		bot.yumemiGankFlightMissionID = mission.missionID
+	else
+		bot.yumemiGankFlightRouteActive = nil
+		bot.yumemiGankFlightMissionID = nil
+	end
 	mission.lastVisibleTime = mission.target ~= nil and mission.startTime or mission.lastVisibleTime
 	EnsureMissionMetrics(mission)
 	ObserveTeamMission(state, mission.missionID, mission.startTime,
@@ -2068,7 +2269,8 @@ function Coordinator.OnStart(bot)
 			tostring(mission.homeLaneEnemyCount or 'unknown'),
 			mission.score or 0,
 			mission.travelTime or -1,
-			tostring(mission.route or (mission.useTP and 'tp' or 'walk')),
+			tostring((ownTravelPlan ~= nil and ownTravelPlan.route)
+				or mission.route or (mission.useTP and 'tp' or 'walk')),
 			mission.healthFraction or -1,
 			FormatMetric(mission.targetHealth, 1),
 			FormatMetric(mission.expectedLocalTTK, 1),

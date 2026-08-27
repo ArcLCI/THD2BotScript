@@ -2,6 +2,8 @@ local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local configLoaded, Config = pcall(require, GetScriptDirectory()..'/THDFuncLib/roam_config')
 if not configLoaded or type(Config) ~= 'table' then Config = {} end
 local Auxiliary = require(GetScriptDirectory()..'/THDFuncLib/roam_auxiliary')
+local ModeDesireDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_desire_debug')
+local RoamDebug = require(GetScriptDirectory()..'/THDFuncLib/roam_debug')
 
 local bot = GetBot()
 local activeProvider = nil
@@ -9,8 +11,7 @@ local pendingProvider = nil
 local activeAuxiliarySource = 'none'
 local pendingAuxiliarySource = 'none'
 local Gank = nil
-local lastRouterDebugStatus = nil
-local lastRouterDebugTime = -9999
+local routerDebugState = {}
 
 local function RefreshBot()
 	if type(GetBot) ~= 'function' then return nil end
@@ -20,7 +21,7 @@ local function RefreshBot()
 	return current
 end
 
-local function FormatGameTime(value)
+local function FormatDotaClock(value)
 	if type(value) ~= 'number' then return 'unknown' end
 	local sign = value < 0 and '-' or ''
 	local tenths = math.floor(math.abs(value) * 10 + 0.5)
@@ -46,17 +47,22 @@ local function RouterDebugStatus(message, force)
 	local now = -9999
 	local timeOk, currentTime = pcall(DotaTime)
 	if timeOk and type(currentTime) == 'number' then now = currentTime end
-	local repeated = lastRouterDebugStatus == message
-	local interval = repeated and 5.0 or 1.0
-	if not force and now - lastRouterDebugTime < interval then return end
-	lastRouterDebugStatus = message
-	lastRouterDebugTime = now
+	local shouldLog, event = RoamDebug.ShouldLogStatus(routerDebugState, message, now,
+		Config.DEBUG_STATUS_HEARTBEAT_INTERVAL, force)
+	if not shouldLog then return end
 	local playerID = -1
 	local idOk, id = pcall(function() return currentBot:GetPlayerID() end)
 	if idOk and id ~= nil then playerID = id end
-	local gameTime = timeOk and FormatGameTime(currentTime) or 'unknown'
-	print('[BOT][Roam] pid=' .. tostring(playerID) .. ' router ' .. tostring(message)
-		.. ' game_time=' .. gameTime)
+	local gameOk, gameTime = pcall(GameTime)
+	if not gameOk or type(gameTime) ~= 'number' then gameTime = currentTime end
+	local dotaValue = timeOk and type(currentTime) == 'number'
+		and string.format('%.1f', currentTime) or 'unknown'
+	local gameValue = type(gameTime) == 'number' and string.format('%.1f', gameTime) or 'unknown'
+	print('[BOT][Roam] schema=2 pid=' .. tostring(playerID) .. ' router event=' .. tostring(event)
+		.. ' ' .. tostring(message)
+		.. ' dota_time=' .. dotaValue
+		.. ' game_time=' .. gameValue
+		.. ' dota_clock=' .. (timeOk and FormatDotaClock(currentTime) or 'unknown'))
 end
 
 local function StopGank(reason, auxiliarySource, auxiliaryDesire)
@@ -75,6 +81,8 @@ RouterDebugStatus('loaded enabled=' .. tostring(IsGankEnabled()), true)
 function GetDesire()
 	local currentBot = RefreshBot()
 	if currentBot == nil then return BOT_MODE_DESIRE_NONE end
+	-- 每个 Bot 各自输出当前实际模式倾向，供赛后合并为统一时间序列。
+	ModeDesireDebug.Think(currentBot)
 	-- 现有持续施法、英雄连招和拾取租约始终优先，不受新 gank 总开关影响。
 	local auxiliaryDesire, auxiliarySource = Auxiliary.GetDesire(currentBot)
 	if auxiliaryDesire ~= nil and auxiliaryDesire > BOT_MODE_DESIRE_NONE then

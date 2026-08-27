@@ -685,6 +685,9 @@ end
 function AbilityUsageThink()
 	local bot = GetBot()
 	if bot == nil or not SafeCall(bot, "IsAlive", true) then return end
+	if type(ObserveAbilityUsageTask) == 'function' then
+		ObserveAbilityUsageTask(bot, 'ability_usage_unthrottled', 0)
+	end
 	local ability01 = GetAbility(bot, NITORI01)
 	local ability02 = GetAbility(bot, NITORI02)
 	local ability03 = GetAbility(bot, NITORI03)

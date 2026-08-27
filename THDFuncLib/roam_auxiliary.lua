@@ -264,7 +264,7 @@ local function ComputeDesire()
 	local roamDesireInterval = ROAM_DESIRE_INTERVAL
 	if DotaTime() > ROAM_LATE_GAME_TIME then roamDesireInterval = ROAM_DESIRE_LATE_INTERVAL end
 	if DotaTime() > 30 * 60
-		and not J.IsDoingRoshan(bot)
+		and not J.IsRoshanCommitmentActive(bot)
 		and not J.Utils.IsTeamPushingSecondTierOrHighGround(bot)
 		and #bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE) == 0
 	then

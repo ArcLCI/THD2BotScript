@@ -1258,9 +1258,9 @@ end
 
 function J.CanBeAttacked( unit )
 	return  unit ~= nil
-			and unit:IsAlive()
-			and unit:CanBeSeen()
 			and not unit:IsNull()
+			and unit:CanBeSeen()
+			and unit:IsAlive()
 			and not unit:IsAttackImmune()
 			and not unit:IsInvulnerable()
 			and not unit:HasModifier("modifier_fountain_glyph")
@@ -1519,6 +1519,160 @@ function J.IsDoingRoshan( bot )
 	return mode == BOT_MODE_ROSHAN
 end
 
+J.ROSHAN_COMMITMENT_GRACE = 1.5
+J.ROSHAN_MIN_RESPAWN_NORMAL = 8 * 60
+J.ROSHAN_MIN_RESPAWN_TURBO = 4 * 60
+
+local function SafeRoshanCommitmentCall(defaultValue, callback)
+	local ok, value = pcall(callback)
+	if ok then return value end
+	return defaultValue
+end
+
+local function GetRoshanCommitmentNow()
+	local now = SafeRoshanCommitmentCall(nil, function() return DotaTime() end)
+	if type(now) ~= 'number' then
+		now = SafeRoshanCommitmentCall(0, function() return GameTime() end)
+	end
+	return type(now) == 'number' and now or 0
+end
+
+local function GetRoshanKillClockNow()
+	-- 当前 7.38 Bot 运行时的 GetRoshanKillTime() 与 GameTime() 同域，不能再与 DotaTime() 相减。
+	local now = SafeRoshanCommitmentCall(nil, function() return GameTime() end)
+	if type(now) ~= 'number' then
+		now = SafeRoshanCommitmentCall(0, function() return DotaTime() end)
+	end
+	return type(now) == 'number' and now or 0
+end
+
+local function GetLiveRoshanTarget(bot)
+	for _, methodName in ipairs({'GetAttackTarget', 'GetTarget'}) do
+		if type(bot[methodName]) == 'function' then
+			local target = SafeRoshanCommitmentCall(nil, function()
+				return bot[methodName](bot)
+			end)
+			if SafeRoshanCommitmentCall(false, function() return J.IsRoshan(target) end) then
+				return target
+			end
+		end
+	end
+	return nil
+end
+
+local function GetRoshanCommitmentState(bot, updateState)
+	local snapshot = {
+		active = false,
+		rawMode = false,
+		modeDesire = 0,
+		reason = 'invalid_bot',
+		target = nil,
+		targetName = 'none',
+		killGameTime = 0,
+		killAge = -1,
+		lastEvidenceAge = -1,
+		graceRemaining = 0,
+	}
+	if bot == nil then return snapshot end
+
+	local now = GetRoshanCommitmentNow()
+	local alive = SafeRoshanCommitmentCall(false, function() return bot:IsAlive() end)
+	local mode = SafeRoshanCommitmentCall(BOT_MODE_NONE, function() return bot:GetActiveMode() end)
+	snapshot.rawMode = mode == BOT_MODE_ROSHAN
+	if not alive or not snapshot.rawMode then
+		if updateState then bot.THDRoshanCommitmentState = nil end
+		snapshot.reason = alive and 'not_roshan_mode' or 'bot_dead'
+		return snapshot
+	end
+
+	local state = bot.THDRoshanCommitmentState
+	if state == nil then state = {} end
+	local desire = SafeRoshanCommitmentCall(0, function() return bot:GetActiveModeDesire() end)
+	if type(desire) ~= 'number' then desire = 0 end
+	snapshot.modeDesire = desire
+
+	local target = GetLiveRoshanTarget(bot)
+	snapshot.target = target
+	if target ~= nil then
+		snapshot.targetName = SafeRoshanCommitmentCall('npc_dota_roshan', function()
+			return target:GetUnitName()
+		end)
+	end
+
+	local killTime = SafeRoshanCommitmentCall(0, function() return GetRoshanKillTime() end)
+	if type(killTime) ~= 'number' then killTime = 0 end
+	snapshot.killGameTime = killTime
+	if killTime > 0 then
+		snapshot.killAge = math.max(0, GetRoshanKillClockNow() - killTime)
+	end
+
+	local turbo = SafeRoshanCommitmentCall(false, function() return IsModeTurbo() end)
+	local minimumRespawn = turbo and J.ROSHAN_MIN_RESPAWN_TURBO or J.ROSHAN_MIN_RESPAWN_NORMAL
+	local knownDead = target == nil
+		and snapshot.killAge >= 0
+		and snapshot.killAge < minimumRespawn
+	local hasPositiveDesire = desire > BOT_MODE_DESIRE_NONE
+	local hasEvidence = target ~= nil or (hasPositiveDesire and not knownDead)
+
+	if hasEvidence then
+		snapshot.active = true
+		snapshot.reason = target ~= nil and 'live_target' or 'positive_desire'
+		if updateState then
+			state.lastEvidenceAt = now
+			state.lastEvidenceReason = snapshot.reason
+			bot.THDRoshanCommitmentState = state
+		end
+	elseif knownDead then
+		-- 击杀后的默认 Roshan 模式可能仍短暂占优；死亡窗口内不能续用旧证据自锁。
+		snapshot.reason = 'roshan_dead_window'
+		if updateState then
+			state.lastEvidenceAt = nil
+			state.lastEvidenceReason = nil
+			bot.THDRoshanCommitmentState = state
+		end
+	else
+		local lastEvidenceAt = state.lastEvidenceAt
+		if type(lastEvidenceAt) == 'number' then
+			snapshot.lastEvidenceAge = math.max(0, now - lastEvidenceAt)
+			snapshot.graceRemaining = math.max(0,
+				J.ROSHAN_COMMITMENT_GRACE - snapshot.lastEvidenceAge)
+			if snapshot.graceRemaining > 0 then
+				snapshot.active = true
+				snapshot.reason = 'evidence_grace'
+			else
+				snapshot.reason = 'evidence_expired'
+			end
+		else
+			snapshot.reason = 'no_evidence'
+		end
+		if updateState then bot.THDRoshanCommitmentState = state end
+	end
+
+	if snapshot.lastEvidenceAge < 0 and type(state.lastEvidenceAt) == 'number' then
+		snapshot.lastEvidenceAge = math.max(0, now - state.lastEvidenceAt)
+	end
+	return snapshot
+end
+
+-- 仅有效目标、可执行接近欲望或短暂证据宽限拥有 Roshan 所有权。
+function J.IsRoshanCommitmentActive(bot)
+	return GetRoshanCommitmentState(bot, true).active
+end
+
+-- 调试读取不得刷新证据时间，避免日志开关改变模式仲裁结果。
+function J.GetRoshanCommitmentDebugSnapshot(bot)
+	local snapshot = GetRoshanCommitmentState(bot, false)
+	snapshot.pitDistance = SafeRoshanCommitmentCall(-1, function()
+		return GetUnitToLocationDistance(bot, J.GetCurrentRoshanLocation())
+	end)
+	local teamState = SafeRoshanCommitmentCall(nil, function()
+		return J.GetRoshanTeamState(2800)
+	end)
+	snapshot.alliesNearPit = type(teamState) == 'table'
+		and tonumber(teamState.allyHeroCount) or -1
+	return snapshot
+end
+
 function J.GetCurrentRoshanLocation()
 	if J.CheckTimeOfDay() == 'day'
 	then
@@ -1575,7 +1729,7 @@ function J.IsRoshanAlive()
     end
 
     if GetRoshanKillTime() == 0
-	or DotaTime() - killTime > (IsModeTurbo() and (6 * 60) or (11 * 60))
+	or GetRoshanKillClockNow() - killTime > (IsModeTurbo() and (6 * 60) or (11 * 60))
     then
         return true
     end

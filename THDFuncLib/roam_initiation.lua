@@ -80,6 +80,8 @@ local function GetState(bot)
 			event = nil,
 			issuedAbilityName = nil,
 			issuedTime = nil,
+			approachStartTime = nil,
+			castReadyTime = nil,
 		}
 	end
 	return states[playerID]
@@ -242,6 +244,8 @@ function Initiation.Begin(bot, mission)
 	state.event = nil
 	state.issuedAbilityName = nil
 	state.issuedTime = nil
+	state.approachStartTime = nil
+	state.castReadyTime = nil
 	return state
 end
 
@@ -293,13 +297,6 @@ function Initiation.GetStatus(bot, mission)
 		return MakeResult(state, 'completed', false, 'cast_finished')
 	end
 
-	local engageStart = mission.engageStartTime or now
-	if now - engageStart >= Config.INITIATION_TIMEOUT then
-		state.status = 'fallback'
-		SetEvent(state, 'fallback')
-		return MakeResult(state, 'fallback', false, 'initiation_timeout')
-	end
-
 	local ability = GetAbility(bot, state.info)
 	if not IsAbilityReady(ability) then
 		state.status = 'fallback'
@@ -316,6 +313,23 @@ function Initiation.GetStatus(bot, mission)
 
 	local castRange = GetCastRange(bot, state.info, ability)
 	local needMove = GetDistance(bot, target) > castRange
+	if needMove then
+		state.approachStartTime = state.approachStartTime or now
+		state.castReadyTime = nil
+		if now - state.approachStartTime >= Config.INITIATION_APPROACH_TIMEOUT then
+			state.status = 'fallback'
+			SetEvent(state, 'fallback')
+			return MakeResult(state, 'fallback', false, 'initiation_approach_timeout')
+		end
+	else
+		state.castReadyTime = state.castReadyTime or now
+		if now - state.castReadyTime >= Config.INITIATION_CAST_TIMEOUT then
+			state.status = 'fallback'
+			SetEvent(state, 'fallback')
+			return MakeResult(state, 'fallback', false, 'initiation_cast_timeout')
+		end
+	end
+	-- 接近与施法确认各自有界，同时仍受 mission 的 ENGAGE_TIMEOUT 总上限约束。
 	local status = needMove and 'pending_move' or 'pending'
 	state.status = 'pending'
 	SetEvent(state, status)
@@ -354,6 +368,20 @@ function Initiation.MarkIssued(bot, abilityName, target)
 	state.issuedTime = GetNow()
 	state.event = 'cast'
 	return true
+end
+
+function Initiation.Cancel(bot, mission, reason)
+	local state = GetState(bot)
+	if mission == nil or state.mission ~= mission then return nil end
+	local lifecyclePending = state.status == 'issued'
+		or state.lastStatus == 'pending'
+		or state.lastStatus == 'pending_move'
+	if not lifecyclePending then return nil end
+	-- mission 已释放时显式结束仍在等待的先手子生命周期，避免赛后被误判为卡死。
+	state.status = 'cancelled'
+	SetEvent(state, 'cancelled')
+	return MakeResult(state, 'cancelled', false,
+		'mission_release_' .. tostring(reason or 'unknown'))
 end
 
 function Initiation.Clear(bot, mission)

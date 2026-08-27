@@ -630,6 +630,9 @@ end
 function AbilityUsageThink()
 	local bot = GetBot()
 	if bot == nil or not SafeCall(bot, "IsAlive", false) then return end
+	if type(ObserveAbilityUsageTask) == 'function' then
+		ObserveAbilityUsageTask(bot, 'ability_usage_unthrottled', 0)
+	end
 	-- 滚动由游戏侧 modifier 驱动位移；生命周期内任何技能、装备或中立物品命令都会破坏动作管线。
 	if bot:HasModifier(ROLLING_MODIFIER) then return end
 	if WasActionJustIssued(bot) or J.CanNotUseAction(bot) then return end

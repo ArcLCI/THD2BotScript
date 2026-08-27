@@ -1,6 +1,7 @@
 require(GetScriptDirectory() .. "/thd2_item_usage")
 
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
+local YumemiFlight = require(GetScriptDirectory() .. "/THDFuncLib/yumemi_gank_flight")
 
 local YUMEMI_Q = "ability_thdots_yumemi01"
 local YUMEMI_W = "ability_thdots_yumemi02"
@@ -23,6 +24,15 @@ local Q_PROJECTILE_SPEED = 1200
 local Q_LINE_RADIUS = 200
 local MOON_REGEN_PER_SECOND = 400
 local MOON_DURATION = 3
+local OFFENSIVE_FLIGHT_ULTIMATE_LOCKOUT = 8.0
+local HIDDEN_ULTIMATE_MIN_DISTANCE = 650
+local HIDDEN_ULTIMATE_TERRAIN_RADIUS = 240
+local HIDDEN_ULTIMATE_BLOCKED_SAMPLES = 3
+local TERRAIN_STUCK_SAMPLE_INTERVAL = 0.35
+local TERRAIN_STUCK_MIN_TIME = 1.2
+local TERRAIN_STUCK_MOVE_DISTANCE = 45
+local TERRAIN_ESCAPE_DISTANCE = 500
+local TERRAIN_ESCAPE_COOLDOWN = 2.5
 
 local function SafeCall(object, method, default, ...)
 	if object == nil then return default end
@@ -268,6 +278,158 @@ local function GetEnemyFountainLocation()
 	return GetFountainLocation(team)
 end
 
+local function IsLocationPassableSafe(location)
+	if location == nil or type(IsLocationPassable) ~= "function" then return false end
+	local ok, passable = pcall(IsLocationPassable, location)
+	return ok and passable == true
+end
+
+local function CountPassableTerrainSamples(location, radius)
+	if location == nil or type(IsLocationPassable) ~= "function" then return 8 end
+	local passableCount = 0
+	for index = 0, 7 do
+		local angle = index * math.pi / 4
+		local sample = MakeVector(
+			(location.x or 0) + math.cos(angle) * radius,
+			(location.y or 0) + math.sin(angle) * radius,
+			location.z or 0
+		)
+		if IsLocationPassableSafe(sample) then passableCount = passableCount + 1 end
+	end
+	return passableCount
+end
+
+local function IsTerrainConstrained(location)
+	if type(IsLocationPassable) ~= "function" then return false end
+	if not IsLocationPassableSafe(location) then return true end
+	return CountPassableTerrainSamples(location, 180) <= 2
+end
+
+local function IsTerrainConcealed(location)
+	if not IsLocationPassableSafe(location) then return false end
+	return 8 - CountPassableTerrainSamples(location, HIDDEN_ULTIMATE_TERRAIN_RADIUS)
+		>= HIDDEN_ULTIMATE_BLOCKED_SAMPLES
+end
+
+local function ResetTerrainEscapeState(bot)
+	local state = bot.yumemiTerrainEscapeState or {}
+	state.lastLocation = nil
+	state.lastSampleTime = Now()
+	state.stuckStartTime = nil
+	state.isStuck = false
+	bot.yumemiTerrainEscapeState = state
+end
+
+local function HasTerrainEscapeMovementIntent(bot)
+	if IsAttackWindup(bot) then return false end
+	local attackTarget = SafeCall(bot, "GetAttackTarget", nil)
+	if attackTarget ~= nil and SafeCall(attackTarget, "IsAlive", false) then
+		local attackRange = SafeCall(bot, "GetAttackRange", 500)
+		if UnitDistance(bot, attackTarget) <= attackRange + 180 then return false end
+	end
+	local actionType = SafeCall(bot, "GetCurrentActionType", nil)
+	if actionType ~= nil
+		and ((BOT_ACTION_TYPE_IDLE ~= nil and actionType == BOT_ACTION_TYPE_IDLE)
+			or (BOT_ACTION_TYPE_DELAY ~= nil and actionType == BOT_ACTION_TYPE_DELAY)
+			or (BOT_ACTION_TYPE_ATTACK ~= nil and actionType == BOT_ACTION_TYPE_ATTACK)
+			or (BOT_ACTION_TYPE_USE_ABILITY ~= nil and actionType == BOT_ACTION_TYPE_USE_ABILITY))
+	then
+		return false
+	end
+	local mode = SafeCall(bot, "GetActiveMode", BOT_MODE_NONE or 0)
+	local desire = SafeCall(bot, "GetActiveModeDesire", 0)
+	return desire >= (BOT_MODE_DESIRE_MODERATE or 0.4)
+		or mode == BOT_MODE_RETREAT
+		or mode == BOT_MODE_ROAM
+		or mode == BOT_MODE_TEAM_ROAM
+		or mode == BOT_MODE_GANK
+end
+
+local function UpdateTerrainEscapeState(bot)
+	if SafeCall(bot, "IsStunned", false)
+		or SafeCall(bot, "IsRooted", false)
+		or SafeCall(bot, "IsHexed", false)
+		or SafeCall(bot, "IsChanneling", false)
+		or SafeCall(bot, "IsUsingAbility", false)
+		or SafeCall(bot, "IsCastingAbility", false)
+		or HasModifier(bot, FLIGHT_MODIFIER)
+		or HasModifier(bot, ULTIMATE_MODIFIER)
+		or not HasTerrainEscapeMovementIntent(bot)
+	then
+		ResetTerrainEscapeState(bot)
+		return false
+	end
+
+	local location = GetLocation(bot)
+	if not IsTerrainConstrained(location) then
+		ResetTerrainEscapeState(bot)
+		return false
+	end
+	local state = bot.yumemiTerrainEscapeState or {
+		lastLocation = nil,
+		lastSampleTime = -90,
+		stuckStartTime = nil,
+		isStuck = false,
+		lastEscapeTime = -90,
+	}
+	bot.yumemiTerrainEscapeState = state
+	local currentTime = Now()
+	if currentTime - (state.lastSampleTime or -90) < TERRAIN_STUCK_SAMPLE_INTERVAL then
+		return state.isStuck == true
+	end
+	if state.lastLocation == nil then
+		state.lastLocation = location
+		state.lastSampleTime = currentTime
+		state.stuckStartTime = currentTime
+		return false
+	end
+	local movedDistance = Distance2D(location, state.lastLocation)
+	state.lastLocation = location
+	state.lastSampleTime = currentTime
+	if movedDistance >= TERRAIN_STUCK_MOVE_DISTANCE then
+		state.stuckStartTime = nil
+		state.isStuck = false
+		return false
+	end
+	if state.stuckStartTime == nil then
+		state.stuckStartTime = currentTime
+		return false
+	end
+	if currentTime - state.stuckStartTime >= TERRAIN_STUCK_MIN_TIME then
+		state.isStuck = true
+		return true
+	end
+	return false
+end
+
+local function GetTerrainEscapeLocation(bot)
+	local origin = GetLocation(bot)
+	local fountain = GetFountainLocation(SafeCall(bot, "GetTeam", nil))
+	if origin == nil then return nil end
+	local destination = fountain or MakeVector((origin.x or 0) - 1, origin.y or 0, origin.z or 0)
+	local dx = (destination.x or 0) - (origin.x or 0)
+	local dy = (destination.y or 0) - (origin.y or 0)
+	local length = math.sqrt(dx * dx + dy * dy)
+	if length <= 0.01 then dx, dy, length = -1, 0, 1 end
+	dx, dy = dx / length, dy / length
+	local angleOffsets = { 0, math.pi / 4, -math.pi / 4, math.pi / 2, -math.pi / 2, math.pi }
+	for _, distance in ipairs({ TERRAIN_ESCAPE_DISTANCE, TERRAIN_ESCAPE_DISTANCE * 0.7 }) do
+		for _, angle in ipairs(angleOffsets) do
+			local rotatedX = dx * math.cos(angle) - dy * math.sin(angle)
+			local rotatedY = dy * math.cos(angle) + dx * math.sin(angle)
+			local candidate = MakeVector(
+				(origin.x or 0) + rotatedX * distance,
+				(origin.y or 0) + rotatedY * distance,
+				origin.z or 0
+			)
+			if IsLocationPassableSafe(candidate) and not IsTerrainConstrained(candidate) then
+				return candidate
+			end
+		end
+	end
+	return nil
+end
+
 local function GetPredictedLocation(target, delay)
 	local location = SafeCall(target, "GetExtrapolatedLocation", nil, math.max(0, delay or 0))
 	return location or GetLocation(target)
@@ -322,15 +484,11 @@ local function ShouldUseQAtLevel(level, charges, formalFight)
 	return formalFight == true or charges >= 2
 end
 
-local function ShouldUseUltimate(isFountain, enemyCount, allyCount, hp, crossCount, inTeamFight,
-	allowEmergency, recentlyDamaged)
-	if isFountain and enemyCount >= 1 then return true end
-	if inTeamFight and enemyCount >= 2 and allyCount >= 1 and (hp >= 0.45 or crossCount >= 2) then
-		return true
-	end
-	return allowEmergency == true
+local function ShouldUseUltimate(hiddenSetup, cannotRetreat, hp, enemyCount, recentlyDamaged)
+	if hiddenSetup == true and enemyCount == 1 then return true end
+	return cannotRetreat == true
 		and recentlyDamaged == true
-		and hp <= 0.35
+		and hp <= 0.25
 		and enemyCount >= 1
 end
 
@@ -420,6 +578,29 @@ local function GetFlightValues(bot, ability, distance, reservePercent)
 	return required, travelTime, speed, fixedMana, manaPercent, maxMana, upfrontCost
 end
 
+local function TryUseTerrainEscapeFlight(bot, ability)
+	if not UpdateTerrainEscapeState(bot)
+		or not IsAbilityReady(ability)
+		or IsSilenced(bot)
+		or (type(IsYugi04NoDisplacementActive) == "function" and IsYugi04NoDisplacementActive(bot))
+	then
+		return false
+	end
+	local state = bot.yumemiTerrainEscapeState
+	if Now() - (state.lastEscapeTime or -90) < TERRAIN_ESCAPE_COOLDOWN then return false end
+	local location = GetTerrainEscapeLocation(bot)
+	if location == nil then return false end
+	local distance = Distance2D(GetLocation(bot), location)
+	local requiredMana = GetFlightValues(bot, ability, distance, 0.05)
+	if SafeCall(bot, "GetMana", 0) < requiredMana then return false end
+	state.lastEscapeTime = Now()
+	state.isStuck = false
+	state.stuckStartTime = nil
+	-- 梦美只等待 1.2 秒确认地形卡位，并优先用短程 W 穿出树丛或不可通行点。
+	if bot.Action_ClearActions ~= nil then SafeCall(bot, "Action_ClearActions", nil, false) end
+	return UseAbilityOnLocation(bot, ability, location)
+end
+
 local function BuildRetreatFlightPlan(bot, ability)
 	if not IsAbilityReady(ability) or IsSilenced(bot) then return nil end
 	if type(IsYugi04NoDisplacementActive) == "function" and IsYugi04NoDisplacementActive(bot) then return nil end
@@ -443,7 +624,9 @@ end
 local function BuildOffensiveFlightPlan(bot, ability, enemies, targetOverride)
 	if not IsAbilityReady(ability) or IsSilenced(bot) or not IsGoingOnSomeone(bot) then return nil end
 	if type(IsYugi04NoDisplacementActive) == "function" and IsYugi04NoDisplacementActive(bot) then return nil end
-	if SafeCall(bot, "GetActiveModeDesire", 0) < (BOT_MODE_DESIRE_HIGH or 0.6) then return nil end
+	local hasScepter = HasModifier(bot, SCEPTER_MODIFIER)
+	local minimumDesire = hasScepter and (BOT_MODE_DESIRE_MODERATE or 0.4) or (BOT_MODE_DESIRE_HIGH or 0.6)
+	if SafeCall(bot, "GetActiveModeDesire", 0) < minimumDesire then return nil end
 	local target = targetOverride or GetProperTarget(bot)
 	if not CanTargetEnemy(bot, target) then return nil end
 	local origin = GetLocation(bot)
@@ -452,11 +635,10 @@ local function BuildOffensiveFlightPlan(bot, ability, enemies, targetOverride)
 	local level = SafeCall(ability, "GetLevel", 0)
 	local maxDistance = 600 + level * 250
 	local distance = Distance2D(origin, targetLocation)
-	local hasScepter = HasModifier(bot, SCEPTER_MODIFIER)
 	local minimumDistance = hasScepter and 801 or 500
 	if distance < minimumDistance or distance > maxDistance then return nil end
 	if not hasScepter and GetHP(target) > 0.30 then return nil end
-	if hasScepter and GetHP(bot) < 0.55 then return nil end
+	if hasScepter and GetHP(bot) < YumemiFlight.SCEPTER_MIN_HEALTH then return nil end
 
 	local speed = GetSpecialValue(ability, "move_speed", 0)
 	if speed <= 0 then return nil end
@@ -486,7 +668,7 @@ local function BuildOffensiveFlightPlan(bot, ability, enemies, targetOverride)
 		target = target,
 		location = location,
 		distance = actualDistance,
-		reservePercent = 0.20,
+		reservePercent = hasScepter and YumemiFlight.SCEPTER_RESERVE_PERCENT or 0.20,
 	}
 end
 
@@ -537,6 +719,7 @@ local function TryExecuteFlightPlan(bot, ability, abilityEx, plan)
 	local requiredMana = GetFlightValues(bot, ability, plan.distance, plan.reservePercent)
 	if SafeCall(bot, "GetMana", 0) >= requiredMana then
 		bot.yumemiPendingFlight = nil
+		if plan.kind == "offense" then bot.yumemiLastOffensiveFlightTime = Now() end
 		return UseAbilityOnLocation(bot, ability, plan.location)
 	end
 	return TryPrepareFlight(bot, ability, abilityEx, plan)
@@ -562,6 +745,7 @@ local function TryPendingFlight(bot, ability, abilityEx, enemies)
 	local requiredMana = GetFlightValues(bot, ability, plan.distance, plan.reservePercent)
 	if SafeCall(bot, "GetMana", 0) < requiredMana then return false end
 	bot.yumemiPendingFlight = nil
+	if plan.kind == "offense" then bot.yumemiLastOffensiveFlightTime = Now() end
 	return UseAbilityOnLocation(bot, ability, plan.location)
 end
 
@@ -569,6 +753,56 @@ local function IsRecentPursuer(bot, enemy)
 	if SafeCall(bot, "WasRecentlyDamagedByHero", false, enemy, 2.0) then return true end
 	if SafeCall(enemy, "GetAttackTarget", nil) == bot then return true end
 	return SafeJ("IsChasingTarget", false, enemy, bot)
+end
+
+local function IsEmergencySelfDestruct(bot, enemies, radius)
+	if GetHP(bot) > 0.25 or not SafeCall(bot, "WasRecentlyDamagedByAnyHero", false, 1.5) then return false, 0 end
+	local pursuerCount = 0
+	local nearestPursuer = math.huge
+	for _, enemy in pairs(enemies) do
+		local distance = UnitDistance(bot, enemy)
+		if distance <= math.min(600, radius)
+			and CanTargetEnemy(bot, enemy)
+			and IsRecentPursuer(bot, enemy)
+		then
+			pursuerCount = pursuerCount + 1
+			nearestPursuer = math.min(nearestPursuer, distance)
+		end
+	end
+	if pursuerCount <= 0 then return false, 0 end
+	local allyCount = #GetNearbyAllies(bot, 700)
+	local movementSpeed = SafeCall(bot, "GetCurrentMovementSpeed", 300)
+	local trapped = SafeCall(bot, "IsRooted", false)
+		or movementSpeed <= 240
+		or nearestPursuer <= 325
+		or pursuerCount > allyCount
+	return trapped, pursuerCount
+end
+
+local function IsHiddenUltimateSetup(bot, ability, enemies, radius)
+	if #enemies ~= 1
+		or IsInTeamFight(bot, 1200)
+		or IsGoingOnSomeone(bot)
+		or IsSeriouslyRetreatingSafe(bot)
+		or SafeCall(bot, "WasRecentlyDamagedByAnyHero", false, 4.0)
+		or Now() - (bot.yumemiLastOffensiveFlightTime or -90) < OFFENSIVE_FLIGHT_ULTIMATE_LOCKOUT
+		or not IsTerrainConcealed(GetLocation(bot))
+	then
+		return false
+	end
+	local enemy = enemies[1]
+	local distance = UnitDistance(bot, enemy)
+	if not CanTargetEnemy(bot, enemy)
+		or distance < HIDDEN_ULTIMATE_MIN_DISTANCE
+		or distance > radius
+		or SafeCall(enemy, "GetAttackTarget", nil) == bot
+		or IsRecentPursuer(bot, enemy)
+	then
+		return false
+	end
+	local preparationTime = GetSpecialValue(ability, "duration", 4.0)
+	local predicted = GetPredictedLocation(enemy, preparationTime)
+	return Distance2D(predicted, GetLocation(bot)) <= math.max(0, radius - 100)
 end
 
 local function TryUseMorenjingjuan(bot, enemies, retreatOnly)
@@ -610,25 +844,17 @@ local function TryUseMorenjingjuan(bot, enemies, retreatOnly)
 	return false
 end
 
-local function TryUseUltimate(bot, ability, enemies, allowEmergency)
+local function TryUseUltimate(bot, ability, enemies, usage)
 	if IsSilenced(bot) or not IsAbilityReady(ability) then return false end
 	local radius = SafeCall(ability, "GetAOERadius", 0)
 	if radius <= 0 then radius = GetSpecialValue(ability, "radius", 1000) end
 	if radius <= 0 then radius = 1000 end
-	local commitRadius = math.min(800, radius * 0.65)
-	local commitEnemies = 0
-	local fountainEnemies = 0
-	for _, enemy in pairs(enemies) do
-		if UnitDistance(bot, enemy) <= commitRadius then commitEnemies = commitEnemies + 1 end
-		if UnitDistance(bot, enemy) <= radius then fountainEnemies = fountainEnemies + 1 end
-	end
-	local allies = GetNearbyAllies(bot, 900)
-	local isFountain = HasModifier(bot, "modifier_fountain_aura_buff")
-	local recentlyDamaged = SafeCall(bot, "WasRecentlyDamagedByAnyHero", false, 1.5)
-	local evaluatedEnemyCount = isFountain and fountainEnemies or commitEnemies
-	if ShouldUseUltimate(isFountain, evaluatedEnemyCount, #allies, GetHP(bot), GetCrossCount(bot),
-		IsInTeamFight(bot, 1200), allowEmergency, recentlyDamaged)
-	then
+	local hiddenSetup = usage == "hidden" and IsHiddenUltimateSetup(bot, ability, enemies, radius)
+	local cannotRetreat, enemyCount = false, 0
+	if usage == "emergency" then cannotRetreat, enemyCount = IsEmergencySelfDestruct(bot, enemies, radius) end
+	if hiddenSetup then enemyCount = 1 end
+	if ShouldUseUltimate(hiddenSetup, cannotRetreat, GetHP(bot), enemyCount,
+		SafeCall(bot, "WasRecentlyDamagedByAnyHero", false, 1.5)) then
 		return UseAbility(bot, ability)
 	end
 	return false
@@ -696,7 +922,10 @@ local function SelectQTarget(bot, ability, enemies, killOnly)
 end
 
 local function GetAbilityCharges(ability)
-	return math.max(0, SafeCall(ability, "GetCurrentCharges", 2))
+	if ability == nil or not SafeCall(ability, "IsFullyCastable", false) then return 0 end
+	-- GetCurrentCharges 只适用于物品。充能技能可施放且仍在恢复时为一层，恢复结束时为满两层。
+	local restoreRemaining = math.max(0, SafeCall(ability, "GetCooldownTimeRemaining", 0))
+	return restoreRemaining > 0.05 and 1 or 2
 end
 
 local function GetNearbyLaneCreeps(bot, range)
@@ -782,25 +1011,28 @@ local function TryUseE(bot, ability, enemies, retreating, allowUtility)
 	if SafeCall(bot, "GetActiveMode", BOT_MODE_NONE or 0) == BOT_MODE_OUTPOST then return false end
 	local closeEnemies = {}
 	local delay = GetSpecialValue(ability, "delay", 1.0)
+	local radius = GetSpecialValue(ability, "radius", 300)
+	if radius <= 0 then radius = 300 end
 	for _, enemy in pairs(enemies) do
 		if CanTargetEnemy(bot, enemy)
-		and UnitDistance(bot, enemy) <= 300
-		and Distance2D(GetPredictedLocation(enemy, delay), GetLocation(bot)) <= 300
+		and UnitDistance(bot, enemy) <= radius
+		and Distance2D(GetPredictedLocation(enemy, delay), GetLocation(bot)) <= radius
 		then
 			table.insert(closeEnemies, enemy)
 		end
 	end
 	if #closeEnemies >= 2 then return UseAbility(bot, ability) end
 	for _, enemy in pairs(closeEnemies) do
+		-- 撤退时只对仍会停留在爆炸范围内的真实追兵布置减速，避免把 E 浪费在脱离者身后。
 		if retreating and IsRecentPursuer(bot, enemy) then return UseAbility(bot, ability) end
-		if IsGoingOnSomeone(bot) and (UnitDistance(bot, enemy) <= 240 or IsHardControlled(enemy)) then
+		if IsGoingOnSomeone(bot) and (UnitDistance(bot, enemy) <= math.min(240, radius) or IsHardControlled(enemy)) then
 			return UseAbility(bot, ability)
 		end
 	end
 	if not allowUtility then return false end
 	if IsAttackWindup(bot) then return false end
 	if #GetVisibleEnemies(bot, 850) > 0 then return false end
-	local creeps = GetNearbyLaneCreeps(bot, 300)
+	local creeps = GetNearbyLaneCreeps(bot, radius)
 	local aliveCreeps = 0
 	for _, creep in pairs(creeps) do
 		if SafeCall(creep, "IsAlive", false) then aliveCreeps = aliveCreeps + 1 end
@@ -858,10 +1090,15 @@ local function TryUseShardMana(bot, abilityEx)
 end
 
 function AbilityUsageThink()
-	if type(IsBotAwake) == "function" and not IsBotAwake() then return end
 	local bot = GetBot()
 	if bot == nil or not SafeCall(bot, "IsAlive", false) then return end
-	if HasModifier(bot, FLIGHT_MODIFIER) or HasModifier(bot, ULTIMATE_MODIFIER) then return end
+	-- 正式长距离飞行允许在途中尝试开启月耀秘石；其余动作仍由飞行生命周期硬锁。
+	if HasModifier(bot, FLIGHT_MODIFIER) then
+		YumemiFlight.TryUseScheduledMoon(bot, Now())
+		return
+	end
+	if type(IsBotAwake) == "function" and not IsBotAwake() then return end
+	if HasModifier(bot, ULTIMATE_MODIFIER) then return end
 	if WasActionJustIssued(bot) or SafeJ("CanNotUseAction", false, bot) then return end
 
 	local abilityQ = GetAbility(bot, YUMEMI_Q)
@@ -873,19 +1110,22 @@ function AbilityUsageThink()
 
 	-- 灵异珠的弹道躲避必须先于任何常规输出。
 	if TryUseShardDodge(bot, abilityEx) then return end
+	local retreating = IsSeriouslyRetreatingSafe(bot)
+	-- 正式 gank 飞行路线由 ROAM 统一重验并下单；这里只保留弹道躲避和紧急撤退权。
+	if bot.yumemiGankFlightRouteActive == true and not retreating then return end
+	if TryUseTerrainEscapeFlight(bot, abilityW) then return end
 	if TryPendingFlight(bot, abilityW, abilityEx, enemies) then return end
 	-- 预充能后的短窗口内保留飞船计划，避免 Q 抢走刚恢复的蓝量。
 	if bot.yumemiPendingFlight ~= nil then return end
 
-	local retreating = IsSeriouslyRetreatingSafe(bot)
 	if retreating then
 		if TryExecuteFlightPlan(bot, abilityW, abilityEx, BuildRetreatFlightPlan(bot, abilityW)) then return end
 		if TryUseMorenjingjuan(bot, enemies, true) then return end
-		if TryUseUltimate(bot, abilityR, enemies, true) then return end
+		if TryUseUltimate(bot, abilityR, enemies, "emergency") then return end
 	end
 
 	if TryUseQ(bot, abilityQ, enemies, true) then return end
-	if TryUseUltimate(bot, abilityR, enemies, false) then return end
+	if TryUseUltimate(bot, abilityR, enemies, "hidden") then return end
 	if TryUseMorenjingjuan(bot, enemies, false) then return end
 	if TryExecuteFlightPlan(bot, abilityW, abilityEx, BuildOffensiveFlightPlan(bot, abilityW, enemies)) then return end
 	if TryUseE(bot, abilityE, enemies, retreating, false) then return end

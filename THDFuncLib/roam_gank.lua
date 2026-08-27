@@ -3,10 +3,13 @@ local Config = require(GetScriptDirectory()..'/THDFuncLib/roam_config')
 local Coordinator = require(GetScriptDirectory()..'/THDFuncLib/roam_coordinator')
 local Initiation = require(GetScriptDirectory()..'/THDFuncLib/roam_initiation')
 local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
+local YumemiFlight = require(GetScriptDirectory()..'/THDFuncLib/yumemi_gank_flight')
 
 local Gank = {}
 local TryUseTP = nil
 local HasIssuedTP = nil
+local TryUseYumemiFlight = nil
+local HasIssuedYumemiFlight = nil
 local TryUseTwinGate = nil
 local HasIssuedTwinGate = nil
 local SMOKE_REQUESTER = 'roam_pickoff_smoke'
@@ -48,6 +51,9 @@ function Gank.GetDesire(bot)
 	if not IsEnabled() then return BOT_MODE_DESIRE_NONE end
 	local mission = Coordinator.GetMission(bot)
 	-- GetDesire 先于 Think 执行；这里只观察已发出的长引导，避免任务先释放而丢失终态。
+	if HasIssuedYumemiFlight(bot, mission) and TryUseYumemiFlight(bot, mission) then
+		return BOT_MODE_DESIRE_ABSOLUTE * 0.95
+	end
 	if HasIssuedTP(bot, mission) and TryUseTP(bot, mission) then
 		return BOT_MODE_DESIRE_ABSOLUTE * 0.95
 	end
@@ -218,6 +224,139 @@ HasIssuedTP = function(bot, mission)
 	local playerID = Safe(-1, function() return bot:GetPlayerID() end)
 	local plan = mission.travelPlans[playerID]
 	return plan ~= nil and plan.useTP == true and plan.tpIssued == true
+end
+
+local function LogYumemiFlightFallback(bot, mission, plan, reason)
+	if plan.route == YumemiFlight.ROUTE then plan.route = 'walk' end
+	plan.useTP = plan.route == 'tp'
+	if plan.flightIssued == true then
+		plan.flightEndedTime = DotaTime()
+		plan.flightLanded = false
+	end
+	bot.yumemiGankFlightRouteActive = nil
+	bot.yumemiGankFlightMissionID = nil
+	Coordinator.DebugAction(bot, string.format('yumemi_flight_fallback mission=%s reason=%s target=%s observed=%s next_route=%s',
+		tostring(mission.missionID or 'unknown'), tostring(reason), tostring(mission.targetPlayerID),
+		tostring(plan.flightObserved == true), tostring(plan.route or 'walk')))
+end
+
+TryUseYumemiFlight = function(bot, mission)
+	if mission == nil or type(mission.travelPlans) ~= 'table' then return false end
+	local playerID = Safe(-1, function() return bot:GetPlayerID() end)
+	local plan = mission.travelPlans[playerID]
+	if plan == nil or plan.route ~= YumemiFlight.ROUTE then return false end
+	local ability = YumemiFlight.GetAbility(bot)
+	local inPhase = ability ~= nil and ability.IsInAbilityPhase ~= nil
+		and Safe(false, function() return ability:IsInAbilityPhase() end)
+	local inFlight = YumemiFlight.IsActive(bot)
+
+	-- 兼容英雄技能 Think 在模式 OnStart 同帧先下单的情况，并把后续生命周期收归 gank 路由。
+	if plan.flightIssued ~= true and (inPhase or inFlight) then
+		plan.flightIssued = true
+		plan.flightIssuedTime = DotaTime()
+		plan.flightObserved = true
+		plan.flightModifierObserved = inFlight == true
+		Coordinator.DebugAction(bot, string.format('yumemi_flight_start mission=%s target=%s state=adopted distance=%.0f',
+			tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID),
+			plan.flightDistance or -1))
+		return true
+	end
+
+	if plan.flightIssued == true then
+		if inPhase or inFlight then
+			if inFlight then plan.flightModifierObserved = true end
+			if inFlight and plan.flightMoonDuringFlight == true then
+				local usedMoon, moonState = YumemiFlight.TryUseScheduledMoon(bot, DotaTime())
+				if moonState ~= plan.flightMoonLastState then
+					plan.flightMoonLastState = moonState
+					Coordinator.DebugAction(bot, string.format('yumemi_flight_moon mission=%s state=%s delay=%.2f orders=%d',
+						tostring(mission.missionID or 'unknown'), tostring(moonState),
+						plan.flightMoonActivationDelay or -1,
+						(bot.yumemiFlightMoonSchedule or {}).orderCount or 0))
+				end
+				if usedMoon then return true end
+			end
+			if plan.flightObserved ~= true then
+				plan.flightObserved = true
+				plan.flightObservedTime = DotaTime()
+				Coordinator.DebugAction(bot, string.format('yumemi_flight_start mission=%s target=%s state=observed distance=%.0f eta=%.2f mana=%.0f',
+					tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID),
+					plan.flightDistance or -1, plan.flightDuration or -1,
+					plan.flightRequiredMana or -1))
+			end
+			return true
+		end
+		if plan.flightObserved == true then
+			local elapsed = DotaTime() - (plan.flightIssuedTime or DotaTime())
+			if plan.flightModifierObserved ~= true and elapsed < YumemiFlight.CAST_START_GRACE then
+				return true
+			end
+			if plan.flightModifierObserved ~= true then
+				LogYumemiFlightFallback(bot, mission, plan, 'flight_modifier_not_observed')
+				return false
+			end
+			local landingDistance = GetLandingDistance(bot, plan.flightLocation)
+			plan.route = 'walk'
+			plan.useTP = false
+			plan.flightEndedTime = DotaTime()
+			plan.flightLanded = landingDistance <= YumemiFlight.LANDING_OBSERVED_RADIUS
+			bot.yumemiLastOffensiveFlightTime = DotaTime()
+			YumemiFlight.ClearScheduledMoon(bot)
+			bot.yumemiGankFlightRouteActive = nil
+			bot.yumemiGankFlightMissionID = nil
+			Coordinator.DebugAction(bot, string.format('yumemi_flight_end mission=%s target=%s state=%s landing_distance=%.0f elapsed=%.2f',
+				tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID),
+				plan.flightLanded and 'landed' or 'ended_early', landingDistance,
+				DotaTime() - (plan.flightIssuedTime or DotaTime())))
+			return false
+		end
+		if DotaTime() - (plan.flightIssuedTime or DotaTime()) < YumemiFlight.CAST_START_GRACE then
+			return true
+		end
+		LogYumemiFlightFallback(bot, mission, plan, 'cast_not_started')
+		return false
+	end
+
+	if mission.phase ~= 'approach' then
+		LogYumemiFlightFallback(bot, mission, plan, 'phase_changed')
+		return false
+	end
+	if IsActionBlocked(bot) then return false end
+	local refreshedPlan, refreshReason, targetMoved = Coordinator.RefreshYumemiFlightTravelPlan(bot, mission)
+	if refreshedPlan == nil then
+		LogYumemiFlightFallback(bot, mission, plan, 'replan_' .. tostring(refreshReason))
+		return false
+	end
+	plan = refreshedPlan
+	ability = YumemiFlight.GetAbility(bot)
+	if ability == nil or plan.flightLocation == nil
+		or not Safe(false, function() return ability:IsFullyCastable() end)
+	then
+		LogYumemiFlightFallback(bot, mission, plan, 'ability_unavailable')
+		return false
+	end
+
+	bot:Action_UseAbilityOnLocation(ability, plan.flightLocation)
+	plan.flightIssued = true
+	plan.flightIssuedTime = DotaTime()
+	plan.flightObserved = false
+	plan.flightModifierObserved = false
+	plan.flightLanded = nil
+	bot.yumemiGankFlightRouteActive = true
+	bot.yumemiGankFlightMissionID = mission.missionID
+	YumemiFlight.ArmScheduledMoon(bot, plan, DotaTime())
+	Coordinator.DebugAction(bot, string.format('yumemi_flight_order mission=%s target=%s distance=%.0f eta=%.2f mana=%.0f target_moved=%.0f',
+		tostring(mission.missionID or 'unknown'), tostring(mission.targetPlayerID),
+		plan.flightDistance or -1, plan.flightDuration or -1,
+		plan.flightRequiredMana or -1, targetMoved or 0))
+	return true
+end
+
+HasIssuedYumemiFlight = function(bot, mission)
+	if mission == nil or type(mission.travelPlans) ~= 'table' then return false end
+	local playerID = Safe(-1, function() return bot:GetPlayerID() end)
+	local plan = mission.travelPlans[playerID]
+	return plan ~= nil and plan.route == YumemiFlight.ROUTE and plan.flightIssued == true
 end
 
 local function LogGateFallback(bot, mission, plan, reason)
@@ -529,8 +668,9 @@ function Gank.Think(bot)
 		Coordinator.Abort(bot, 'disabled')
 		return
 	end
-	-- 已发出的 TP 必须先收集终态；否则目标同帧死亡会让 coordinator 先释放并丢失落点结果。
+	-- 已发出的飞船/TP 必须先收集终态；否则目标同帧死亡会让 coordinator 先释放并丢失落点结果。
 	local activeMission = Coordinator.GetMission(bot)
+	if HasIssuedYumemiFlight(bot, activeMission) and TryUseYumemiFlight(bot, activeMission) then return end
 	if HasIssuedTP(bot, activeMission) and TryUseTP(bot, activeMission) then return end
 	if HasIssuedTwinGate(bot, activeMission) and TryUseTwinGate(bot, activeMission) then return end
 	if Coordinator.GetDesire(bot) <= BOT_MODE_DESIRE_NONE then
@@ -542,6 +682,7 @@ function Gank.Think(bot)
 	if mission == nil then return end
 
 	-- 先让长距离路线观察到引导开始和结束，再保护普通技能前摇/引导动作。
+	if TryUseYumemiFlight(bot, mission) then return end
 	if TryUseTP(bot, mission) then return end
 	if TryUseTwinGate(bot, mission) then return end
 

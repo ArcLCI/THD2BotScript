@@ -93,6 +93,9 @@ function AbilityUsageThink()
     then
         return
     end
+	if type(ObserveAbilityUsageTask) == 'function' then
+		ObserveAbilityUsageTask(npcBot, 'ability_usage_unthrottled', 0)
+	end
 
     local item_dragon_star = IsItemAvailable( "item_dragon_star" )
 

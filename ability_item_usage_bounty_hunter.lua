@@ -346,7 +346,7 @@ local function ConsiderMomiji01(bot, ability)
 
 	local mode = bot:GetActiveMode()
 	local isCombat = J.IsGoingOnSomeone(bot)
-	local isObjective = J.IsDoingRoshan(bot) or J.IsPushing(bot)
+	local isObjective = J.IsRoshanCommitmentActive(bot) or J.IsPushing(bot)
 	local isFarm = mode == BOT_MODE_FARM
 	local isDefend = J.IsDefending(bot)
 	local laneCreeps = bot:GetNearbyLaneCreeps(800, true)

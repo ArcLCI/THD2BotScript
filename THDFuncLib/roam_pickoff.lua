@@ -363,9 +363,9 @@ end
 
 local function IsBusy(unit)
 	local mode = Safe(BOT_MODE_NONE, function() return unit:GetActiveMode() end)
-	return mode == BOT_MODE_RETREAT or mode == BOT_MODE_ROSHAN
+	return mode == BOT_MODE_RETREAT
 		or J.Retreat.ShouldYield(unit, J.Retreat.HIGH)
-		or J.IsDoingRoshan(unit)
+		or J.IsRoshanCommitmentActive(unit)
 		or J.Utils.IsTeamPushingSecondTierOrHighGround(unit)
 end
 

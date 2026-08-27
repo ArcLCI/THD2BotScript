@@ -47,6 +47,7 @@ Strategy.OBJECTIVE_ARRIVAL_DISTANCE = 1600
 Strategy.OBJECTIVE_ESCORT_CREEP_DISTANCE = 2000
 Strategy.OBJECTIVE_RETRY_RESET_TIME = 60.0
 Strategy.OBJECTIVE_RETRY_MAX_MULTIPLIER = 3
+Strategy.OBJECTIVE_HIGH_GROUND_CONTINUATION_DURATION = 30.0
 Strategy.OBJECTIVE_RETRY_BASE_DELAYS = {
 	assemble_timeout = 6.0,
 	base_defense_pressure = 8.0,
@@ -90,6 +91,7 @@ local towerSnapshotMilestones = {}
 local lastBaseThreatSnapshots = {}
 local auditLogTimes = {}
 local participantReselectBlocks = {}
+local pushContinuations = {}
 
 local OUTER_TOWERS = {}
 for _, towerID in ipairs({TOWER_TOP_1, TOWER_TOP_2, TOWER_MID_1, TOWER_MID_2, TOWER_BOT_1, TOWER_BOT_2}) do
@@ -169,10 +171,23 @@ local function GetVisibleHealthFraction(unit)
 	return math.max(0, math.min(1, health / maxHealth))
 end
 
+local function CanInspectUnit(unit)
+	if unit == nil then return false end
+	local ok, visible = pcall(function()
+		if unit.IsNull ~= nil and unit:IsNull() then return false end
+		if unit.CanBeSeen == nil or not unit:CanBeSeen() then return false end
+		return unit.IsAlive == nil or unit:IsAlive()
+	end)
+	return ok and visible == true
+end
+
 local function Debug(bot, message)
 	if Strategy.DEBUG ~= true then return end
-	print(string.format('[BOT][Objective] pid=%s %s game_time=%.1f',
-		tostring(GetPlayerID(bot)), tostring(message), GetNow()))
+	-- 基地压力可能由无具体 Bot 的团队快照输出；保留 team 后才能与共享目标严格关联。
+	local dotaTime = GetNow()
+	local gameTime = Safe(dotaTime, function() return GameTime() end) or dotaTime
+	print(string.format('[BOT][Objective] schema=2 team=%s pid=%s %s dota_time=%.1f game_time=%.1f',
+		tostring(GetTeamKey()), tostring(GetPlayerID(bot)), tostring(message), dotaTime, gameTime))
 end
 
 local function DebugLimited(bot, key, interval, message)
@@ -541,17 +556,39 @@ local function ClearObjective(team, reason, bot)
 	local retryEntry = nil
 	if objective.releaseReason == 'target_destroyed' then
 		ClearObjectiveRetry(team, objective.targetKey)
+		if (tonumber(objective.tier) or 1) >= 3
+		and objective.targetKind ~= 'ancient'
+		and objective.lane ~= nil
+		then
+			-- 高地建筑拆除后短暂锁住同一路线，等待死亡句柄清理并衔接兵营、T4 或远古。
+			pushContinuations[team] = {
+				lane = objective.lane,
+				fromTargetKey = objective.targetKey,
+				createdAt = now,
+				expiresAt = now + Strategy.OBJECTIVE_HIGH_GROUND_CONTINUATION_DURATION,
+			}
+			Debug(bot, string.format('action=objective_continuation_start lane=%s from=%s duration=%.1f',
+				tostring(objective.lane), tostring(objective.targetKey),
+				Strategy.OBJECTIVE_HIGH_GROUND_CONTINUATION_DURATION))
+		else
+			pushContinuations[team] = nil
+		end
 	else
 		retryEntry = RecordObjectiveRetry(team, objective.targetKey, objective.releaseReason, now)
 	end
 	objective.retryAfter = retryEntry ~= nil and retryEntry.retryAfter or nil
 	lastObjectiveReleases[team] = objective
-	Debug(bot, string.format('action=objective_release id=%s target=%s lane=%s tier=%s source=%s reason=%s elapsed=%.1f phase=%s retry_in=%.1f reassigns=%s participants=%s',
+	local lastHealthDropAge = objective.lastHealthDropAt ~= nil
+		and string.format('%.2f', math.max(0, now - objective.lastHealthDropAt)) or 'na'
+	local siegeAttackableAge = objective.siegeAttackableSince ~= nil
+		and string.format('%.2f', math.max(0, now - objective.siegeAttackableSince)) or 'na'
+	Debug(bot, string.format('action=objective_release id=%s target=%s lane=%s tier=%s source=%s reason=%s elapsed=%.1f phase=%s retry_in=%.1f reassigns=%s last_health_drop_age=%s siege_attackable_age=%s participants=%s',
 		tostring(objective.id), tostring(objective.targetKey), tostring(objective.lane), tostring(objective.tier),
 		tostring(objective.source), tostring(objective.releaseReason),
 		math.max(0, now - (objective.createdAt or now)), tostring(objective.previousPhase),
 		retryEntry ~= nil and math.max(0, retryEntry.retryAfter - now) or 0,
 		tostring(objective.reassignCount or 0),
+		lastHealthDropAge, siegeAttackableAge,
 		FormatParticipantIDs(objective)))
 	return objective
 end
@@ -607,7 +644,18 @@ end
 local function GetParticipantBlockReason(unit, initialSelection)
 	if not IsAlive(unit) then return 'dead' end
 	local mode = Safe(BOT_MODE_NONE, function() return unit:GetActiveMode() end)
-	if BOT_MODE_ROSHAN ~= nil and mode == BOT_MODE_ROSHAN then return 'roshan' end
+	if BOT_MODE_ROSHAN ~= nil
+	and mode == BOT_MODE_ROSHAN
+	and Safe(false, function() return J.IsRoshanCommitmentActive(unit) end)
+	then
+		return 'roshan'
+	end
+	-- Roam 与统一推进都是显式团队租约；任一方向都不能把同一 Bot 再分配给另一任务。
+	if (BOT_MODE_ROAM ~= nil and mode == BOT_MODE_ROAM)
+	or (BOT_MODE_TEAM_ROAM ~= nil and mode == BOT_MODE_TEAM_ROAM)
+	then
+		return 'roam'
+	end
 	if DEFEND_MODES[mode] == true
 	and Safe(0, function() return unit:GetActiveModeDesire() end) >= 0.8
 	then
@@ -724,7 +772,8 @@ local function GetClosestAlliedCreepDistance(targetLocation)
 end
 
 local function HasManagedBackdoorProtection(target)
-	if target == nil then return true end
+	-- Bot API 不允许读取不可见建筑的 modifier；不可读时按仍受保护处理。
+	if not CanInspectUnit(target) then return true end
 	for _, modifierName in ipairs({
 		'modifier_fountain_glyph',
 		'modifier_backdoor_protection',
@@ -735,7 +784,10 @@ local function HasManagedBackdoorProtection(target)
 	end
 	local info = GetManagedBuildingInfo(target)
 	if info ~= nil and info.tier >= 2 then
-		return not Safe(false, function() return target:HasModifier('modifier_thdots_anti_bd_stop') end)
+		local antiBackdoorStopped = Safe(nil, function()
+			return target:HasModifier('modifier_thdots_anti_bd_stop')
+		end)
+		return antiBackdoorStopped ~= true
 	end
 	return false
 end
@@ -1111,6 +1163,25 @@ local function RenewObjective(objective, now, reason, bot)
 	end
 end
 
+local function RefreshVisibleObjectiveHealth(objective, now, bot, visibleHealth)
+	if objective == nil then return false end
+	if visibleHealth == nil and CanInspectUnit(objective.target) then
+		visibleHealth = Safe(nil, function() return objective.target:GetHealth() end)
+	end
+	visibleHealth = tonumber(visibleHealth)
+	if visibleHealth == nil then return false end
+
+	local healthDropped = objective.lastVisibleTargetHealth ~= nil
+		and visibleHealth < objective.lastVisibleTargetHealth
+	if healthDropped then
+		objective.lastHealthDropAt = now
+		objective.siegeAttackableSince = now
+		RenewObjective(objective, now, 'building_health_drop', bot)
+	end
+	objective.lastVisibleTargetHealth = visibleHealth
+	return healthDropped
+end
+
 local function TransitionPhase(objective, phase, bot, reason)
 	if objective == nil or objective.phase == phase then return false end
 	local previous = objective.phase
@@ -1201,7 +1272,7 @@ function Strategy.GetState()
 	return state
 end
 
-function Strategy.GetPushObjective()
+function Strategy.GetPushObjective(deferVisibleHealthRefresh)
 	if not Strategy.IsEnabled() then return nil end
 	local team = GetTeamKey()
 	if team == nil then return nil end
@@ -1225,6 +1296,17 @@ function Strategy.GetPushObjective()
 		ClearObjective(team, 'assemble_timeout', nil)
 		return nil
 	end
+	if deferVisibleHealthRefresh ~= true then
+		-- 目标模式可能被短暂抢占；由所有高频读取者共同维护真实掉血和 5 秒攻城停滞期限。
+		RefreshVisibleObjectiveHealth(objective, now, nil, nil)
+		if objective.phase == Strategy.PHASE_SIEGE
+		and objective.siegeAttackableSince ~= nil
+		and now - objective.siegeAttackableSince >= Strategy.OBJECTIVE_SIEGE_NO_DAMAGE_TIMEOUT
+		then
+			ClearObjective(team, 'siege_no_health_drop', nil)
+			return nil
+		end
+	end
 	if now >= (objective.expiresAt or objective.expireAt or -9999) then
 		ClearObjective(team, 'progress_lease_expired', nil)
 		return nil
@@ -1241,6 +1323,19 @@ end
 function Strategy.GetLastObjectiveRelease()
 	local team = GetTeamKey()
 	return team ~= nil and lastObjectiveReleases[team] or nil
+end
+
+function Strategy.GetPushContinuationLane()
+	if not Strategy.IsEnabled() then return nil end
+	local team = GetTeamKey()
+	if team == nil then return nil end
+	local continuation = pushContinuations[team]
+	if continuation == nil then return nil end
+	if GetNow() >= (continuation.expiresAt or -9999) then
+		pushContinuations[team] = nil
+		return nil
+	end
+	return continuation.lane
 end
 
 function Strategy.NoteRoamKill(lane, missionID, bot)
@@ -1310,6 +1405,8 @@ function Strategy.TryCreatePushObjective(bot, lane, state, target, tier)
 
 	local team = GetTeamKey()
 	if team == nil then return nil end
+	local continuationLane = Strategy.GetPushContinuationLane()
+	if continuationLane ~= nil and continuationLane ~= lane then return nil end
 	local opportunity = state.conversionOpportunity or Strategy.GetConversionOpportunity()
 	local existing = Strategy.GetPushObjective()
 	local preemptExisting = nil
@@ -1449,6 +1546,11 @@ function Strategy.TryCreatePushObjective(bot, lane, state, target, tier)
 	}
 	RebuildParticipantMap(objective)
 	objectives[team] = objective
+	if continuationLane ~= nil then
+		pushContinuations[team] = nil
+		Debug(bot, string.format('action=objective_continuation_consume lane=%s target=%s',
+			tostring(lane), tostring(targetKey)))
+	end
 	if source == 'roam_kill' then conversionOpportunities[team] = nil end
 	local targetHealth, targetMaxHealth = nil, nil
 	if J.Utils ~= nil and J.Utils.GetVisibleHealth ~= nil then
@@ -1489,10 +1591,15 @@ end
 
 function Strategy.IsPushObjectiveParticipant(bot, objective)
 	objective = objective or Strategy.GetPushObjective()
-	if bot == nil or objective == nil then return false end
-	local participant = objective.participantByID ~= nil and objective.participantByID[GetPlayerID(bot)] or nil
-	if participant == nil then return false end
+	if not Strategy.IsPushObjectiveReservedParticipant(bot, objective) then return false end
 	return GetParticipantBlockReason(bot, false) == nil
+end
+
+function Strategy.IsPushObjectiveReservedParticipant(bot, objective)
+	objective = objective or Strategy.GetPushObjective()
+	if bot == nil or objective == nil or objective.participantByID == nil then return false end
+	-- 这里只回答租约归属，不混入暂时性的撤退/防守/不可行动状态。
+	return objective.participantByID[GetPlayerID(bot)] ~= nil
 end
 
 function Strategy.GetPushObjectiveRole(bot, objective)
@@ -1505,6 +1612,25 @@ end
 function Strategy.GetPushObjectiveContext(owner)
 	if not Strategy.IsEnabled() then return nil end
 	return Strategy.GetPushObjective()
+end
+
+function Strategy.GetPushObjectiveDebugSnapshot(bot)
+	if not Strategy.IsEnabled() then return nil end
+	local team = GetTeamKey()
+	local objective = team ~= nil and objectives[team] or nil
+	if objective == nil then return nil end
+	local participant = bot ~= nil and objective.participantByID ~= nil
+		and objective.participantByID[GetPlayerID(bot)] or nil
+	return {
+		id = objective.id,
+		phase = objective.phase,
+		lane = objective.lane,
+		tier = objective.tier,
+		target = objective.target,
+		targetKey = objective.targetKey,
+		participant = participant ~= nil,
+		role = participant ~= nil and participant.role or nil,
+	}
 end
 
 function Strategy.GetManagedBuildingInfo(target)
@@ -1633,7 +1759,8 @@ function Strategy.ShouldYieldPushObjective(bot, lane)
 end
 
 function Strategy.ObservePushObjective(bot, lane, target, observation)
-	local objective = Strategy.GetPushObjective()
+	-- 本次观察要先消费同帧可见 HP，再判断 5 秒无掉血，避免边界帧误释放。
+	local objective = Strategy.GetPushObjective(true)
 	if objective == nil or objective.lane ~= lane then return nil end
 	if target ~= nil and GetTargetKey(target) ~= objective.targetKey then return objective end
 	observation = observation or {}
@@ -1703,16 +1830,7 @@ function Strategy.ObservePushObjective(bot, lane, target, observation)
 	end
 	objective.lastBackdoorProtected = backdoorProtected
 
-	local visibleHealth = tonumber(observation.targetHealth)
-	local healthDropped = visibleHealth ~= nil
-		and objective.lastVisibleTargetHealth ~= nil
-		and visibleHealth < objective.lastVisibleTargetHealth
-	if healthDropped then
-		objective.lastHealthDropAt = now
-		objective.siegeAttackableSince = now
-		RenewObjective(objective, now, 'building_health_drop', bot)
-	end
-	if visibleHealth ~= nil then objective.lastVisibleTargetHealth = visibleHealth end
+	RefreshVisibleObjectiveHealth(objective, now, bot, observation.targetHealth)
 
 	if attackable then
 		if objective.phase == Strategy.PHASE_ESCORT then
@@ -1838,6 +1956,11 @@ function Strategy.AdjustPushDesire(baseDesire, laneBuildingTier, state, lane, sa
 		if not highGroundAllowed then return BOT_MODE_DESIRE_NONE end
 	end
 	local objective = ResolveObjectiveFromState(state)
+	local continuationLane = Strategy.GetPushContinuationLane()
+	if objective == nil and continuationLane ~= nil then
+		if lane ~= nil and lane ~= continuationLane then return BOT_MODE_DESIRE_NONE end
+		adjustedDesire = math.max(adjustedDesire, Strategy.OUTER_COMMIT_DESIRE)
+	end
 	local opportunity = state.conversionOpportunity or Strategy.GetConversionOpportunity()
 	if objective == nil
 	and opportunity ~= nil
@@ -1926,6 +2049,7 @@ function Strategy.ResetForTests()
 	lastBaseThreatSnapshots = {}
 	auditLogTimes = {}
 	participantReselectBlocks = {}
+	pushContinuations = {}
 end
 
 return Strategy
