@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local Scheduler = require(GetScriptDirectory()..'/thd2_scheduler')
@@ -220,7 +221,7 @@ end
 function Defend.GetDefendDesire(bot, lane)
 	Defend.TryUseGlyph(bot)
 	GetBaseDefenseLocation(bot:GetTeam())
-	if Defend.ShouldYieldToRetreat(bot) then return BOT_MODE_DESIRE_NONE end
+	if Defend.ShouldYieldToRetreat(bot) then CandidateDebug.Note('high_retreat'); return BOT_MODE_DESIRE_NONE end
 
 	-- 三路必须各自先完成原始欲望计算，避免首个被查询的模式阻断另外两路。
 	return Timer.GetOrComputeBotLane('DefendDesire', bot, lane, DEFEND_DESIRE_CACHE_INTERVAL, function()
@@ -229,7 +230,7 @@ function Defend.GetDefendDesire(bot, lane)
 end
 
 function Defend.ComputeDefendDesire(bot, lane)
-	if bot:IsIllusion() then return BOT_MODE_DESIRE_NONE end
+	if bot:IsIllusion() then CandidateDebug.Note('illusion'); return BOT_MODE_DESIRE_NONE end
 	if bot.laneToDefend == nil then bot.laneToDefend = lane end
 	if bot.DefendLaneDesire == nil then bot.DefendLaneDesire = {0, 0, 0} end
 	local state = GetLaneState(bot, lane)
@@ -294,8 +295,10 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 		bot.laneToDefend = lane
 		-- 已到四塔中点后释放紧急权重，让攻击、撤退等模式正常接管。
 		if state.distanceToLane <= BASE_DEFENSE_SETTLED_RADIUS then
+			CandidateDebug.Note('base_defense_arrived')
 			return BOT_MODE_DESIRE_MODERATE
 		end
+		CandidateDebug.Note('base_emergency')
 		return BOT_MODE_DESIRE_ABSOLUTE * 0.98
 	end
 
@@ -313,6 +316,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 		state.distanceToLane = GetUnitToLocationDistance(bot, defendLoc)
 
 		if #state.lEnemyHeroesAroundLoc == 0 and (J.IsAnyAllyDefending(bot, lane) or state.nEffctiveAllyHeroesNearPingedDefendLoc >= 1) then
+			CandidateDebug.Note('base_defense_covered')
 			return BOT_MODE_DESIRE_NONE
 		end
 		if (#nDefendAllyHeroes < state.nEnemyUnitsAroundAncient + 1
@@ -324,6 +328,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 		and ((#state.nInRangeEnemy <= 1 and not (J.IsValidHero(state.botTarget) and J.GetHP(state.botTarget) < 0.3)) or not bot:WasRecentlyDamagedByAnyHero(2)) then
 			print("Ancient is in danger for team " .. team)
 			local desire = RemapValClamped(J.GetHP(bot), 0.25, 0.5, BOT_ACTION_DESIRE_NONE, BOT_ACTION_DESIRE_ABSOLUTE)
+			CandidateDebug.Note('ancient_danger')
 			return desire
 		end
 	end
@@ -338,6 +343,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 	or (bot:GetAssignedLane() == LANE_MID and bot:GetLevel() < 10)
 	or (J.IsRoshanCommitmentActive(bot) and J.GetRoshanTeamState(2800).isDoingRoshanWithTeam)
 	then
+		CandidateDebug.Note('local_fight_or_level_or_roshan')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -349,6 +355,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 		if (nBuildingfTier == 1 and J.GetHP(furthestBuilding) <= 0.15)
 			or (nBuildingfTier == 2 and J.GetHP(furthestBuilding) <= 0.1)
 		then
+			CandidateDebug.Note('tower_unsalvageable')
 			return BOT_MODE_DESIRE_NONE
 		end
 	end
@@ -360,6 +367,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 	and nBuildingfTier < 2
 	then
 		if not J.CanCastAbility(tpScoll) then
+			CandidateDebug.Note('early_offlane_no_tp')
 			return BOT_MODE_DESIRE_NONE
 		end
 	end
@@ -370,11 +378,13 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 	local botLevel = bot:GetLevel()
 	if bot:GetAssignedLane() ~= lane
 	and distanceToDefendLoc > 3000 and botLevel < 5 then
+	CandidateDebug.Note('low_level_far_offlane')
 	return BOT_MODE_DESIRE_NONE
 	end
 
 	-- 如果附近没有敌方英雄，同时队友去防守了，则不防守
 	if #state.lEnemyHeroesAroundLoc == 0 and J.IsAnyAllyDefending(bot, lane) then
+		CandidateDebug.Note('ally_defending_no_enemy_hero')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -383,6 +393,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 	and (state.nEffctiveAllyHeroesNearPingedDefendLoc > #state.lEnemyHeroesAroundLoc
 		or (J.IsAnyAllyDefending(bot, lane) and J.GetAverageLevel(false) >= J.GetAverageLevel(true)))
 	then
+		CandidateDebug.Note('ally_defending_covered_enemy')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -419,6 +430,11 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 		nDefendDesire = RemapValClamped(distanceToDefendLoc/4000, 0, 2, nDefendDesire, BOT_ACTION_DESIRE_VERYLOW)
 	end
 
+	CandidateDebug.Detail('lane', lane)
+	CandidateDebug.Detail('distance_to_defend', distanceToDefendLoc)
+	CandidateDebug.Detail('enemy_heroes', #state.lEnemyHeroesAroundLoc)
+	CandidateDebug.Detail('effective_allies', state.nEffctiveAllyHeroesNearPingedDefendLoc)
+	CandidateDebug.Note('defend_score')
 	return nDefendDesire
 end
 

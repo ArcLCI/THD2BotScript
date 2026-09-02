@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local bot = GetBot()
 local botName = bot:GetUnitName()
 if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
@@ -22,7 +23,7 @@ local hAbilityCapture = bot:GetAbilityByName('ability_capture')
 
 local function ComputeDesire()
 
-	if not Utils.AllowModeDesire(bot, 'outpost') then return BOT_MODE_DESIRE_NONE end
+	if not Utils.AllowModeDesire(bot, 'outpost') then CandidateDebug.Note('mode_switch_lock'); return BOT_MODE_DESIRE_NONE end
 	if not IsEnemyTier2Down
 	then
 		if GetTower(GetOpposingTeam(), TOWER_TOP_2) == nil
@@ -34,10 +35,12 @@ local function ComputeDesire()
 	end
 
 	if J.Utils.IsTeamPushingSecondTierOrHighGround(bot) then
+		CandidateDebug.Note('team_push_proximity')
 		return BOT_MODE_DESIRE_NONE;
 	end
 
 	if J.GetEnemiesAroundAncient(bot, 3200) > 0 then
+		CandidateDebug.Note('ancient_pressure')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -45,7 +48,7 @@ local function ComputeDesire()
 	-- Outpost
 	----------
 
-	if not IsEnemyTier2Down then return BOT_ACTION_DESIRE_NONE end
+	if not IsEnemyTier2Down then CandidateDebug.Note('tier2_not_unlocked'); return BOT_ACTION_DESIRE_NONE end
 
 	local outpostDesireInterval = OUTPOST_DESIRE_INTERVAL
 	if DotaTime() > OUTPOST_LATE_GAME_TIME then
@@ -53,6 +56,7 @@ local function ComputeDesire()
 	end
 
 	if not Timer.ShouldRunBotTask(bot, 'outpost_desire', outpostDesireInterval, OUTPOST_DESIRE_STAGGER) then
+		CandidateDebug.Note('scan_throttled')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -72,10 +76,12 @@ local function ComputeDesire()
 
 	ClosestOutpost, ClosestOutpostDist = GetClosestOutpost()
 	if DotaTime() > OUTPOST_LATE_GAME_TIME and ClosestOutpostDist > OUTPOST_LATE_MAX_DISTANCE then
+		CandidateDebug.Note('late_outpost_too_far')
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	if DotaTime() > 30 * 60 and #bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE) > 0 then
+		CandidateDebug.Note('late_enemy_nearby')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -88,13 +94,16 @@ local function ComputeDesire()
 			local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), bot:GetCurrentVisionRange())
 			if nInRangeEnemy ~= nil and #nInRangeEnemy >= 1
 			then
+				CandidateDebug.Note('enemy_near_outpost')
 				return BOT_ACTION_DESIRE_NONE
 			end
 		end
 
+		CandidateDebug.Note('capture_candidate')
 		return RemapValClamped(GetUnitToUnitDistance(bot, ClosestOutpost), 3000, 0, BOT_ACTION_DESIRE_VERYLOW, BOT_ACTION_DESIRE_HIGH )
 	end
 
+	CandidateDebug.Note('no_suitable_outpost')
 	return BOT_ACTION_DESIRE_NONE
 end
 
@@ -102,6 +111,7 @@ function GetDesire()
 	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
 		ClosestOutpost = nil
 		ClosestOutpostDist = 10000
+		CandidateDebug.Note('high_retreat')
 		return BOT_MODE_DESIRE_NONE
 	end
 	return Utils.GetCachedModeDesire(bot, 'outpost', ComputeDesire)
@@ -202,3 +212,6 @@ function IsSuitableToCaptureOutpost()
 
 	return true
 end
+
+-- 仅观察本模式自然返回值，不参与模式选择。
+GetDesire = CandidateDebug.Wrap('outpost', GetDesire)

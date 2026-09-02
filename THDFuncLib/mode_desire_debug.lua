@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local ModeDesireDebug = {}
 local wastelandOK, Wasteland = pcall(
 	require,
@@ -195,10 +196,18 @@ function ModeDesireDebug.Think(bot)
 	end
 
 	local dotaTime = DotaTime()
-	if type(dotaTime) ~= 'number' or dotaTime < 0 then return false end
+	if type(dotaTime) ~= 'number' then return false end
+	local mode = bot:GetActiveMode()
+	if dotaTime < 0 then
+		local evasiveMode = rawget(_G, 'BOT_MODE_EVASIVE_MANEUVERS')
+		if bot.THD_AvoidanceModeLoadProbeActive ~= true
+		or evasiveMode == nil or mode ~= evasiveMode
+		then
+			return false
+		end
+	end
 
 	local state = GetState(bot)
-	local mode = bot:GetActiveMode()
 	local modeChanged = state.lastMode ~= mode
 	if not modeChanged and dotaTime < state.nextSampleTime then return false end
 
@@ -274,6 +283,7 @@ function ModeDesireDebug.Think(bot)
 		roshan ~= nil and tonumber(roshan.pitDistance) or -1,
 		tostring(roshan ~= nil and roshan.alliesNearPit or -1)
 	))
+	CandidateDebug.Flush(bot, loggerInstance)
 	return true
 end
 

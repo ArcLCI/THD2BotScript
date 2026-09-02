@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Timer = {}
 
 local cacheStore = {}
@@ -32,11 +33,15 @@ end
 function Timer.GetOrCompute(key, interval, computeFn)
     local cachedValue = Timer.Get(key, interval)
     if cachedValue ~= nil then
+        if type(key) == 'string' and key:sub(1, 13) == 'DefendDesire-' then
+            CandidateDebug.CacheHit(cacheStore[key], Timer.Now() - cacheStore[key].time, 'timer:' .. key)
+        end
         return cachedValue
     end
 
     local computedValue = computeFn()
     Timer.Set(key, computedValue)
+    if type(key) == 'string' and key:sub(1, 13) == 'DefendDesire-' then CandidateDebug.SaveCache(cacheStore[key]) end
     return computedValue
 end
 

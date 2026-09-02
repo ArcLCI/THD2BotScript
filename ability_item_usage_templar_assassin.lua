@@ -26,6 +26,7 @@ local nNextActionTime= 0
 function MyItemUsageThink()
     local npcBot = GetBot()
 
+	if J.IsTowerEscapeActive(npcBot) then return end
     if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
 
     local item_yukkuri_stick = IsItemAvailable("item_yukkuri_stick")
@@ -93,6 +94,8 @@ function AbilityUsageThink()
     then
         return
     end
+	-- 防越塔租约期间保留已经排入队列的连招，但不再追加技能或物品指令。
+	if J.IsTowerEscapeActive(npcBot) then return end
 	if type(ObserveAbilityUsageTask) == 'function' then
 		ObserveAbilityUsageTask(npcBot, 'ability_usage_unthrottled', 0)
 	end

@@ -1014,6 +1014,7 @@ end
 function ItemUsageThink()
 	if RefreshBotHandle() then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+	if J.IsTowerEscapeActive(bot) then return end
 	if bot.lastItemFrameProcessTime == nil then bot.lastItemFrameProcessTime = DotaTime() end
 
 	local itemThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25, 'item_usage_generic')
@@ -1027,6 +1028,7 @@ end
 function AbilityUsageThink()
 	if RefreshBotHandle() then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+	if J.IsTowerEscapeActive(bot) then return end
 	-- 烟/粉发单后必须等到物品消耗或冷却得到确认，英雄技能不得覆盖这段短生命周期。
 	if Consumables.IsCastConfirmationPending(bot) then return end
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end

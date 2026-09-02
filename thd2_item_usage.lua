@@ -2,7 +2,6 @@ local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local Scheduler = require(GetScriptDirectory()..'/thd2_scheduler')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
-local AvoidanceZonesProbe = require(GetScriptDirectory()..'/THDFuncLib/avoidance_zones_probe')
 
 -- 专用逐帧英雄通过已加载的共享入口上报节奏，避免各英雄重复持有 Scheduler 依赖。
 function ObserveAbilityUsageTask(bot, taskName, configuredInterval)
@@ -452,8 +451,8 @@ function IsBotAwake( bot )
 
 	if bot == nil then bot = GetBot() end
 	if bot == nil then return false end
-	-- 默认关闭；手动调试时只让一个 Bot 单次调用危险的原生 API，并留下崩溃前后哨兵日志。
-	AvoidanceZonesProbe.TryRun(bot)
+	-- 防越塔移动租约由 EVASIVE 模式独占，旧英雄技能入口不得覆盖路径动作。
+	if J.IsTowerEscapeActive(bot) then return false end
 	local abilityThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, 0.25, 0.25, 'ability_usage_shared')
 	if DotaTime() > 0 and not Timer.ShouldRunBotTask(bot, 'ability_usage_think_global', abilityThinkInterval, 0.03) then return false end
 	Scheduler.ObserveTaskRun(bot, 'ability_usage_shared', abilityThinkInterval)

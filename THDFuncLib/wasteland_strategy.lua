@@ -8,6 +8,7 @@ local laneAssignmentOK, LaneAssignment = pcall(
 	GetScriptDirectory()..'/THDFuncLib/lane_assignment'
 )
 
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Strategy = {}
 
 -- Wasteland 部署保持开启；Nostalgia 部署必须把本开关设为 false，关闭后完全沿用旧逻辑。
@@ -45,6 +46,7 @@ Strategy.OBJECTIVE_APPROACH_PROGRESS_DISTANCE = 300
 Strategy.OBJECTIVE_CREEP_PROGRESS_DISTANCE = 250
 Strategy.OBJECTIVE_ARRIVAL_DISTANCE = 1600
 Strategy.OBJECTIVE_ESCORT_CREEP_DISTANCE = 2000
+Strategy.OBJECTIVE_ATTACKABLE_ASSEMBLY_SHORTFALL = 1
 Strategy.OBJECTIVE_RETRY_RESET_TIME = 60.0
 Strategy.OBJECTIVE_RETRY_MAX_MULTIPLIER = 3
 Strategy.OBJECTIVE_HIGH_GROUND_CONTINUATION_DURATION = 30.0
@@ -644,6 +646,10 @@ end
 local function GetParticipantBlockReason(unit, initialSelection)
 	if not IsAlive(unit) then return 'dead' end
 	local mode = Safe(BOT_MODE_NONE, function() return unit:GetActiveMode() end)
+	-- mode 19 可在租约释放后短暂残留；团队资格只以控制器实际租约为准。
+	if Safe(false, function() return J.IsTowerEscapeActive(unit) end) then
+		return 'tower_escape'
+	end
 	if BOT_MODE_ROSHAN ~= nil
 	and mode == BOT_MODE_ROSHAN
 	and Safe(false, function() return J.IsRoshanCommitmentActive(unit) end)
@@ -1003,7 +1009,28 @@ local function RefreshParticipantTeleportGrace(participant, targetLocation, now)
 	end
 end
 
+function Strategy.ApplyTowerEscapeParticipantGrace(participant, now)
+	if type(participant) ~= 'table' then return false end
+	now = tonumber(now) or DotaTime()
+	if participant.towerEscapeGraceActive ~= true then
+		local grace = J.GetTowerEscapeObjectiveGrace ~= nil
+			and J.GetTowerEscapeObjectiveGrace() or 2.5
+		participant.towerEscapeGraceActive = true
+		participant.noProgressDeadline = math.max(participant.noProgressDeadline or now, now) + grace
+		participant.towerEscapeGraceDeadline = participant.noProgressDeadline
+	end
+	return now < (participant.towerEscapeGraceDeadline or participant.noProgressDeadline or now)
+end
+
 local function ParticipantNeedsReplacement(participant, objective, now)
+	if IsAlive(participant.unit)
+	and Safe(false, function() return J.IsTowerEscapeActive(participant.unit) end)
+	then
+		if Strategy.ApplyTowerEscapeParticipantGrace(participant, now) then return false, nil end
+		return true, 'tower_escape_timeout'
+	end
+	participant.towerEscapeGraceActive = false
+	participant.towerEscapeGraceDeadline = nil
 	local reason = GetParticipantBlockReason(participant.unit, false)
 	if reason ~= nil then return true, reason end
 	RefreshParticipantTeleportGrace(participant, GetUnitLocation(objective.target), now)
@@ -1633,6 +1660,42 @@ function Strategy.GetPushObjectiveDebugSnapshot(bot)
 	}
 end
 
+function Strategy.GetHighGroundAssaultAuthorization(bot, objective)
+	if not Strategy.IsEnabled() then return nil end
+	objective = objective or Strategy.GetPushObjective(true)
+	if bot == nil or objective == nil then return nil end
+	if (tonumber(objective.tier) or 1) < 3 then return nil end
+	-- 这里只放行已经达到默认 25 级门槛的团队；低等级临时例外不扩大塔圈作战权限。
+	if objective.defaultHighGroundUnlocked ~= true then return nil end
+	if objective.phase ~= Strategy.PHASE_ESCORT and objective.phase ~= Strategy.PHASE_SIEGE then return nil end
+	if not Strategy.IsPushObjectiveReservedParticipant(bot, objective) then return nil end
+	local targetLocation = Safe(nil, function() return objective.target:GetLocation() end)
+	if targetLocation == nil then return nil end
+	return {
+		objectiveID = objective.id,
+		lane = objective.lane,
+		phase = objective.phase,
+		targetKey = objective.targetKey,
+		role = Strategy.GetPushObjectiveRole(bot, objective),
+		targetLocation = {
+			x = targetLocation.x or 0, y = targetLocation.y or 0, z = targetLocation.z or 0,
+		},
+		towerBypassRadius = 1800,
+	}
+end
+
+function Strategy.NoteHighGroundAssaultDecision(bot, objective, decision, extra)
+	if not Strategy.IsEnabled() or objective == nil then return end
+	DebugLimited(bot,
+		'high_ground_assault:' .. tostring(objective.id) .. ':' .. tostring(GetPlayerID(bot))
+			.. ':' .. tostring(decision),
+		Strategy.OBJECTIVE_AUDIT_LOG_INTERVAL,
+		string.format('action=high_ground_assault id=%s phase=%s role=%s decision=%s %s',
+			tostring(objective.id), tostring(objective.phase),
+			tostring(Strategy.GetPushObjectiveRole(bot, objective) or 'none'),
+			tostring(decision), tostring(extra or '')))
+end
+
 function Strategy.GetManagedBuildingInfo(target)
 	return GetManagedBuildingInfo(target)
 end
@@ -1829,6 +1892,18 @@ function Strategy.ObservePushObjective(bot, lane, target, observation)
 		RenewObjective(objective, now, 'backdoor_disabled', bot)
 	end
 	objective.lastBackdoorProtected = backdoorProtected
+	local requiredForAttackableAssembly = math.max(2,
+		(objective.requiredCount or 2) - Strategy.OBJECTIVE_ATTACKABLE_ASSEMBLY_SHORTFALL)
+	if attackable
+	and objective.phase == Strategy.PHASE_ASSEMBLE
+	and (tonumber(objective.tier) or 1) >= 3
+	and objective.defaultHighGroundUnlocked == true
+	and arrivedCount >= requiredForAttackableAssembly
+	then
+		-- 已达默认上高等级、反偷塔关闭且只差一名集结成员时，允许本地三人组直接接管可攻击建筑。
+		TransitionPhase(objective, Strategy.PHASE_ESCORT, bot, 'attackable_high_ground_local')
+		RenewObjective(objective, now, 'attackable_assembly_complete', bot)
+	end
 
 	RefreshVisibleObjectiveHealth(objective, now, bot, observation.targetHealth)
 
@@ -1937,13 +2012,14 @@ local function ResolveObjectiveFromState(state)
 end
 
 function Strategy.AdjustPushDesire(baseDesire, laneBuildingTier, state, lane, safetyCap, bot)
+	CandidateDebug.Detail('pre_wasteland_desire', baseDesire)
 	local adjustedDesire = baseDesire or BOT_MODE_DESIRE_NONE
 	if not Strategy.IsEnabled() then
 		return safetyCap ~= nil and math.min(adjustedDesire, safetyCap) or adjustedDesire
 	end
 	state = state or Strategy.GetState()
 	local baseThreat = Strategy.GetBaseThreatSnapshot(state, bot)
-	if baseThreat ~= nil and baseThreat.hardEmergency == true then return BOT_MODE_DESIRE_NONE end
+	if baseThreat ~= nil and baseThreat.hardEmergency == true then CandidateDebug.Note('adjust_hard_base_emergency'); return BOT_MODE_DESIRE_NONE end
 	if baseThreat ~= nil and baseThreat.coveredPressure == true then
 		safetyCap = math.min(safetyCap or 1.0, 0.75)
 	end
@@ -1952,13 +2028,13 @@ function Strategy.AdjustPushDesire(baseDesire, laneBuildingTier, state, lane, sa
 			averageLevel = state.allyAverageLevel,
 			initialEligibleCount = state.initialEligibleCount or state.allyBotCount or 0,
 		}
-		local highGroundAllowed = Strategy.EvaluateHighGroundPermission(laneBuildingTier, highGroundContext)
-		if not highGroundAllowed then return BOT_MODE_DESIRE_NONE end
+		local highGroundAllowed, permissionReason = Strategy.EvaluateHighGroundPermission(laneBuildingTier, highGroundContext)
+		if not highGroundAllowed then CandidateDebug.Note('adjust_high_ground_' .. tostring(permissionReason)); return BOT_MODE_DESIRE_NONE end
 	end
 	local objective = ResolveObjectiveFromState(state)
 	local continuationLane = Strategy.GetPushContinuationLane()
 	if objective == nil and continuationLane ~= nil then
-		if lane ~= nil and lane ~= continuationLane then return BOT_MODE_DESIRE_NONE end
+		if lane ~= nil and lane ~= continuationLane then CandidateDebug.Note('different_continuation_lane'); return BOT_MODE_DESIRE_NONE end
 		adjustedDesire = math.max(adjustedDesire, Strategy.OUTER_COMMIT_DESIRE)
 	end
 	local opportunity = state.conversionOpportunity or Strategy.GetConversionOpportunity()
@@ -1987,9 +2063,11 @@ function Strategy.AdjustPushDesire(baseDesire, laneBuildingTier, state, lane, sa
 		adjustedDesire = math.max(adjustedDesire, Strategy.ADVANTAGE_OUTER_PUSH_DESIRE)
 	end
 	if objective ~= nil and bot ~= nil and not Strategy.IsPushObjectiveParticipant(bot, objective) then
+		CandidateDebug.Detail('adjustment', 'nonparticipant_cap')
 		adjustedDesire = math.min(adjustedDesire, Strategy.NON_PARTICIPANT_PUSH_DESIRE)
 	end
 	-- Wasteland 只能抬高通过安全检查后的基础欲望，不能越过基地、人数或敌情上限。
+	CandidateDebug.Detail('final_safety_cap', safetyCap)
 	if safetyCap ~= nil then adjustedDesire = math.min(adjustedDesire, safetyCap) end
 	return adjustedDesire
 end

@@ -364,6 +364,8 @@ end
 local function IsBusy(unit)
 	local mode = Safe(BOT_MODE_NONE, function() return unit:GetActiveMode() end)
 	return mode == BOT_MODE_RETREAT
+		-- 只有实际防越塔租约才阻断 Roam，不把残留 mode 19 当作动作所有权。
+		or Safe(false, function() return J.IsTowerEscapeActive(unit) end)
 		or J.Retreat.ShouldYield(unit, J.Retreat.HIGH)
 		or J.IsRoshanCommitmentActive(unit)
 		or J.Utils.IsTeamPushingSecondTierOrHighGround(unit)

@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local configLoaded, Config = pcall(require, GetScriptDirectory()..'/THDFuncLib/roam_config')
 if not configLoaded or type(Config) ~= 'table' then Config = {} end
@@ -42,6 +43,8 @@ local function GetGankProvider()
 end
 
 local function RouterDebugStatus(message, force)
+	CandidateDebug.Note(tostring(message):match('reason=([^ ]+)') or 'roam_router')
+	CandidateDebug.Detail('router_status', message)
 	if Config.DEBUG ~= true then return end
 	local currentBot = RefreshBot()
 	local now = -9999
@@ -80,7 +83,7 @@ RouterDebugStatus('loaded enabled=' .. tostring(IsGankEnabled()), true)
 
 function GetDesire()
 	local currentBot = RefreshBot()
-	if currentBot == nil then return BOT_MODE_DESIRE_NONE end
+	if currentBot == nil then CandidateDebug.Note('invalid_bot'); return BOT_MODE_DESIRE_NONE end
 	-- 每个 Bot 各自输出当前实际模式倾向，供赛后合并为统一时间序列。
 	ModeDesireDebug.Think(currentBot)
 	-- 现有持续施法、英雄连招和拾取租约始终优先，不受新 gank 总开关影响。
@@ -99,6 +102,8 @@ function GetDesire()
 		end
 		return auxiliaryDesire
 	end
+	CandidateDebug.BeginPhase('gank_router')
+	CandidateDebug.Detail('auxiliary_desire', auxiliaryDesire)
 
 	-- 辅助租约释放后先退出一次 ROAM，避免直接续接一份陈旧 gank 任务。
 	if activeProvider == 'auxiliary' then
@@ -203,3 +208,6 @@ function IsItemAvailable(itemName)
 	end
 	return nil
 end
+
+-- 仅观察本模式自然返回值，不参与模式选择。
+GetDesire = CandidateDebug.Wrap('roam', GetDesire)

@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local bot = GetBot()
 local botName = bot:GetUnitName()
 local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
@@ -30,8 +31,9 @@ local TEAM_ROAM_DESIRE_INTERVAL = 0.45
 local TEAM_ROAM_DESIRE_STAGGER = 0.07
 
 local function ComputeDesire()
-	if not Utils.AllowModeDesire(bot, 'team_roam') then return BOT_MODE_DESIRE_NONE end
+	if not Utils.AllowModeDesire(bot, 'team_roam') then CandidateDebug.Note('mode_switch_lock'); return BOT_MODE_DESIRE_NONE end
 	if not Timer.ShouldRunBotTask(bot, 'team_roam_desire', TEAM_ROAM_DESIRE_INTERVAL, TEAM_ROAM_DESIRE_STAGGER) then
+		CandidateDebug.Note('scan_throttled')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -48,10 +50,12 @@ local function ComputeDesire()
 	if HasModifierThatNeedToAvoidEffects() then
 		IsAvoidingAbilityZone = true
 		print("bot to avoid some abilities: " .. botName)
+		CandidateDebug.Note('danger_modifier')
 		return BOT_MODE_DESIRE_ABSOLUTE + 0.1
 	end
 
 	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+		CandidateDebug.Note('high_retreat')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -61,17 +65,20 @@ local function ComputeDesire()
 		IsAttackingSpecialUnit = true
 		specialTarget = specialUnitPlan.target
 		print("bot to attack some special unit: " .. botName)
+		CandidateDebug.Note('immediate_special_unit')
 		return specialUnitPlan.desire
 	end
 
 	if SpecialYugi04() and not isSeriouslyRetreating then
 		IsYugi04 = true
+		CandidateDebug.Note('yugi_special')
 		return BOT_ACTION_DESIRE_VERYHIGH + 0.1
 	end
 
 	if specialUnitPlan ~= nil and not isSeriouslyRetreating then
 		IsAttackingSpecialUnit = true
 		specialTarget = specialUnitPlan.target
+		CandidateDebug.Note('special_unit')
 		return specialUnitPlan.desire
 	end
 
@@ -81,6 +88,7 @@ local function ComputeDesire()
 		return BOT_ACTION_DESIRE_VERYHIGH + 0.1
 	end]]
 
+	CandidateDebug.Note('no_special_task')
 	return BOT_MODE_DESIRE_NONE
 end
 
@@ -271,3 +279,6 @@ function Think()
 		end
 	end
 end
+
+-- 仅观察本模式自然返回值，不参与模式选择。
+GetDesire = CandidateDebug.Wrap('team_roam', GetDesire)

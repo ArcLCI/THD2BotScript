@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 --[[ Generated with https://github.com/TypeScriptToLua/TypeScriptToLua ]]
 -- Lua Library inline imports
 local function __TS__ObjectEntries(obj)
@@ -2353,9 +2354,13 @@ function ____exports.GetCachedModeDesire(bot, modeName, computeFn, interval)
     local cache = bot.THD_ModeDesireCache[modeName]
     local now = DotaTime()
     if cache ~= nil and now - (cache.time or -9999) < interval then
+        CandidateDebug.CacheHit(cache, now - (cache.time or -9999), 'mode:' .. modeName)
         return cache.value or BOT_MODE_DESIRE_NONE
     end
     if not ____exports.AllowModeDesire(bot, modeName) then
+        CandidateDebug.Note('mode_switch_lock')
+        CandidateDebug.Detail('lock_mode', bot.THD_ModeSwitchLock and bot.THD_ModeSwitchLock.mode)
+        CandidateDebug.Detail('lock_age', bot.THD_ModeSwitchLock and (now - (bot.THD_ModeSwitchLock.time or -9999)))
         return BOT_MODE_DESIRE_NONE
     end
     local value = computeFn()
@@ -2363,6 +2368,7 @@ function ____exports.GetCachedModeDesire(bot, modeName, computeFn, interval)
         time = now,
         value = value or BOT_MODE_DESIRE_NONE
     }
+    CandidateDebug.SaveCache(bot.THD_ModeDesireCache[modeName])
     return bot.THD_ModeDesireCache[modeName].value
 end
 return ____exports

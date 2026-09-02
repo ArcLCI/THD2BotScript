@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Defend = require(GetScriptDirectory()..'/THDFuncLib/aba_defend')
 local LaneAssignment = require(GetScriptDirectory()..'/THDFuncLib/lane_assignment')
@@ -338,6 +339,8 @@ end
 local function IsBusyMode(unit)
 	local mode = Safe(BOT_MODE_NONE, function() return unit:GetActiveMode() end)
 	return mode == BOT_MODE_RETREAT
+		-- EVASIVE desire=0 可在租约释放后残留，不再延长团队任务忙碌状态。
+		or Safe(false, function() return J.IsTowerEscapeActive(unit) end)
 		or J.IsRoshanCommitmentActive(unit)
 end
 
@@ -1615,6 +1618,9 @@ local function FormatRejectCounts(rejected)
 end
 
 local function DebugStatus(bot, message)
+	-- 保存每次自然计算的理由；现有 Roam 文本仍沿用原来的去抖与心跳。
+	CandidateDebug.Note(tostring(message):match('reason=([^ ]+)') or 'roam_status')
+	CandidateDebug.Detail('roam_status', message)
 	if Config.DEBUG ~= true then return end
 	local state = GetState(bot)
 	local now = Safe(-9999, function() return DotaTime() end) or -9999
@@ -2018,7 +2024,7 @@ end
 
 function Coordinator.GetDesire(bot)
 	-- 原生 Bot 动作只能由当前脚本的 GetBot() 实体发出；旧英雄脚本直接失效关闭。
-	if not IsCurrentBotHandle(bot) then return BOT_MODE_DESIRE_NONE end
+	if not IsCurrentBotHandle(bot) then CandidateDebug.Note('not_current_bot'); return BOT_MODE_DESIRE_NONE end
 	local state = GetState(bot)
 	if not IsValidUnit(bot) or not Safe(false, function() return bot:IsAlive() end) then
 		DebugStatus(bot, 'reason=invalid_or_dead')
@@ -2028,6 +2034,7 @@ function Coordinator.GetDesire(bot)
 		state.botHandleChanged = false
 		DebugStatus(bot, 'reason=bot_handle_refreshed')
 	end
+	CandidateDebug.Note('existing_roam_mission')
 	if state.mission ~= nil then return GetMissionDesire(bot, state) end
 	if not IsEnabled() then
 		state.pending = nil

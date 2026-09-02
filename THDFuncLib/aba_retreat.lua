@@ -447,9 +447,9 @@ end
 	塔伤害按每座塔逐击模拟。三、四塔同时递增伤害与攻速；普通塔仅使用实时攻击周期。
 	多座四塔的结果会汇总，已经发出的弹道单独标记为不可避免伤害。
 ]]
-function Retreat.GetTowerThreat(bot, horizon, protection)
+function Retreat.GetTowerThreat(bot, horizon, protection, forceAnalysis)
 	horizon = horizon or PREDICTION_HORIZON
-	if not Retreat.IsEnabled() then
+	if not Retreat.IsEnabled() and forceAnalysis ~= true then
 		return {
 			active = false,
 			locked = false,
@@ -472,6 +472,7 @@ function Retreat.GetTowerThreat(bot, horizon, protection)
 			escapeTower = nil,
 		}
 	end
+	-- Push 的高地授权即使不接管 Valve retreat，也需要复用同一套只读塔伤预测来做安全门。
 	protection = protection or Capabilities.GetSnapshot(bot)
 	local state = EnsureState(bot)
 	local now = DotaTime()

@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local bot = GetBot()
 local botName = bot:GetUnitName();
 if bot == nil or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
@@ -181,34 +182,40 @@ local function GetActiveRuneDesire()
 end
 
 local function ComputeDesire()
-	if not Utils.AllowModeDesire(bot, 'rune') then return BOT_MODE_DESIRE_NONE end
-	if not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() or bot.isBear then return BOT_MODE_DESIRE_NONE end
+	if not Utils.AllowModeDesire(bot, 'rune') then CandidateDebug.Note('mode_switch_lock'); return BOT_MODE_DESIRE_NONE end
+	if not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() or bot.isBear then CandidateDebug.Note('invalid_bot'); return BOT_MODE_DESIRE_NONE end
     if DotaTime() > 2 * 60 and DotaTime() < 6 * 60 and GetUnitToLocationDistance(bot, GetRuneSpawnLocation(RUNE_POWERUP_2)) < 150
 	then
+        CandidateDebug.Note('early_power_rune_wait')
         return 0
     end
 
 	-- 如果在打高地 就别撤退去干别的
 	if J.Utils.IsTeamPushingSecondTierOrHighGround(bot) then
+		CandidateDebug.Note('team_push_proximity')
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	if J.GetEnemiesAroundAncient(bot, 3200) > 0 then
+		CandidateDebug.Note('ancient_pressure')
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	if DotaTime() - J.Utils.GameStates.recentDefendTime < 2 then
+		CandidateDebug.Note('recent_defense')
 		return BOT_MODE_DESIRE_NONE
 	end
 
     botActiveMode = bot:GetActiveMode()
 
 	if bot:IsInvulnerable() and J.GetHP(bot) > 0.95 and bot:DistanceFromFountain() < 100 then
+        CandidateDebug.Note('fountain_exit')
         return BOT_MODE_DESIRE_ABSOLUTE
     end
 
 	local activeRuneDesire = GetActiveRuneDesire()
 	if activeRuneDesire > BOT_MODE_DESIRE_NONE then
+		CandidateDebug.Note('active_rune_task')
 		return activeRuneDesire
 	end
 
@@ -220,23 +227,28 @@ local function ComputeDesire()
 	end
 
 	if not Timer.ShouldRunBotTask(bot, 'rune_desire', runeDesireInterval, RUNE_DESIRE_STAGGER) then
+		CandidateDebug.Note('scan_throttled')
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	local wrDesire = ConsiderWisdomRune()
 	if wrDesire > 0.1 then
+		CandidateDebug.Note('wisdom_candidate')
 		return wrDesire
 	end
 
 	if DotaTime() > RUNE_LATE_GAME_TIME and not X.IsNearRune(bot, RUNE_LATE_NEAR_DISTANCE) then
+		CandidateDebug.Note('late_rune_too_far')
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	if DotaTime() > 30 * 60 and not X.IsNearRune(bot, RUNE_VERY_LATE_NEAR_DISTANCE) then
+		CandidateDebug.Note('very_late_rune_too_far')
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	if DotaTime() > -10 and bot:GetCurrentActionType() == BOT_ACTION_TYPE_IDLE then
+		CandidateDebug.Note('idle_action_blocks_rune')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -244,6 +256,7 @@ local function ComputeDesire()
     second = DotaTime() % 60
 
     if not X.IsSuitableToPickRune() then
+        CandidateDebug.Note('unsuitable_rune_mode')
         return BOT_MODE_DESIRE_NONE
     end
 
@@ -251,6 +264,7 @@ local function ComputeDesire()
     then
         local nEnemyHeroes = J.GetLastSeenEnemiesNearLoc(bot:GetLocation(), 2000)
         if #nEnemyHeroes <= 1 then
+            CandidateDebug.Note('pregame_rune')
             return RemapValClamped(J.GetHP(bot), 0.2, 0.8, BOT_MODE_DESIRE_NONE, BOT_MODE_DESIRE_MODERATE)
         end
     end
@@ -269,11 +283,13 @@ local function ComputeDesire()
 
 		if X.ShouldAbortRune(ClosestRune, GetRuneSpawnLocation(ClosestRune), ClosestDistance) then
 			X.MarkRuneAbandoned(ClosestRune)
+			CandidateDebug.Note('rune_danger_abort')
 			return 0
 		end
 
 		if X.IsEnemyPickRune(ClosestRune) then
 			X.MarkRuneAbandoned(ClosestRune)
+			CandidateDebug.Note('enemy_picked_rune')
 			return 0
 		end
 
@@ -281,12 +297,15 @@ local function ComputeDesire()
             if nRuneStatus == RUNE_STATUS_AVAILABLE then
 				if DotaTime() > 2 * 60 and DotaTime() < 20 * 60 then
 					if J.IsInLaningPhase() then
+						CandidateDebug.Note('rune_branch_p816_L284')
 						return X.GetScaledDesire(BOT_MODE_DESIRE_HIGH, ClosestDistance, RUNE_BOUNTY_MAX_DIST, 0.82)
 					end
 
+					CandidateDebug.Note('rune_branch_p816_L287')
 					return X.GetScaledDesire(BOT_MODE_DESIRE_MODERATE, ClosestDistance, RUNE_BOUNTY_MAX_DIST, 0.78, RUNE_BOUNTY_NON_LANING_SCALE, 0.45)
 				end
 
+                CandidateDebug.Note('rune_branch_p816_L290')
                 return X.GetScaledDesire(BOT_MODE_DESIRE_HIGH, ClosestDistance, RUNE_BOUNTY_MAX_DIST, 0.82, RUNE_BOUNTY_NON_LANING_SCALE, 0.45)
             elseif nRuneStatus == RUNE_STATUS_UNKNOWN
                 and DotaTime() > 2 * 60 + 50
@@ -294,34 +313,43 @@ local function ComputeDesire()
             then
 				if DotaTime() > 2 * 60 and DotaTime() < 20 * 60 then
 					if J.IsInLaningPhase() then
+						CandidateDebug.Note('rune_branch_p816_L297')
 						return X.GetScaledDesire(BOT_MODE_DESIRE_MODERATE, ClosestDistance, RUNE_BOUNTY_MAX_DIST, 0.78)
 					end
 
+					CandidateDebug.Note('rune_branch_p816_L300')
 					return X.GetScaledDesire(BOT_MODE_DESIRE_LOW, ClosestDistance, RUNE_BOUNTY_MAX_DIST, 0.72, RUNE_BOUNTY_NON_LANING_SCALE, 0.45)
 				end
 
+                CandidateDebug.Note('rune_branch_p816_L303')
                 return X.GetScaledDesire(BOT_MODE_DESIRE_HIGH, ClosestDistance, RUNE_BOUNTY_MAX_DIST, 0.82, RUNE_BOUNTY_NON_LANING_SCALE, 0.45)
             elseif nRuneStatus == RUNE_STATUS_MISSING
                 and DotaTime() > 2 * 60
                 and (minute % 3 == 2 and second > 52)
             then
 				if DotaTime() > 2 * 60 and DotaTime() < 20 * 60 then
+					CandidateDebug.Note('rune_branch_p816_L309')
 					return X.GetScaledDesire(BOT_MODE_DESIRE_LOW, ClosestDistance, RUNE_BOUNTY_MAX_DIST, 0.70, RUNE_BOUNTY_NON_LANING_SCALE, 0.45)
 				end
 
+                CandidateDebug.Note('rune_branch_p816_L312')
                 return X.GetScaledDesire(BOT_MODE_DESIRE_MODERATE, ClosestDistance, RUNE_BOUNTY_MAX_DIST, 0.76, RUNE_BOUNTY_NON_LANING_SCALE, 0.45)
             end
         else
             if nRuneStatus == RUNE_STATUS_AVAILABLE then
 				if nRuneType == RUNE_WATER and (J.GetHP(bot) < 0.6 or J.GetMP(bot) < 0.5) then
+					CandidateDebug.Note('rune_branch_p816_L317')
 					return X.GetScaledDesire(BOT_MODE_DESIRE_HIGH, ClosestDistance, 3200)
 				else
 					if nRuneType == RUNE_WATER then
+						CandidateDebug.Note('rune_branch_p816_L320')
 						return X.GetScaledDesire(BOT_MODE_DESIRE_MODERATE, ClosestDistance, MAX_DIST)
 					else
 						if X.IsPowerRune(ClosestRune) then
+							CandidateDebug.Note('rune_branch_p816_L323')
 							return X.GetScaledDesire(BOT_MODE_DESIRE_HIGH, ClosestDistance, MAX_DIST * RUNE_POWER_MAX_DIST_MULTIPLIER, 0.85, RUNE_POWER_NON_LANING_SCALE, 0.55)
 						else
+							CandidateDebug.Note('rune_branch_p816_L325')
 							return X.GetScaledDesire(BOT_MODE_DESIRE_MODERATE, ClosestDistance, MAX_DIST * 2.5)
 						end
 					end
@@ -331,22 +359,27 @@ local function ComputeDesire()
             then
 				if DotaTime() > 5 * 60 then
 					if X.IsPowerRune(ClosestRune) then
+						CandidateDebug.Note('rune_branch_p816_L334')
 						return X.GetScaledDesire(BOT_MODE_DESIRE_MODERATE, ClosestDistance, MAX_DIST * RUNE_POWER_MAX_DIST_MULTIPLIER, 0.78, RUNE_POWER_NON_LANING_SCALE, 0.55)
 					end
 
+					CandidateDebug.Note('rune_branch_p816_L337')
 					return X.GetScaledDesire(BOT_MODE_DESIRE_MODERATE, ClosestDistance, MAX_DIST * 2.5)
 				else
+					CandidateDebug.Note('rune_branch_p816_L339')
 					return X.GetScaledDesire(BOT_MODE_DESIRE_MODERATE, ClosestDistance, MAX_DIST)
 				end
             elseif nRuneStatus == RUNE_STATUS_MISSING
                 and DotaTime() > 60
                 and (minute % 2 == 1 and second > 53)
             then
+                CandidateDebug.Note('rune_branch_p816_L345')
                 return X.GetScaledDesire(BOT_MODE_DESIRE_MODERATE, ClosestDistance, MAX_DIST)
             end
         end
     end
 
+    CandidateDebug.Note('no_rune_candidate')
     return 0
 end
 
@@ -404,6 +437,7 @@ function GetDesire()
 	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
 		ClearActiveRuneTarget()
 		ClearWisdomRuneMode()
+		CandidateDebug.Note('high_retreat')
 		return BOT_MODE_DESIRE_NONE
 	end
 	return Utils.GetCachedModeDesire(bot, 'rune', ComputeDesire)
@@ -1104,3 +1138,6 @@ function X.GetWisdomRuneSpot()
 
 	return nil
 end
+
+-- 仅观察本模式自然返回值，不参与模式选择。
+GetDesire = CandidateDebug.Wrap('rune', GetDesire)

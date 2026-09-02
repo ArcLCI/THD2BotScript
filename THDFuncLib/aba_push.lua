@@ -1,8 +1,10 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Push = {}
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
+local LaneWork = require(GetScriptDirectory()..'/THDFuncLib/push_lane_work')
 
 
 
@@ -23,6 +25,11 @@ local PUSH_LAST_SEEN_MAX_AGE = 3.0
 local PUSH_LOCAL_HERO_RETREAT_OFFSET = -1200
 local PUSH_ENEMY_PRESSURE_SCORE_PER_HERO = 0.18
 local PUSH_LANE_SWITCH_IMPROVEMENT_RATIO = 0.88
+local PUSH_HIGH_GROUND_ASSAULT_AUTH_TTL = 0.80
+local PUSH_HIGH_GROUND_FORCE_BUILDING_HP = 0.35
+local PUSH_HIGH_GROUND_FORCE_MIN_ATTACKERS = 2
+local PUSH_HIGH_GROUND_COMMIT_MIN_HP = 0.45
+local PUSH_HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO = 0.25
 local LANE_MODE_DEBUG = false -- 验证期间输出三路推塔评分，确认后可关闭。
 
 
@@ -105,26 +112,141 @@ function Push.SelectLaneByScores(bot, topLaneScore, midLaneScore, botLaneScore)
     return selectedLane, selectionReason
 end
 
+function Push.CanMaintainHighGroundAssault(bot, objective, retreatState)
+	local authorization = Wasteland.GetHighGroundAssaultAuthorization ~= nil
+		and Wasteland.GetHighGroundAssaultAuthorization(bot, objective) or nil
+	if authorization == nil or bot == nil then return false, nil, 'authorization_missing' end
+	retreatState = retreatState or J.Retreat.GetState(bot)
+	if (retreatState.enemyCount or 0) > (retreatState.allyCount or 0) then
+		return false, nil, 'outnumbered'
+	end
+	if retreatState.severity >= J.Retreat.CRITICAL then return false, nil, 'critical_retreat' end
+	if (retreatState.contextRawSeverity or J.Retreat.NONE) >= J.Retreat.HIGH then
+		return false, nil, 'context_retreat_high'
+	end
+	if J.GetHP(bot) <= PUSH_HIGH_GROUND_COMMIT_MIN_HP then return false, nil, 'low_hp' end
+
+	local towerThreat = retreatState.towerThreat or {}
+	if retreatState.severity >= J.Retreat.HIGH and towerThreat.highGroundLock ~= true then
+		return false, nil, 'non_tower_high_danger'
+	end
+	local health = math.max(1, bot:GetHealth())
+	if towerThreat.unseenIncoming == true then return false, nil, 'unseen_incoming' end
+	if (towerThreat.unavoidableDamage or 0) >= health then return false, nil, 'lethal_tower_damage' end
+	if (towerThreat.predictedDamage or 0) / health >= PUSH_HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO then
+		return false, nil, 'tower_damage_ratio'
+	end
+	return true, authorization, 'allowed'
+end
+
+function Push.BuildHighGroundAssaultSafetyState(bot, retreatState)
+	retreatState = retreatState or J.Retreat.GetState(bot)
+	local towerThreat = retreatState.towerThreat or {}
+	if retreatState.frameworkEnabled == false and J.Retreat.GetTowerThreat ~= nil then
+		towerThreat = J.Retreat.GetTowerThreat(bot, 3.0, nil, true)
+	end
+	local nearbyAllies = J.GetAlliesNearLoc(bot:GetLocation(), PUSH_LOCAL_HERO_RESPONSE_RANGE)
+	local nearbyEnemies = Push.GetVisibleNearbyEnemyHeroes(
+		bot,
+		J.GetNearbyHeroes(bot, PUSH_LOCAL_HERO_RESPONSE_RANGE, true, BOT_MODE_NONE),
+		PUSH_LOCAL_HERO_RESPONSE_RANGE)
+	local severity = retreatState.severity or J.Retreat.NONE
+	local contextRawSeverity = retreatState.contextRawSeverity or J.Retreat.NONE
+	if bot:GetActiveMode() == BOT_MODE_RETREAT
+	and bot:GetActiveModeDesire() >= BOT_MODE_DESIRE_VERYHIGH
+	then
+		severity = math.max(severity, J.Retreat.HIGH)
+		contextRawSeverity = math.max(contextRawSeverity, J.Retreat.HIGH)
+	end
+	return {
+		severity = severity,
+		contextRawSeverity = contextRawSeverity,
+		allyCount = #nearbyAllies,
+		enemyCount = #nearbyEnemies,
+		towerThreat = towerThreat,
+	}
+end
+
+function Push.RefreshHighGroundAssaultAuthorization(bot, lane)
+	if bot == nil then return nil end
+	local objective = Wasteland.GetPushObjective ~= nil and Wasteland.GetPushObjective(true) or nil
+	if objective == nil then
+		bot.THD_HighGroundAssaultAuthorization = nil
+		return nil
+	end
+	-- 三个 Push mode 会逐帧查询欲望；非目标 lane 不抢先清除匹配 mode 刚刷新的短租约。
+	if objective.lane ~= lane then return bot.THD_HighGroundAssaultAuthorization end
+	if Wasteland.GetHighGroundAssaultAuthorization == nil
+	or Wasteland.GetHighGroundAssaultAuthorization(bot, objective) == nil
+	then
+		bot.THD_HighGroundAssaultAuthorization = nil
+		return nil
+	end
+	local safetyState = Push.BuildHighGroundAssaultSafetyState(bot, J.Retreat.GetState(bot))
+	local allowed, authorization, denialReason = Push.CanMaintainHighGroundAssault(
+		bot, objective, safetyState)
+	if not allowed then
+		bot.THD_HighGroundAssaultAuthorization = nil
+		if denialReason ~= 'authorization_missing'
+		and Wasteland.NoteHighGroundAssaultDecision ~= nil
+		then
+			Wasteland.NoteHighGroundAssaultDecision(bot, objective, 'safety_cancel',
+				string.format('reason=%s hp=%.3f allies=%s enemies=%s severity=%s raw_severity=%s',
+					tostring(denialReason), J.GetHP(bot), tostring(safetyState.allyCount or 0),
+					tostring(safetyState.enemyCount or 0), tostring(safetyState.severity or 0),
+					tostring(safetyState.contextRawSeverity or 0)))
+			if denialReason == 'outnumbered' then
+				Wasteland.NoteHighGroundAssaultDecision(bot, objective, 'yield_outnumbered',
+					'allies=' .. tostring(safetyState.allyCount or 0)
+						.. ' enemies=' .. tostring(safetyState.enemyCount or 0))
+			end
+		end
+		return nil
+	end
+	authorization.expiresAt = DotaTime() + PUSH_HIGH_GROUND_ASSAULT_AUTH_TTL
+	bot.THD_HighGroundAssaultAuthorization = authorization
+	if Wasteland.NoteHighGroundAssaultDecision ~= nil then
+		Wasteland.NoteHighGroundAssaultDecision(bot, objective, 'authorized',
+			'ttl=' .. tostring(PUSH_HIGH_GROUND_ASSAULT_AUTH_TTL))
+	end
+	return authorization
+end
+
 function Push.GetPushDesire(bot, lane)
+	local highGroundAuthorization = Push.RefreshHighGroundAssaultAuthorization(bot, lane)
 	-- 安全门不缓存；模式缓存窗口内发生撤退、基地告急或高地门槛变化时必须立即生效。
 	if bot == nil
-	or J.Retreat.ShouldYield(bot, J.Retreat.HIGH)
+	or (highGroundAuthorization == nil and J.Retreat.ShouldYield(bot, J.Retreat.HIGH))
 	or J.CanNotUseAction(bot)
 	or J.IsRoshanCommitmentActive(bot)
 	then
+		CandidateDebug.Note('action_unavailable_or_retreat_or_roshan')
+		LaneWork.Release(bot, 'push_unavailable')
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	local laneBuildingTier = Push.GetLaneBuildingTier(lane)
+	CandidateDebug.Detail('target_tier', laneBuildingTier)
 	local objective = Push.GetLaneBuildingTarget(lane) or GetAncient(GetOpposingTeam())
-	if not Push.IsObjectiveValid(objective) then return BOT_MODE_DESIRE_NONE end
+	if not Push.IsObjectiveValid(objective) then
+		LaneWork.Release(bot, 'invalid_objective', lane)
+		CandidateDebug.Note('invalid_objective')
+		return BOT_MODE_DESIRE_NONE
+	end
 	local currentWastelandState = Wasteland.IsEnabled() and Wasteland.GetState() or nil
 
 	local stablePushLane = Push.GetStablePushLane(bot, lane)
-	if stablePushLane ~= lane then return BOT_MODE_DESIRE_NONE end
+	CandidateDebug.Detail('lane', lane)
+	CandidateDebug.Detail('stable_lane', stablePushLane)
+	if stablePushLane ~= lane then
+		LaneWork.Leave(bot, 'different_stable_lane', lane)
+		CandidateDebug.Note('different_stable_lane')
+		return BOT_MODE_DESIRE_NONE
+	end
 
 	local objectiveLocation = Push.GetObjectiveLocation(lane, objective)
 	local snapshotKey = 'PushSnapshot-' .. Push.GetObjectiveKey(objective)
+	CandidateDebug.Detail('objective_key', snapshotKey)
 	local snapshot = Timer.GetOrCompute(
 		Timer.GetBotLaneKey(snapshotKey, bot, lane),
 		PUSH_SNAPSHOT_CACHE_INTERVAL,
@@ -142,10 +264,19 @@ function Push.GetPushDesire(bot, lane)
 		end
 	end
 	if laneBuildingTier >= 3 then
-		local allowed = Wasteland.EvaluateHighGroundPermission(
+		local allowed, permissionReason = Wasteland.EvaluateHighGroundPermission(
 			laneBuildingTier, snapshot.highGroundContext or {})
-		if not allowed then return BOT_MODE_DESIRE_NONE end
+		if not allowed then CandidateDebug.BeginPhase('ordinary_lane_work') end
+		CandidateDebug.Detail('lane', lane)
+		CandidateDebug.Detail('tier', laneBuildingTier)
+		CandidateDebug.Detail('eligible', snapshot.highGroundContext and snapshot.highGroundContext.initialEligibleCount)
+		CandidateDebug.Detail('average_level', snapshot.highGroundContext and snapshot.highGroundContext.averageLevel)
+		if not allowed then
+			-- 拒绝围攻不等于禁止所有普通兵线工作；独立任务不能取得建筑攻击授权。
+			return LaneWork.GetDesire(bot, lane, permissionReason)
+		end
 	end
+	LaneWork.Leave(bot, 'siege_permission_restored', lane)
 	local immediateSafety = Push.GetImmediateSafetyState(bot)
 	return Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 end
@@ -294,6 +425,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	or J.CanNotUseAction(bot)
 	or J.IsRoshanCommitmentActive(bot)
 	then
+		CandidateDebug.Note('action_unavailable_or_retreat_or_roshan')
 		return BOT_MODE_DESIRE_NONE
 	end
 	if snapshot == nil then
@@ -313,19 +445,23 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 		or (wastelandState ~= nil and Wasteland.GetBaseThreatSnapshot(wastelandState, bot) or nil)
 	if Wasteland.IsEnabled() and baseThreat ~= nil and baseThreat.hardEmergency == true then
 		Wasteland.InvalidateObjectiveForBaseDefense(bot, baseThreat)
+		CandidateDebug.Note('hard_base_emergency')
 		return BOT_MODE_DESIRE_NONE
 	end
 	if Wasteland.ShouldYieldPushObjective(bot, lane) then
+		CandidateDebug.Note('objective_nonparticipant')
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
 
 	if bot:GetAssignedLane() == LANE_MID and J.IsInLaningPhase() then
+		CandidateDebug.Note('mid_laning')
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
-	if snapshot.teamMinLevel < 7 then return BOT_MODE_DESIRE_EXTRA_LOW end
-	if snapshot.enemyTpCount > 0 then return BOT_MODE_DESIRE_EXTRA_LOW end
+	if snapshot.teamMinLevel < 7 then CandidateDebug.Note('team_min_level_below_7'); return BOT_MODE_DESIRE_EXTRA_LOW end
+	if snapshot.enemyTpCount > 0 then CandidateDebug.Note('enemy_tp'); return BOT_MODE_DESIRE_EXTRA_LOW end
 	-- 守军出现时只在目标点人数与本地可见属性战力均不劣时继续推进。
 	if snapshot.enemyCount > 0 and not snapshot.localPowerAdvantage then
+		CandidateDebug.Note('local_power_disadvantage')
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
 
@@ -334,6 +470,9 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	if Wasteland.IsEnabled() and baseThreat ~= nil and baseThreat.coveredPressure == true then
 		nSafetyMaxDesire = math.min(nSafetyMaxDesire, 0.75)
 	end
+	CandidateDebug.Detail('base_lane_desire', snapshot.baseLaneDesire)
+	CandidateDebug.Detail('ally_alive', snapshot.allyAlive)
+	CandidateDebug.Detail('enemy_alive', snapshot.enemyAlive)
 	local nModeDesire = bot:GetActiveModeDesire()
 	if J.IsDefending(bot) and nModeDesire >= 0.8 then
 		nSafetyMaxDesire = math.min(nSafetyMaxDesire, 0.75)
@@ -378,6 +517,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	if snapshot.shouldWaitForImportantItems
 	and eAliveCount > aAliveCount + PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE
 	then
+		CandidateDebug.Note('wait_important_items')
 		return BOT_MODE_DESIRE_VERYLOW
 	end
 
@@ -387,6 +527,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	and not string.find(botTarget:GetUnitName(), 'tower2')
 	and Push.HasBackdoorProtect(botTarget)
 	then
+		CandidateDebug.Note('attack_target_backdoor')
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
 
@@ -398,6 +539,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	and J.GetHP(bot) > 0.5
 	and not Push.HasBackdoorProtect(enemyAncient)
 	then
+		CandidateDebug.Note('ancient_opportunity')
 		return Wasteland.AdjustPushDesire(
 			BOT_ACTION_DESIRE_ABSOLUTE * 0.98,
 			snapshot.laneBuildingTier,
@@ -418,7 +560,10 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 		local levelLead = snapshot.allyAverageLevel - snapshot.enemyAverageLevel
 		if levelLead >= 1 then nPushDesire = nPushDesire + math.min(0.12, levelLead * 0.04) end
 		if teamKillsRatio >= 1.25 then nPushDesire = nPushDesire + 0.05 end
+		CandidateDebug.Detail('safety_cap', nSafetyMaxDesire)
+		CandidateDebug.Detail('scored_lane_desire', nPushDesire)
 		local desire = RemapValClamped(nPushDesire, 0, 1, 0, nMaxDesire)
+		CandidateDebug.Note('push_score')
 		return Wasteland.AdjustPushDesire(
 			desire,
 			snapshot.laneBuildingTier,
@@ -429,6 +574,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 		)
 	end
 
+	CandidateDebug.Note('alive_disadvantage')
 	return lane == LANE_MID and BOT_MODE_DESIRE_VERYLOW or BOT_MODE_DESIRE_EXTRA_LOW
 end
 
@@ -678,7 +824,8 @@ function Push.HandleNearbyEnemyHeroes(bot, lane, nearbyAllies, nearbyEnemies)
 		-- 模式切换存在缓存窗口；人数劣势时当前帧先后撤，禁止继续攻击兵线或建筑。
 		local retreatLocation = GetLaneFrontLocation(GetTeam(), lane, PUSH_LOCAL_HERO_RETREAT_OFFSET)
 		J.ActionMoveToLocation(bot, 'push_yield_outnumbered_enemy_heroes', retreatLocation, 0.25, 220)
-		return true
+		bot.THD_HighGroundAssaultAuthorization = nil
+		return true, 'yield_outnumbered'
 	end
 
 	local target = Push.SelectNearbyEnemyHero(bot, nearbyEnemies)
@@ -686,16 +833,67 @@ function Push.HandleNearbyEnemyHeroes(bot, lane, nearbyAllies, nearbyEnemies)
 		-- 人数不劣时先响应可见英雄；下一轮模式仲裁会让 ATTACK 接管技能与追击。
 		J.SetTargetIfChanged(bot, target, 0.2)
 		J.ActionAttackUnit(bot, 'push_answer_enemy_hero', target, true, 0.25)
-		return true
+		return true, 'fight_hero'
 	end
 
+	return false, nil
+end
+
+function Push.ShouldForceHighGroundObjective(context)
+	context = context or {}
+	if context.authorized ~= true
+	or context.phase ~= Wasteland.PHASE_SIEGE
+	or context.role ~= Wasteland.ROLE_BUILDING_DAMAGE
+	or context.attackable ~= true
+	or context.backdoorProtected == true
+	or (tonumber(context.botHP) or 0) <= PUSH_HIGH_GROUND_COMMIT_MIN_HP
+	or (tonumber(context.allyCount) or 0) < (tonumber(context.enemyCount) or 0)
+	then
+		return false
+	end
+	local health, maxHealth = tonumber(context.targetHealth), tonumber(context.targetMaxHealth)
+	local healthRatio = health ~= nil and maxHealth ~= nil and maxHealth > 0
+		and health / maxHealth or 1
+	return healthRatio <= PUSH_HIGH_GROUND_FORCE_BUILDING_HP
+		or (tonumber(context.allyBuildingAttackers) or 0) >= PUSH_HIGH_GROUND_FORCE_MIN_ATTACKERS
+end
+
+function Push.TryAttackObjectiveBuilding(bot, lane, pushObjective, observedTarget, botAttackRange, actionName)
+	if pushObjective == nil
+	or pushObjective.phase ~= Wasteland.PHASE_SIEGE
+	or Push.IsObjectiveValid(observedTarget) ~= true
+	or J.IsValidBuilding(observedTarget) ~= true
+	or J.CanBeAttacked(observedTarget) ~= true
+	or Push.HasBackdoorProtect(observedTarget)
+	or Push.CanAttackManagedBuilding(bot, lane, observedTarget, pushObjective) ~= true
+	or GetUnitToUnitDistance(bot, observedTarget) > math.min(1600, botAttackRange + 400)
+	then
+		return false
+	end
+	actionName = actionName or 'push_objective_building_damage'
+	local buildingTarget = J.GetStickyTarget(
+		bot, actionName, observedTarget, 1.8, botAttackRange + 500)
+	if buildingTarget ~= nil
+	and Push.CanAttackManagedBuilding(bot, lane, buildingTarget, pushObjective)
+	then
+		J.SetTargetIfChanged(bot, buildingTarget, 0.6)
+		if J.ActionAttackUnit(bot, actionName, buildingTarget, true, 0.45) then
+			Push.NoteManagedBuildingAttack(bot, lane, buildingTarget, pushObjective)
+			return true
+		end
+	end
 	return false
 end
 
 local fNextMovementTime = 0
+function Push.OnEnd(bot, lane)
+	LaneWork.Leave(bot, 'mode_ended', lane)
+end
+
 function Push.PushThink(bot, lane)
     if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
 	if J.CanNotUseAction(bot) then return end
+	if LaneWork.TryThink(bot, lane) then return end
 	local hEnemyAncient = GetAncient(GetOpposingTeam())
 	local wastelandState = Wasteland.IsEnabled() and Wasteland.GetState() or nil
 	local baseThreat = wastelandState ~= nil and Wasteland.GetBaseThreatSnapshot(wastelandState, bot) or nil
@@ -726,9 +924,50 @@ function Push.PushThink(bot, lane)
 		end
 	end
 	local retreatState = J.Retreat.GetState(bot)
+	local highGroundAuthorizationCandidate = Wasteland.GetHighGroundAssaultAuthorization ~= nil
+		and Wasteland.GetHighGroundAssaultAuthorization(bot, pushObjective) or nil
+	local highGroundSafetyState = highGroundAuthorizationCandidate ~= nil
+		and Push.BuildHighGroundAssaultSafetyState(bot, retreatState) or {
+			severity = retreatState.severity or J.Retreat.NONE,
+			contextRawSeverity = retreatState.contextRawSeverity or J.Retreat.NONE,
+			allyCount = retreatState.allyCount or 0,
+			enemyCount = retreatState.enemyCount or 0,
+			towerThreat = retreatState.towerThreat or {},
+		}
+	local highGroundAssaultAllowed, highGroundAuthorization, highGroundDenialReason = Push.CanMaintainHighGroundAssault(
+		bot, pushObjective, highGroundSafetyState)
+	if highGroundAssaultAllowed and highGroundAuthorization ~= nil then
+		highGroundAuthorization.expiresAt = DotaTime() + PUSH_HIGH_GROUND_ASSAULT_AUTH_TTL
+		bot.THD_HighGroundAssaultAuthorization = highGroundAuthorization
+	else
+		bot.THD_HighGroundAssaultAuthorization = nil
+	end
+	if highGroundAuthorizationCandidate ~= nil and not highGroundAssaultAllowed then
+		-- 已解锁高地的短租约一旦触发安全门，本帧立即退出，不能等模式缓存自然切走。
+		if Wasteland.NoteHighGroundAssaultDecision ~= nil then
+			Wasteland.NoteHighGroundAssaultDecision(bot, pushObjective, 'safety_cancel',
+				string.format('reason=%s hp=%.3f allies=%s enemies=%s severity=%s raw_severity=%s',
+					tostring(highGroundDenialReason), J.GetHP(bot),
+					tostring(highGroundSafetyState.allyCount or 0),
+					tostring(highGroundSafetyState.enemyCount or 0),
+					tostring(highGroundSafetyState.severity or 0),
+					tostring(highGroundSafetyState.contextRawSeverity or 0)))
+			if highGroundDenialReason == 'outnumbered' then
+				Wasteland.NoteHighGroundAssaultDecision(bot, pushObjective, 'yield_outnumbered',
+					'allies=' .. tostring(highGroundSafetyState.allyCount or 0)
+						.. ' enemies=' .. tostring(highGroundSafetyState.enemyCount or 0))
+			end
+		end
+		local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
+		J.ActionMoveToLocation(bot,
+			'push_high_ground_safety_cancel_' .. tostring(highGroundDenialReason or 'unknown'),
+			vLocation, 0.35, 260)
+		return
+	end
 	local conversionUnsafe, conversionReason = Wasteland.ShouldWithdrawConversionPush(
-		bot, retreatState.towerThreat, pushObjective)
+		bot, highGroundSafetyState.towerThreat, pushObjective)
 	if conversionUnsafe then
+		bot.THD_HighGroundAssaultAuthorization = nil
 		if Wasteland.NoteConversionWithdrawal ~= nil then
 			Wasteland.NoteConversionWithdrawal(bot, conversionReason, pushObjective)
 		end
@@ -736,7 +975,8 @@ function Push.PushThink(bot, lane)
 		J.ActionMoveToLocation(bot, 'push_flee_conversion_' .. tostring(conversionReason or 'safety'), vLocation, 0.25, 260)
 		return
 	end
-	if retreatState.severity >= J.Retreat.HIGH then
+	if highGroundSafetyState.severity >= J.Retreat.HIGH and not highGroundAssaultAllowed then
+		bot.THD_HighGroundAssaultAuthorization = nil
 		-- 模式切换可能仍受缓存影响；塔风险期间先退出高地，禁止继续叠加伤害和攻速。
 		if retreatState.towerThreat ~= nil and retreatState.towerThreat.active then
 			local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
@@ -751,8 +991,6 @@ function Push.PushThink(bot, lane)
 		J.GetNearbyHeroes(bot, PUSH_LOCAL_HERO_RESPONSE_RANGE, true, BOT_MODE_NONE),
 		PUSH_LOCAL_HERO_RESPONSE_RANGE
 	)
-	if Push.HandleNearbyEnemyHeroes(bot, lane, nearbyAllies, nearbyEnemies) then return end
-
 	local laneBuildingTier = Push.GetLaneBuildingTier(lane)
 
     local botAttackRange = bot:GetAttackRange()
@@ -778,12 +1016,14 @@ function Push.PushThink(bot, lane)
 	if pushObjective ~= nil
 	and (pushObjective.lane ~= lane or not Wasteland.IsPushObjectiveParticipant(bot, pushObjective))
 	then
+		if Push.HandleNearbyEnemyHeroes(bot, lane, nearbyAllies, nearbyEnemies) then return end
 		return
 	end
 	conversionUnsafe, conversionReason = Wasteland.ShouldWithdrawConversionPush(
-		bot, retreatState.towerThreat, pushObjective)
+		bot, highGroundSafetyState.towerThreat, pushObjective)
 	if conversionUnsafe then
 		-- gank 击杀转推塔时，不默认当前 Bot 继续吃塔伤；低血量或已被塔锁定都先退出。
+		bot.THD_HighGroundAssaultAuthorization = nil
 		if Wasteland.NoteConversionWithdrawal ~= nil then
 			Wasteland.NoteConversionWithdrawal(bot, conversionReason, pushObjective)
 		end
@@ -794,9 +1034,10 @@ function Push.PushThink(bot, lane)
     local bLaneBuildingProtected = J.IsValidBuilding(hLaneBuildingTarget)
         and Push.HasBackdoorProtect(hLaneBuildingTarget)
 	local observedTarget = pushObjective ~= nil and pushObjective.target or (hLaneBuildingTarget or hEnemyAncient)
+	local observedTargetHealth, observedTargetMaxHealth = nil, nil
 	if pushObjective ~= nil and pushObjective.lane == lane and Push.IsObjectiveValid(observedTarget) then
 		local objectiveLocation = Push.GetObjectiveLocation(lane, observedTarget)
-		local targetHealth, targetMaxHealth = J.Utils.GetVisibleHealth(observedTarget)
+		observedTargetHealth, observedTargetMaxHealth = J.Utils.GetVisibleHealth(observedTarget)
 		local botDistance = GetUnitToUnitDistance(bot, observedTarget)
 		local attackableDistance = math.min(1600, botAttackRange + 400)
 		pushObjective = Wasteland.ObservePushObjective(bot, lane, observedTarget, {
@@ -805,8 +1046,8 @@ function Push.PushThink(bot, lane)
 			botDistance = botDistance,
 			allyCreepDistance = GetClosestVisibleCreepDistance(
 				UNIT_LIST_ALLIED_CREEPS, objectiveLocation, 5000),
-			targetHealth = targetHealth,
-			targetMaxHealth = targetMaxHealth,
+			targetHealth = observedTargetHealth,
+			targetMaxHealth = observedTargetMaxHealth,
 			backdoorProtected = J.IsValidBuilding(observedTarget)
 				and Push.HasBackdoorProtect(observedTarget),
 			attackable = J.IsValidBuilding(observedTarget)
@@ -838,20 +1079,64 @@ function Push.PushThink(bot, lane)
     and Push.HasDefenseGlyphBuff(hLaneBuildingTarget)
     and #J.GetEnemiesNearLoc(hLaneBuildingTarget:GetLocation(), 1600) == 0
     then
+		bot.THD_HighGroundAssaultAuthorization = nil
         local vRetreatLocation = GetLaneFrontLocation(GetTeam(), lane, -1800)
         J.ActionMoveToLocation(bot, 'push_retreat_glyphed_tower', vRetreatLocation, 0.45, 260)
         return
     end
 
-	local towerThreat = J.Retreat.GetTowerThreat(bot, 3.0)
+	local towerThreat = highGroundSafetyState.towerThreat
 	if towerThreat.active
 	and not towerThreat.coveredHighGroundLock
-	and (towerThreat.highGroundLock
+	and ((towerThreat.highGroundLock and not highGroundAssaultAllowed)
 		or towerThreat.unavoidableDamage >= bot:GetHealth()
-		or towerThreat.predictedDamage / math.max(1, bot:GetHealth()) >= 0.25)
+		or towerThreat.predictedDamage / math.max(1, bot:GetHealth()) >= PUSH_HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO)
 	then
+		bot.THD_HighGroundAssaultAuthorization = nil
 		local vLocation = GetLaneFrontLocation(GetTeam(), lane, -1200)
 		J.ActionMoveToLocation(bot, 'push_flee_tower', vLocation, 0.35, 260)
+		return
+	end
+
+	local forceHighGroundObjective = Push.ShouldForceHighGroundObjective({
+		authorized = highGroundAssaultAllowed,
+		phase = pushObjective ~= nil and pushObjective.phase or nil,
+		role = objectiveRole,
+		attackable = Push.IsObjectiveValid(observedTarget)
+			and J.IsValidBuilding(observedTarget)
+			and J.CanBeAttacked(observedTarget)
+			and Push.CanAttackManagedBuilding(bot, lane, observedTarget, pushObjective)
+			and GetUnitToUnitDistance(bot, observedTarget) <= math.min(1600, botAttackRange + 400),
+		backdoorProtected = Push.IsObjectiveValid(observedTarget)
+			and J.IsValidBuilding(observedTarget) and Push.HasBackdoorProtect(observedTarget),
+		botHP = J.GetHP(bot),
+		allyCount = #nearbyAllies,
+		enemyCount = #nearbyEnemies,
+		targetHealth = observedTargetHealth,
+		targetMaxHealth = observedTargetMaxHealth,
+		allyBuildingAttackers = Push.IsObjectiveValid(observedTarget)
+			and #Push.GetAllyHeroesAttackingUnit(observedTarget) or 0,
+	})
+	if forceHighGroundObjective
+	and Push.TryAttackObjectiveBuilding(
+		bot, lane, pushObjective, observedTarget, botAttackRange, 'push_force_high_ground_objective')
+	then
+		-- 仅在建筑已进入收尾窗口或已有两名队友集火时强拆；否则先处理高地团战。
+		if Wasteland.NoteHighGroundAssaultDecision ~= nil then
+			Wasteland.NoteHighGroundAssaultDecision(bot, pushObjective, 'force_building',
+				string.format('target_hp=%s/%s enemies=%s',
+					tostring(observedTargetHealth or 'na'), tostring(observedTargetMaxHealth or 'na'),
+					tostring(#nearbyEnemies)))
+		end
+		return
+	end
+	local handledEnemyHeroes, heroResponse = Push.HandleNearbyEnemyHeroes(
+		bot, lane, nearbyAllies, nearbyEnemies)
+	if handledEnemyHeroes then
+		if highGroundAssaultAllowed and Wasteland.NoteHighGroundAssaultDecision ~= nil then
+			Wasteland.NoteHighGroundAssaultDecision(bot, pushObjective, heroResponse or 'fight_hero',
+				'allies=' .. tostring(#nearbyAllies) .. ' enemies=' .. tostring(#nearbyEnemies))
+		end
 		return
 	end
 
@@ -865,18 +1150,10 @@ function Push.PushThink(bot, lane)
 	and not Push.HasBackdoorProtect(observedTarget)
 	and Push.CanAttackManagedBuilding(bot, lane, observedTarget, pushObjective)
 	and GetUnitToUnitDistance(bot, observedTarget) <= math.min(1600, botAttackRange + 400)
+	and Push.TryAttackObjectiveBuilding(
+		bot, lane, pushObjective, observedTarget, botAttackRange, 'push_objective_building_damage')
 	then
-		local buildingTarget = J.GetStickyTarget(
-			bot, 'push_objective_building_damage', observedTarget, 1.8, botAttackRange + 500)
-		if buildingTarget ~= nil
-		and Push.CanAttackManagedBuilding(bot, lane, buildingTarget, pushObjective)
-		then
-			J.SetTargetIfChanged(bot, buildingTarget, 0.6)
-			if J.ActionAttackUnit(bot, 'push_objective_building_damage', buildingTarget, true, 0.45) then
-				Push.NoteManagedBuildingAttack(bot, lane, buildingTarget, pushObjective)
-				return
-			end
-		end
+		return
 	end
 
 	-- 欲望函数只决定优先级；远古目标与所有攻击指令统一在动作阶段下达。

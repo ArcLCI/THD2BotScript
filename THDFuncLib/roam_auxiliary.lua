@@ -1,3 +1,4 @@
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 require(GetScriptDirectory() .. "/thd2_item_function")
 
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
@@ -248,7 +249,7 @@ end
 
 local function ComputeDesire()
 	cachedProvider = 'none'
-	if not Utils.AllowModeDesire(bot, 'roam') then return BOT_MODE_DESIRE_NONE end
+	if not Utils.AllowModeDesire(bot, 'roam') then CandidateDebug.Note('mode_switch_lock'); return BOT_MODE_DESIRE_NONE end
 	botName = bot:GetUnitName()
 
 	if not debugPrinted then
@@ -258,6 +259,7 @@ local function ComputeDesire()
 	end
 
 	if not bot:IsAlive() or bot:GetCurrentActionType() == BOT_ACTION_TYPE_DELAY then
+		CandidateDebug.Note('dead_or_delay_action')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -271,16 +273,19 @@ local function ComputeDesire()
 		roamDesireInterval = 7.0
 	end
 	if not Timer.ShouldRunBotTask(bot, 'roam_desire', roamDesireInterval, ROAM_DESIRE_STAGGER) then
+		CandidateDebug.Note('scan_throttled')
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	ScanEdibleItem()
 	if edibleItem ~= nil and bot:HasModifier("modifier_fountain_aura_buff") then
 		cachedProvider = 'edible_swap'
+		CandidateDebug.Note('edible_swap')
 		return BOT_MODE_DESIRE_VERYHIGH + 0.1
 	end
 	local desire = ScanKusanagi()
 	if desire > BOT_MODE_DESIRE_NONE then cachedProvider = 'kusanagi_pickup' end
+	CandidateDebug.Note('no_item_task_or_kusanagi')
 	return desire
 end
 
@@ -289,6 +294,7 @@ function Auxiliary.GetDesire()
 	if specialRoaming ~= nil then
 		local desire = specialRoaming()
 		if desire ~= nil and desire > 0 then
+			CandidateDebug.Note('hero_auxiliary')
 			return desire, HeroSpecificProvider[bot:GetUnitName()] or 'hero_specific'
 		end
 	end
@@ -303,19 +309,22 @@ function Auxiliary.GetDesire()
 			if droppedItem ~= nil
 				and GetUnitToLocationDistance(bot, droppedItem.location) <= KUSANAGI_RECOVERY_PICKUP_RADIUS
 			then
+				CandidateDebug.Note('item_recovery_near')
 				return BOT_MODE_DESIRE_ABSOLUTE * 0.98, 'kusanagi_recovery'
 			end
-			if droppedItem ~= nil and not shouldYieldToRetreat then return BOT_MODE_DESIRE_VERYHIGH, 'kusanagi_recovery' end
+			if droppedItem ~= nil and not shouldYieldToRetreat then CandidateDebug.Note('item_recovery'); return BOT_MODE_DESIRE_VERYHIGH, 'kusanagi_recovery' end
 			if droppedItem == nil and DotaTime() <= displacedItemDropTime + KUSANAGI_RECOVERY_GRACE then
+				CandidateDebug.Note('item_recovery_grace')
 				return BOT_MODE_DESIRE_VERYHIGH, 'kusanagi_recovery'
 			end
-			if droppedItem ~= nil then return BOT_MODE_DESIRE_NONE end
+			if droppedItem ~= nil then CandidateDebug.Note('item_recovery_retreat'); return BOT_MODE_DESIRE_NONE end
 			ClearDisplacedItem()
 		end
 	end
 
 	if shouldYieldToRetreat then
 		pickedItem = nil
+		CandidateDebug.Note('high_retreat')
 		return BOT_MODE_DESIRE_NONE
 	end
 	local desire = Utils.GetCachedModeDesire(bot, 'roam_auxiliary', ComputeDesire)

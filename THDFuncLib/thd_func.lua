@@ -7,6 +7,14 @@ J.Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 J.Site = require( GetScriptDirectory()..'/THDFuncLib/aba_site')
 J.Retreat = require( GetScriptDirectory()..'/THDFuncLib/aba_retreat')
 local CombatPower = require( GetScriptDirectory()..'/THDFuncLib/combat_power')
+local AvoidanceController = nil
+
+local function GetAvoidanceController()
+	if AvoidanceController ~= nil then return AvoidanceController end
+	local ok, module = pcall(require, GetScriptDirectory()..'/THDFuncLib/avoidance_controller')
+	if ok and type(module) == 'table' then AvoidanceController = module end
+	return AvoidanceController
+end
 
 local IsModeTurbo = J.Utils.IsModeTurbo
 local GetVisibleHealth = J.Utils.GetVisibleHealth
@@ -1439,6 +1447,7 @@ end
 
 function J.CanNotUseAction( bot )
 	return not bot:IsAlive()
+			or J.IsTowerEscapeActive(bot)
 			or J.HasQueuedAction( bot )
 			or (bot:IsInvulnerable() and not bot:HasModifier('modifier_fountain_invulnerability'))
 			or bot:IsCastingAbility()
@@ -1447,6 +1456,18 @@ function J.CanNotUseAction( bot )
 			or bot:HasModifier('modifier_ability_thdots_chen01')
 			or bot:IsStunned()
 			or bot:IsNightmared()
+end
+
+function J.IsTowerEscapeActive( bot )
+	local controller = GetAvoidanceController()
+	return controller ~= nil
+		and controller.IsActionLocked ~= nil
+		and controller.IsActionLocked(bot)
+end
+
+function J.GetTowerEscapeObjectiveGrace()
+	local controller = GetAvoidanceController()
+	return controller ~= nil and controller.OBJECTIVE_ESCAPE_GRACE or 2.5
 end
 
 -- 检查指定技能的前摇和持续施法，避免仅依赖单位状态漏掉前摇窗口。
