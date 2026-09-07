@@ -1,10 +1,13 @@
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/avoidance_config')
 local Controller = require(GetScriptDirectory()..'/THDFuncLib/avoidance_controller')
-local Probe = require(GetScriptDirectory()..'/THDFuncLib/avoidance_native_probe')
+local Probe
+if Config.IsAnyProbeEnabled() then
+	Probe = require(GetScriptDirectory()..'/THDFuncLib/avoidance_native_probe')
+end
 
 local bot = GetBot()
-Probe.OnModeLoaded(bot)
+if Probe ~= nil then Probe.OnModeLoaded(bot) end
 
 if not Config.IsModeOverrideEnabled() and not Config.IsAnyProbeEnabled() then
 	-- 默认关闭时不注册回调，避免仅因文件存在就覆盖 Valve 原生 EVASIVE_MANEUVERS。
@@ -18,23 +21,23 @@ end
 if bot == nil or not bot:IsHero() or bot:IsIllusion() then return end
 
 function GetDesire()
-	local probeDesire = Probe.GetDesire(bot)
+	local probeDesire = Probe ~= nil and Probe.GetDesire(bot) or nil
 	if probeDesire ~= nil and probeDesire > BOT_MODE_DESIRE_NONE then CandidateDebug.Note('probe_desire'); return probeDesire end
 	return Controller.GetDesire(bot)
 end
 
 function OnStart()
-	Probe.OnStart(bot)
+	if Probe ~= nil then Probe.OnStart(bot) end
 	Controller.OnStart(bot)
 end
 
 function OnEnd()
-	Probe.OnEnd(bot)
+	if Probe ~= nil then Probe.OnEnd(bot) end
 	Controller.OnEnd(bot)
 end
 
 function Think()
-	if Probe.Think(bot) then return end
+	if Probe ~= nil and Probe.Think(bot) then return end
 	Controller.Think(bot)
 end
 

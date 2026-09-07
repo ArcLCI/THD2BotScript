@@ -8,6 +8,7 @@ local Pickoff = require(GetScriptDirectory()..'/THDFuncLib/roam_pickoff')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 
 local Controller = {}
+local Handoff
 
 -- EVASIVE 只拥有防越塔逃生窗口；安全保持结束后立即交还 Valve 模式仲裁。
 
@@ -79,25 +80,10 @@ local function GetState(bot)
 			containingZoneLatches = {},
 			containingZoneClearSince = {},
 			retreatThroughZoneLatches = {},
-			handoffPending = false,
-			handoffModeEnded = false,
-			handoffStartedAt = nil,
-			handoffReleaseReason = nil,
-			handoffStaleLogged = false,
-			handoffFallbackAllowed = false,
-			handoffFallbackTarget = nil,
-			handoffFallbackLastActionAt = -90,
-			handoffFallbackActionCount = 0,
-			handoffFallbackUnavailableLogged = false,
-			handoffFallbackProgressLocation = nil,
-			handoffFallbackProgressAt = nil,
-			handoffFallbackRetargetCount = 0,
-			handoffFallbackStallProbeStartedAt = nil,
-			handoffFallbackStallProbeLastActionAt = -90,
-			handoffFallbackStallProbeComplete = false,
 			lastTeamfightTowerPolicyLogAt = -90,
 			lastTeamfightTowerPolicyResult = nil,
 		}
+		Handoff.Reset(bot.THD_AvoidanceControllerState)
 	end
 	return bot.THD_AvoidanceControllerState
 end
@@ -114,329 +100,15 @@ local function Log(bot, state, stage, result, extra)
 			.. ' ' .. tostring(extra or '')))
 end
 
-local function ResetModeHandoff(state)
-	state.handoffPending = false
-	state.handoffModeEnded = false
-	state.handoffStartedAt = nil
-	state.handoffReleaseReason = nil
-	state.handoffStaleLogged = false
-	state.handoffFallbackAllowed = false
-	state.handoffFallbackTarget = nil
-	state.handoffFallbackLastActionAt = -90
-	state.handoffFallbackActionCount = 0
-	state.handoffFallbackUnavailableLogged = false
-	state.handoffFallbackProgressLocation = nil
-	state.handoffFallbackProgressAt = nil
-	state.handoffFallbackRetargetCount = 0
-	state.handoffFallbackStallProbeStartedAt = nil
-	state.handoffFallbackStallProbeLastActionAt = -90
-	state.handoffFallbackStallProbeComplete = false
-	state.handoffFallbackTravel = 0
-	state.handoffFallbackLastLocation = nil
-end
-
 local function SnapshotLocation(location)
 	if location == nil then return nil end
 	return Geometry.MakeVector(tonumber(location.x) or 0, tonumber(location.y) or 0,
 		tonumber(location.z) or 0)
 end
 
-local function IsHandoffFallbackCandidate(candidate, rejectedTarget)
-	if candidate == nil then return false end
-	local rejectDistance = math.max(0,
-		tonumber(Config.HANDOFF_FALLBACK_RETARGET_MIN_DISTANCE) or 240)
-	if rejectedTarget ~= nil
-	and Geometry.Distance(candidate, rejectedTarget) < rejectDistance
-	then
-		return false
-	end
-	return type(IsLocationPassable) ~= 'function'
-		or Safe(false, function() return IsLocationPassable(candidate) end)
-end
-
-local function BuildHandoffFallbackTarget(bot, preferredLocation, rejectedTarget, zones)
-	local current = Safe(nil, function() return bot:GetLocation() end)
-	if current == nil then return nil end
-	local reachDistance = math.max(0, tonumber(Config.HANDOFF_FALLBACK_REACH_DISTANCE) or 180)
-	local maxDistance = math.max(reachDistance + 1, tonumber(Config.HANDOFF_FALLBACK_STEP_DISTANCE) or 900)
-	local function Accept(candidate)
-		return Geometry.Distance(current, candidate) <= maxDistance + 0.1
-			and IsHandoffFallbackCandidate(candidate, rejectedTarget)
-			and Geometry.ValidateMovementSegment(current, candidate, zones or {}, 64)
-	end
-	if preferredLocation ~= nil and Geometry.Distance(current, preferredLocation) > maxDistance then
-		local scale = maxDistance / Geometry.Distance(current, preferredLocation)
-		preferredLocation = Geometry.MakeVector(current.x + (preferredLocation.x - current.x) * scale,
-			current.y + (preferredLocation.y - current.y) * scale, current.z)
-	end
-	if preferredLocation ~= nil
-	and Geometry.Distance(current, preferredLocation) > reachDistance
-	and Accept(preferredLocation)
-	then
-		return SnapshotLocation(preferredLocation)
-	end
-	local ancient = Safe(nil, function() return GetAncient(bot:GetTeam()) end)
-	local ancientLocation = ancient ~= nil
-		and Safe(nil, function() return ancient:GetLocation() end) or nil
-	if ancientLocation == nil then return nil end
-	local dx = (ancientLocation.x or 0) - (current.x or 0)
-	local dy = (ancientLocation.y or 0) - (current.y or 0)
-	local length = math.sqrt(dx * dx + dy * dy)
-	if length <= reachDistance then return nil end
-	local directionX, directionY = dx / length, dy / length
-	local sideX, sideY = -directionY, directionX
-	local stepDistance = math.min(length,
-		math.max(reachDistance + 1, tonumber(Config.HANDOFF_FALLBACK_STEP_DISTANCE) or 900))
-	for _, scale in ipairs({1.0, 0.75, 0.50}) do
-		for _, sideOffset in ipairs({0, 160, -160, 320, -320}) do
-			local candidate = Geometry.MakeVector(
-				(current.x or 0) + directionX * stepDistance * scale + sideX * sideOffset,
-				(current.y or 0) + directionY * stepDistance * scale + sideY * sideOffset,
-				current.z or ancientLocation.z or 0)
-			if Accept(candidate) then
-				return candidate
-			end
-		end
-	end
-	return nil
-end
-
-local function ResetHandoffFallbackProgress(state, current, now)
-	state.handoffFallbackProgressLocation = SnapshotLocation(current)
-	state.handoffFallbackProgressAt = now
-end
-
-local function StopHandoffFallback(bot, state, reason)
-	if state.handoffFallbackAllowed ~= true then return end
-	state.handoffFallbackAllowed = false
-	state.handoffFallbackTarget = nil
-	Log(bot, state, 'mode-handoff', 'fallback_stopped', string.format(
-		'reason=%s held_for=%.3f travel=%.1f fallback_action_count=%d', tostring(reason),
-		math.max(0, Now() - (state.handoffStartedAt or Now())),
-		state.handoffFallbackTravel or 0, state.handoffFallbackActionCount or 0))
-end
-
-local function RetargetStalledHandoffFallback(bot, state, current, now, heldFor)
-	if (state.handoffFallbackActionCount or 0) < 2 then
-		if state.handoffFallbackProgressAt == nil then
-			ResetHandoffFallbackProgress(state, current, now)
-		end
-		return false
-	end
-	if state.handoffFallbackProgressLocation == nil or state.handoffFallbackProgressAt == nil then
-		ResetHandoffFallbackProgress(state, current, now)
-		return false
-	end
-	local displacement = Geometry.Distance(current, state.handoffFallbackProgressLocation)
-	local progressDistance = math.max(0,
-		tonumber(Config.HANDOFF_FALLBACK_PROGRESS_DISTANCE) or 48)
-	if displacement >= progressDistance then
-		ResetHandoffFallbackProgress(state, current, now)
-		return false
-	end
-	local stalledFor = math.max(0, now - state.handoffFallbackProgressAt)
-	if stalledFor < (tonumber(Config.HANDOFF_FALLBACK_STALL_TIME) or 1.5) then
-		return false
-	end
-	-- 生产交接不再重新找目标；旧强制卡位流程只允许显式手动探针使用。
-	if Config.HANDOFF_FALLBACK_STALL_PROBE ~= true then
-		StopHandoffFallback(bot, state, 'no_progress')
-		return false
-	end
-	local oldTarget = SnapshotLocation(state.handoffFallbackTarget)
-	Log(bot, state, 'mode-handoff', 'fallback_stalled', string.format(
-		'held_for=%.3f stalled_for=%.3f displacement=%.1f target_distance=%.1f fallback_action_count=%d fallback_retarget_count=%d',
-		heldFor, stalledFor, displacement,
-		oldTarget ~= nil and Geometry.Distance(current, oldTarget) or -1,
-		state.handoffFallbackActionCount or 0, state.handoffFallbackRetargetCount or 0))
-	local newTarget = BuildHandoffFallbackTarget(bot, nil, oldTarget)
-	ResetHandoffFallbackProgress(state, current, now)
-	if newTarget == nil then
-		Log(bot, state, 'mode-handoff', 'fallback_unavailable',
-			string.format('held_for=%.3f reason=stall_retarget', heldFor))
-		return false
-	end
-	state.handoffFallbackTarget = newTarget
-	state.handoffFallbackRetargetCount = (state.handoffFallbackRetargetCount or 0) + 1
-	state.handoffFallbackUnavailableLogged = false
-	Log(bot, state, 'mode-handoff', 'fallback_retarget', string.format(
-		'held_for=%.3f fallback_retarget_count=%d old_target_x=%.1f old_target_y=%.1f target_x=%.1f target_y=%.1f',
-		heldFor, state.handoffFallbackRetargetCount,
-		oldTarget ~= nil and (oldTarget.x or 0) or 0,
-		oldTarget ~= nil and (oldTarget.y or 0) or 0,
-		newTarget.x or 0, newTarget.y or 0))
-	return true
-end
-
-local function ExecuteHandoffFallbackStallProbe(bot, state, current, now, heldFor)
-	if Config.HANDOFF_FALLBACK_STALL_PROBE ~= true
-	or state.handoffFallbackStallProbeComplete == true
-	or (state.handoffFallbackActionCount or 0) < 2
-	then
-		return false, false
-	end
-	if state.handoffFallbackStallProbeStartedAt == nil then
-		state.handoffFallbackStallProbeStartedAt = now
-		state.handoffFallbackStallProbeLastActionAt = -90
-		ResetHandoffFallbackProgress(state, current, now)
-		Log(bot, state, 'mode-handoff', 'fallback_stall_probe_started', string.format(
-			'held_for=%.3f fallback_action_count=%d target_x=%.1f target_y=%.1f',
-			heldFor, state.handoffFallbackActionCount or 0,
-			state.handoffFallbackTarget ~= nil and (state.handoffFallbackTarget.x or 0) or 0,
-			state.handoffFallbackTarget ~= nil and (state.handoffFallbackTarget.y or 0) or 0))
-	end
-	local probeHeldFor = math.max(0, now - state.handoffFallbackStallProbeStartedAt)
-	local holdTime = math.max((tonumber(Config.HANDOFF_FALLBACK_STALL_TIME) or 1.5) + 0.05,
-		tonumber(Config.HANDOFF_FALLBACK_STALL_PROBE_HOLD_TIME) or 1.6)
-	if probeHeldFor < holdTime then
-		-- 仅在手动探针对局中把目标压回当前位置，制造可归因的真实无位移窗口。
-		if type(bot.Action_MoveToLocation) == 'function'
-		and now - (state.handoffFallbackStallProbeLastActionAt or -90) >= 0.20
-		then
-			state.handoffFallbackStallProbeLastActionAt = now
-			bot:Action_MoveToLocation(current)
-		end
-		return true, false
-	end
-	local retargeted = RetargetStalledHandoffFallback(bot, state, current, now, heldFor)
-	if retargeted then
-		state.handoffFallbackStallProbeComplete = true
-		Log(bot, state, 'mode-handoff', 'fallback_stall_probe_completed', string.format(
-			'held_for=%.3f probe_held_for=%.3f fallback_retarget_count=%d',
-			heldFor, probeHeldFor, state.handoffFallbackRetargetCount or 0))
-		return false, true
-	end
-	state.handoffFallbackStallProbeStartedAt = now
-	state.handoffFallbackStallProbeLastActionAt = -90
-	ResetHandoffFallbackProgress(state, current, now)
-	Log(bot, state, 'mode-handoff', 'fallback_stall_probe_restarted', string.format(
-		'held_for=%.3f probe_held_for=%.3f', heldFor, probeHeldFor))
-	return true, false
-end
-
-local function ObserveModeHandoff(bot, state)
-	if state.handoffPending ~= true or state.handoffStartedAt == nil then return end
-	local now = Now()
-	local heldFor = math.max(0, now - state.handoffStartedAt)
-	local activeMode = Safe(BOT_MODE_NONE, function() return bot:GetActiveMode() end)
-	local activeDesire = tonumber(Safe(0, function() return bot:GetActiveModeDesire() end)) or 0
-	local stillEvasive = BOT_MODE_EVASIVE_MANEUVERS ~= nil
-		and activeMode == BOT_MODE_EVASIVE_MANEUVERS
-	-- 活动模式已经切离即可证明交接完成；部分实机切换不会回调本模式 OnEnd。
-	if not stillEvasive then
-		StopHandoffFallback(bot, state, 'mode_changed')
-		Log(bot, state, 'mode-handoff', 'completed',
-			string.format('held_for=%.3f release_reason=%s next_mode=%s next_desire=%.3f mode_end_seen=%d fallback_action_count=%d fallback_retarget_count=%d',
-				heldFor, tostring(state.handoffReleaseReason), tostring(activeMode), activeDesire,
-				state.handoffModeEnded == true and 1 or 0,
-				state.handoffFallbackActionCount or 0,
-				state.handoffFallbackRetargetCount or 0))
-		ResetModeHandoff(state)
-		return
-	end
-	if state.handoffStaleLogged ~= true
-	and heldFor >= (tonumber(Config.MODE_HANDOFF_STALE_TIME) or 1.0)
-	then
-		state.handoffStaleLogged = true
-		Log(bot, state, 'mode-handoff', 'stale',
-			string.format('held_for=%.3f release_reason=%s active_mode=%s active_desire=%.3f mode_end_seen=%d fallback_allowed=%d',
-				heldFor, tostring(state.handoffReleaseReason), tostring(activeMode), activeDesire,
-				state.handoffModeEnded == true and 1 or 0,
-				state.handoffFallbackAllowed == true and 1 or 0))
-	end
-end
-
-local function ExecuteModeHandoffFallback(bot, state)
-	if Config.HANDOFF_FALLBACK_ENABLED ~= true
-	or state.handoffPending ~= true
-	or state.handoffFallbackAllowed ~= true
-	or state.handoffStartedAt == nil
-	then
-		return false
-	end
-	local now = Now()
-	local heldFor = math.max(0, now - state.handoffStartedAt)
-	if heldFor >= (tonumber(Config.HANDOFF_FALLBACK_MAX_TIME) or 4.0) then
-		StopHandoffFallback(bot, state, 'time_budget')
-		return false
-	end
-	if heldFor < (tonumber(Config.HANDOFF_FALLBACK_START_TIME) or 1.0) then return false end
-	local activeMode = Safe(BOT_MODE_NONE, function() return bot:GetActiveMode() end)
-	local activeDesire = tonumber(Safe(0, function() return bot:GetActiveModeDesire() end)) or 0
-	if BOT_MODE_EVASIVE_MANEUVERS == nil
-	or activeMode ~= BOT_MODE_EVASIVE_MANEUVERS
-	or activeDesire > BOT_MODE_DESIRE_NONE
-	then
-		StopHandoffFallback(bot, state, 'active_task')
-		return false
-	end
-	-- 只填补无动作窗口，不覆盖已经开始的施法、TP、持续施法或攻击。
-	if IsProtectedAction(bot)
-	or Safe(0, function() return bot:NumQueuedActions() end) > 0 then
-		StopHandoffFallback(bot, state, 'protected_or_attacking')
-		state.handoffFallbackProgressLocation = nil
-		state.handoffFallbackProgressAt = nil
-		return true
-	end
-	-- 攻击/攻击移动订单不能被交接补步覆盖；状态读取失败也不能当成“未攻击”。
-	local actionType = Safe(nil, function() return bot:GetCurrentActionType() end)
-	if type(actionType) ~= 'number' or type(BOT_ACTION_TYPE_ATTACK) ~= 'number'
-	or type(BOT_ACTION_TYPE_ATTACKMOVE) ~= 'number' then
-		StopHandoffFallback(bot, state, 'attack_state_unavailable')
-		return false
-	end
-	if actionType == BOT_ACTION_TYPE_ATTACK or actionType == BOT_ACTION_TYPE_ATTACKMOVE then
-		StopHandoffFallback(bot, state, 'attack_action')
-		return true
-	end
-	local current = Safe(nil, function() return bot:GetLocation() end)
-	if current == nil then return false end
-	if state.handoffFallbackLastLocation ~= nil then
-		state.handoffFallbackTravel = (state.handoffFallbackTravel or 0)
-			+ Geometry.Distance(current, state.handoffFallbackLastLocation)
-	end
-	state.handoffFallbackLastLocation = SnapshotLocation(current)
-	if (state.handoffFallbackTravel or 0) >= (tonumber(Config.HANDOFF_FALLBACK_MAX_TRAVEL) or 1200) then
-		StopHandoffFallback(bot, state, 'travel_budget')
-		return false
-	end
-	local reachDistance = math.max(0, tonumber(Config.HANDOFF_FALLBACK_REACH_DISTANCE) or 180)
-	if state.handoffFallbackTarget == nil
-	or Geometry.Distance(current, state.handoffFallbackTarget) <= reachDistance
-	then
-		StopHandoffFallback(bot, state, state.handoffFallbackTarget == nil and 'no_local_target' or 'arrived')
-		return false
-	end
-	local scan = state.lastScan
-	if scan == nil or now - (state.lastScanAt or -90) > 0.75
-	or not Geometry.ValidateMovementSegment(current, state.handoffFallbackTarget,
-		scan.visibleTowers or scan.allZones or {}, 64) then
-		StopHandoffFallback(bot, state, 'unsafe_or_stale_segment')
-		return false
-	end
-	local probeHolding, probeRetargeted = ExecuteHandoffFallbackStallProbe(
-		bot, state, current, now, heldFor)
-	if probeHolding then return true end
-	if not probeRetargeted then
-		RetargetStalledHandoffFallback(bot, state, current, now, heldFor)
-	end
-	if state.handoffFallbackAllowed ~= true then return false end
-	if now - (state.handoffFallbackLastActionAt or -90)
-		< (tonumber(Config.HANDOFF_FALLBACK_ACTION_INTERVAL) or 0.75)
-	then
-		return true
-	end
-	if type(bot.Action_MoveToLocation) ~= 'function' then return false end
-	state.handoffFallbackLastActionAt = now
-	bot:Action_MoveToLocation(state.handoffFallbackTarget)
-	state.handoffFallbackActionCount = (state.handoffFallbackActionCount or 0) + 1
-	Log(bot, state, 'mode-handoff', 'fallback_move', string.format(
-		'held_for=%.3f fallback_action_count=%d current_x=%.1f current_y=%.1f target_x=%.1f target_y=%.1f travel=%.1f',
-		heldFor, state.handoffFallbackActionCount, current.x or 0, current.y or 0,
-		state.handoffFallbackTarget.x or 0, state.handoffFallbackTarget.y or 0,
-		state.handoffFallbackTravel or 0))
-	return true
-end
+Handoff = require(GetScriptDirectory()..'/THDFuncLib/avoidance_handoff').New({
+	Now = Now, Safe = Safe, Log = Log, IsProtectedAction = IsProtectedAction,
+})
 
 local function FormatZones(zones)
 	local parts = {}
@@ -473,16 +145,7 @@ end
 
 local function SetActive(bot, state, scan)
 	if state.active then return end
-	if state.handoffPending == true then
-		local heldFor = state.handoffStartedAt ~= nil
-			and math.max(0, Now() - state.handoffStartedAt) or 0
-		Log(bot, state, 'mode-handoff', 'reacquired',
-			string.format('held_for=%.3f previous_release_reason=%s fallback_action_count=%d fallback_retarget_count=%d',
-				heldFor, tostring(state.handoffReleaseReason),
-				state.handoffFallbackActionCount or 0,
-				state.handoffFallbackRetargetCount or 0))
-		ResetModeHandoff(state)
-	end
+	Handoff.Reacquire(bot, state)
 	state.active = true
 	state.startedAt = Now()
 	state.clearanceSince = nil
@@ -495,7 +158,18 @@ local function SetActive(bot, state, scan)
 	state.containingZoneLatches = {}
 	state.containingZoneClearSince = {}
 	state.retreatThroughZoneLatches = {}
+	state.motionLocation, state.motionAt = nil, nil
 	state.minCenterClearance = math.huge
+	state.progressLocation, state.progressAt = SnapshotLocation(bot:GetLocation()), Now()
+	state.recoveryTarget, state.recoverySince, state.recoverySafeSince = nil, nil, nil
+	state.recoveryRequested = false
+	state.recoverySignature, state.recoveryOrigin = nil, nil
+	state.recoverySearches, state.nextRecoveryAt = 0, -90
+	state.failedRecovery = nil
+	state.recoveryReach = 48
+	state.recoveryRejected = {}
+	state.lastDirectTarget, state.lastDirectActionAt = nil, -90
+	bot.THD_AvoidanceOwnedMove = nil
 	bot.THD_TowerEscapeActive = true
 	bot.THD_TowerEscapeGeneration = (bot.THD_TowerEscapeGeneration or 0) + 1
 	SetModeState(bot, state, Controller.ESCAPE_DIRECT, 'danger_acquired')
@@ -510,6 +184,7 @@ end
 local function Clear(bot, state, reason)
 	if not state.active then return end
 	local now = Now()
+	if reason == 'invalid_bot' or reason == 'feature_disabled' then state.failedRecovery = nil end
 	local handoffAnchor = SnapshotLocation(state.lastAnchor)
 	local handoffZones = state.lastScan ~= nil
 		and (state.lastScan.visibleTowers or state.lastScan.allZones) or {}
@@ -533,6 +208,9 @@ local function Clear(bot, state, reason)
 	state.containingZoneClearSince = {}
 	state.retreatThroughZoneLatches = {}
 	bot.THD_TowerEscapeActive = false
+	bot.THD_AvoidanceOwnedMove = nil
+	state.recoveryTarget, state.recoverySince, state.recoverySafeSince = nil, nil, nil
+	state.recoveryRequested = false
 	SetModeState(bot, state, Controller.IDLE, reason or 'released')
 	Log(bot, state, 'lease', 'released', 'reason=' .. tostring(reason)
 		.. string.format(' held_for=%.3f', heldFor)
@@ -541,32 +219,9 @@ local function Clear(bot, state, reason)
 	state.startedAt = nil
 	-- 释放租约后继续观察 Valve 模式仲裁，区分正常交接与 desire=0 的 mode 19 残留。
 	if reason ~= 'invalid_bot' and reason ~= 'feature_disabled' and IsValidBot(bot) then
-		state.handoffPending = true
-		state.handoffModeEnded = false
-		state.handoffStartedAt = now
-		state.handoffReleaseReason = reason or 'released'
-		state.handoffStaleLogged = false
-		state.handoffFallbackAllowed = reason == 'clearance_confirmed'
-		state.handoffFallbackTarget = state.handoffFallbackAllowed
-			and BuildHandoffFallbackTarget(bot, handoffAnchor, nil, handoffZones) or nil
-		state.handoffFallbackTravel = 0
-		state.handoffFallbackLastLocation = SnapshotLocation(bot:GetLocation())
-		state.handoffFallbackLastActionAt = -90
-		state.handoffFallbackActionCount = 0
-		state.handoffFallbackUnavailableLogged = false
-		state.handoffFallbackProgressLocation = nil
-		state.handoffFallbackProgressAt = nil
-		state.handoffFallbackRetargetCount = 0
-		local fallbackTarget = state.handoffFallbackTarget or {}
-		local releaseLocation = bot:GetLocation()
-		Log(bot, state, 'mode-handoff', 'pending',
-			'release_reason=' .. tostring(state.handoffReleaseReason)
-				.. ' fallback_allowed=' .. tostring(state.handoffFallbackAllowed and 1 or 0)
-				.. string.format(' fallback_target_x=%.1f fallback_target_y=%.1f release_x=%.1f release_y=%.1f fallback_target_distance=%.1f',
-					fallbackTarget.x or 0, fallbackTarget.y or 0, releaseLocation.x, releaseLocation.y,
-					state.handoffFallbackTarget ~= nil and Geometry.Distance(releaseLocation, fallbackTarget) or -1))
+		Handoff.Begin(bot, state, reason, handoffAnchor, handoffZones, now)
 	else
-		ResetModeHandoff(state)
+		Handoff.Reset(state)
 	end
 end
 
@@ -580,8 +235,17 @@ local function IsScanClear(scan, containingZones, routeZones)
 		and scan.recentTowerDamage ~= true
 end
 
-local function UpdateClearance(bot, state, scan, containingZones, routeZones)
-	if not IsScanClear(scan, containingZones, routeZones) then
+local function UpdateClearance(bot, state, scan, containingZones, routeZones, geometryZones)
+	-- 活动危险过期不能代替几何净空；许可过滤后的记忆圆仍约束安全释放。
+	local geometryClear = geometryZones ~= nil
+	for _, zone in ipairs(geometryZones or {}) do
+		if Geometry.PointInCircle(bot:GetLocation(), zone,
+			math.max(0, tonumber(Config.LUA_ROUTE_SAFETY_MARGIN) or 0)) then
+			geometryClear = false
+			break
+		end
+	end
+	if not geometryClear or not IsScanClear(scan, containingZones, routeZones) then
 		state.clearanceSince = nil
 		return false
 	end
@@ -592,6 +256,11 @@ local function UpdateClearance(bot, state, scan, containingZones, routeZones)
 		SetModeState(bot, state, Controller.CLEARANCE_HOLD, 'clearance_started')
 	end
 	if Now() - state.clearanceSince >= Config.CLEARANCE_HOLD_TIME then
+		local current = bot:GetLocation()
+		Log(bot, state, 'clearance-window', 'confirmed_geometry', string.format(
+			'current_x=%.1f current_y=%.1f margin=%.1f geometry_zones=%s',
+			current.x, current.y, math.max(0, tonumber(Config.LUA_ROUTE_SAFETY_MARGIN) or 0),
+			#geometryZones > 0 and FormatZones(geometryZones) or 'none'))
 		Clear(bot, state, 'clearance_confirmed')
 		return true
 	end
@@ -872,8 +541,12 @@ local function LogMovementGeometry(bot, state, geometryZones, routeZones, audit,
 			.. ' observations=' .. (#parts > 0 and table.concat(parts, '|') or 'none'))
 end
 
-local function MoveDirect(bot, state, location, reason)
+local function MoveDirect(bot, state, location, reason, partialExit)
 	if location == nil or type(bot.Action_MoveToLocation) ~= 'function' then return false end
+	local current = bot:GetLocation()
+	local validate = partialExit and Geometry.ValidateRecoverySegment or Geometry.ValidateMovementSegment
+	if state.movementGeometry == nil or not validate(current, location,
+		state.movementGeometry, state.movementMargin) then return false end
 	local now = Now()
 	if now - (state.lastDirectActionAt or -90) < Config.DIRECT_ACTION_INTERVAL
 	and state.lastDirectTarget ~= nil
@@ -881,14 +554,239 @@ local function MoveDirect(bot, state, location, reason)
 	then
 		return true
 	end
+	if not Geometry.ValidateLocalTerrainSegment(current, location, false) then return false end
 	state.lastDirectActionAt = now
 	state.lastDirectTarget = location
 	bot:Action_MoveToLocation(location)
+	bot.THD_AvoidanceOwnedMove = {target = location, generation = bot.THD_TowerEscapeGeneration or 0, partialExit = partialExit == true}
 	state.actionCount = (state.actionCount or 0) + 1
 	local current = Safe(nil, function() return bot:GetLocation() end) or {}
 	Log(bot, state, 'execute', reason or 'direct_move', string.format(
 		'current_x=%.1f current_y=%.1f target_x=%.1f target_y=%.1f',
 		current.x or 0, current.y or 0, location.x or 0, location.y or 0))
+	return true
+end
+
+local function StopOwnedMove(bot, state, reason)
+	local owned = bot.THD_AvoidanceOwnedMove
+	if owned == nil or IsProtectedAction(bot)
+	or Safe(-1, function() return bot:NumQueuedActions() end) ~= 0
+	or BOT_MODE_EVASIVE_MANEUVERS == nil
+	or Safe(-1, function() return bot:GetActiveMode() end) ~= BOT_MODE_EVASIVE_MANEUVERS
+	or type(BOT_ACTION_TYPE_MOVE_TO) ~= 'number'
+	or Safe(-1, function() return bot:GetCurrentActionType() end) ~= BOT_ACTION_TYPE_MOVE_TO
+	or type(bot.Action_ClearActions) ~= 'function' then return false end
+	-- 已确认是避塔自己的普通移动；true 立即停止，避免不安全旧命令继续执行。
+	bot:Action_ClearActions(true)
+	bot.THD_AvoidanceOwnedMove = nil
+	state.lastDirectTarget, state.lastDirectActionAt = nil, -90
+	Log(bot, state, 'recovery', 'owned_move_stopped', string.format(
+		'reason=%s order_generation=%s target_x=%.1f target_y=%.1f',
+		tostring(reason), tostring(owned.generation), owned.target.x, owned.target.y))
+	return true
+end
+
+local function RejectOwnedMovement(bot, state, reason)
+	local owned = bot.THD_AvoidanceOwnedMove
+	if owned ~= nil then
+		-- 保留失败目标供有界恢复排除；不沿用刚被否定的恢复目标。
+		table.insert(state.recoveryRejected, SnapshotLocation(owned.target))
+		if #state.recoveryRejected > 3 then table.remove(state.recoveryRejected, 1) end
+	end
+	state.recoveryTarget, state.recoveryPartial = nil, false
+	state.recoveryRequested = true
+	AvoidancePath.MarkNeedsRepath(bot, reason)
+	local stopped = StopOwnedMove(bot, state, reason)
+	Log(bot, state, 'recovery', 'replan_deferred', string.format(
+		'reason=%s stopped=%d new_order_issued=0', tostring(reason), stopped and 1 or 0))
+	-- 本次 Think 到此结束；下一次按最新许可/几何重新搜索，仍遵守原搜索预算。
+	return true
+end
+
+local function RevalidateOwnedMove(bot, state, current, zones, margin)
+	local owned = bot.THD_AvoidanceOwnedMove
+	if owned == nil then return false end
+	if Safe(-1, function() return bot:GetCurrentActionType() end) ~= BOT_ACTION_TYPE_MOVE_TO then
+		-- 其他动作已经接管时，仅清理旧移动归属，不撤销当前动作。
+		bot.THD_AvoidanceOwnedMove = nil
+		return false
+	end
+	-- 已到短步容差内交给到点处理停止，不再把零长度剩余段当向内运动。
+	if owned.partialExit and Geometry.Distance(current, owned.target) <= (state.recoveryReach or 48) then return false end
+	local validate = owned.partialExit and Geometry.ValidateRecoverySegment or Geometry.ValidateMovementSegment
+	local safe, reason, zone = validate(current, owned.target, zones, margin)
+	if safe then return end
+	if Now() - (state.lastUnsafeMoveLogAt or -90) >= 1.0 then
+		state.lastUnsafeMoveLogAt = Now()
+		Log(bot, state, 'recovery', 'owned_move_rejected', string.format(
+			'reason=%s zone_key=%s order_generation=%s current_x=%.1f current_y=%.1f target_x=%.1f target_y=%.1f margin=%.1f',
+			tostring(reason), tostring(zone and zone.key or 'none'), tostring(owned.generation),
+			current.x, current.y, owned.target.x, owned.target.y, margin))
+	end
+	return RejectOwnedMovement(bot, state, 'unsafe_current_segment')
+end
+
+local function ObserveActualMotion(bot, state, current, zones)
+	local previous = state.motionLocation
+	local owned = bot.THD_AvoidanceOwnedMove
+	state.motionLocation = SnapshotLocation(current)
+	local now, before = Now(), state.motionAt
+	state.motionAt = now
+	if previous == nil or owned == nil or Geometry.Distance(previous, current) < 1
+	or Safe(-1, function() return bot:GetCurrentActionType() end) ~= BOT_ACTION_TYPE_MOVE_TO then return false end
+	-- 与规划/执行共享当前有效几何，已获穿塔许可的圆不作为移动违例。
+	local safe, reason, zone = Geometry.ValidateMovementSegment(previous, current, zones, 0, true)
+	local offset = Geometry.SegmentDistanceToPoint(previous, owned.target, current)
+	if safe and offset <= 96 then return end
+	Log(bot, state, 'trajectory', 'deviation', string.format(
+		'reason=%s zone_key=%s dt=%.3f from_x=%.1f from_y=%.1f current_x=%.1f current_y=%.1f target_x=%.1f target_y=%.1f offset=%.1f order_generation=%s action_type=%s queued=%s protected=%d stunned=%d rooted=%d geometry_scope=movement geometry_zones=%s',
+		tostring(reason or 'off_segment'), tostring(zone and zone.key or 'none'), now - (before or now),
+		previous.x, previous.y, current.x, current.y, owned.target.x, owned.target.y, offset,
+		tostring(owned.generation), tostring(Safe(-1, function() return bot:GetCurrentActionType() end)),
+		tostring(Safe(-1, function() return bot:NumQueuedActions() end)), IsProtectedAction(bot) and 1 or 0,
+		Safe(false, function() return bot:IsStunned() end) and 1 or 0,
+		Safe(false, function() return bot:IsRooted() end) and 1 or 0,
+		#zones > 0 and FormatZones(zones) or 'none'))
+	return RejectOwnedMovement(bot, state, 'actual_motion_deviation')
+end
+
+local function ResetProgress(state, current)
+	state.progressLocation, state.progressAt = SnapshotLocation(current), Now()
+end
+
+local function IsStalled(state, current)
+	if state.progressLocation == nil
+	or Geometry.Distance(current, state.progressLocation) >= Config.RECOVERY_PROGRESS_DISTANCE then
+		ResetProgress(state, current)
+	end
+	return Now() - state.progressAt >= Config.RECOVERY_STALL_TIME
+end
+
+local function TryReleaseRecovery(bot, state, scan, geometryZones)
+	if state.recoverySince == nil then return false end
+	local safe = not IsProtectedAction(bot) and Safe(-1, function() return bot:NumQueuedActions() end) == 0
+		and IsScanClear(scan, {}, {})
+	local current = bot:GetLocation()
+	for _, zone in ipairs(geometryZones) do
+		if Geometry.PointInCircle(current, zone, GetRouteSafetyMargin()) then safe = false; break end
+	end
+	if not safe then state.recoverySafeSince = nil; return false end
+	state.recoverySafeSince = state.recoverySafeSince or Now()
+	if Now() - state.recoverySafeSince < Config.CLEARANCE_HOLD_TIME then return false end
+	-- 当前位置已确认净空时，不能只因旧锚点直线受阻而继续占绝对欲望。
+	StopOwnedMove(bot, state, 'recovery_safe_release')
+	Clear(bot, state, 'recovery_safe_release')
+	return true
+end
+
+local function RecoveryGeometryKey(zones)
+	return AvoidancePath.MakeRequestSignature(Geometry.MakeVector(0, 0, 0), zones)
+end
+
+local function ReleaseFailedRecovery(bot, state, current, zones)
+	-- 无可执行动作不能无限占绝对欲望；失败释放不是净空成功，补步也不得启动。
+	StopOwnedMove(bot, state, 'recovery_exhausted')
+	state.failedRecovery = {
+		origin = SnapshotLocation(current), geometryKey = RecoveryGeometryKey(zones),
+		nextProbeAt = Now() + Config.RECOVERY_ADMISSION_INTERVAL,
+	}
+	Log(bot, state, 'recovery', 'failed_release', string.format(
+		'current_x=%.1f current_y=%.1f safe_release=0 retry_at=%.3f',
+		current.x, current.y, state.failedRecovery.nextProbeAt))
+	Clear(bot, state, 'recovery_exhausted')
+	return true
+end
+
+local function RecoverMovement(bot, state, current, anchor, zones, margin, reason)
+	state.recoverySince = state.recoverySince or Now()
+	SetModeState(bot, state, Controller.ESCAPE_DIRECT, 'bounded_recovery')
+	local stalled = IsStalled(state, current)
+	if stalled and state.recoveryTarget == nil then
+		local owned = bot.THD_AvoidanceOwnedMove
+		if owned ~= nil then
+			table.insert(state.recoveryRejected, SnapshotLocation(owned.target))
+			if #state.recoveryRejected > 3 then table.remove(state.recoveryRejected, 1) end
+		end
+		StopOwnedMove(bot, state, 'no_progress')
+	end
+	if state.recoveryTarget ~= nil then
+		local target = state.recoveryTarget
+		local validate = state.recoveryPartial and Geometry.ValidateRecoverySegment or Geometry.ValidateMovementSegment
+		local safe = validate(current, target, zones, margin)
+		if Geometry.Distance(current, target) <= (state.recoveryPartial and (state.recoveryReach or 48) or 120) then
+			-- 到达短步就停止原命令，下一步必须重新选点和校验。
+			if state.recoveryPartial then StopOwnedMove(bot, state, 'recovery_step_reached') end
+			state.recoveryTarget = nil
+			ResetProgress(state, current)
+			Log(bot, state, 'recovery', 'target_reached', '')
+			return true
+		elseif not stalled and safe and MoveDirect(bot, state, target, 'recovery_move', state.recoveryPartial) then
+			return true
+		end
+		table.insert(state.recoveryRejected, SnapshotLocation(target))
+		if #state.recoveryRejected > 3 then table.remove(state.recoveryRejected, 1) end
+		state.recoveryTarget = nil
+		StopOwnedMove(bot, state, stalled and 'no_progress' or 'recovery_target_invalid')
+	end
+	local signature = AvoidancePath.MakeRequestSignature(anchor, zones) .. ':margin=' .. tostring(margin)
+	if state.recoverySignature ~= signature or state.recoveryOrigin == nil
+	or Geometry.Distance(current, state.recoveryOrigin) >= Config.RECOVERY_PROGRESS_DISTANCE then
+		state.recoverySignature, state.recoveryOrigin = signature, SnapshotLocation(current)
+		state.recoverySearches = 0
+	end
+	if Now() < (state.nextRecoveryAt or -90) then return true end
+	state.nextRecoveryAt = Now() + Config.RECOVERY_SEARCH_INTERVAL
+	if state.recoverySearches >= Config.RECOVERY_MAX_SEARCHES then
+		Log(bot, state, 'recovery', 'blocked', 'reason=search_budget_exhausted new_order_issued=0')
+		return ReleaseFailedRecovery(bot, state, current, zones)
+	end
+	state.recoverySearches = state.recoverySearches + 1
+	local target, stats = Geometry.FindRecoveryPoint(current, anchor, zones, margin,
+		Config.RECOVERY_MAX_DISTANCE, state.recoveryRejected)
+	state.recoveryPartial = false
+	local function LogTerrain(samples, kind)
+		for _, sample in ipairs(samples or {}) do
+			local detail = sample.detail or {}
+			local point = detail.point or {}
+			Log(bot, state, 'recovery-terrain', 'rejected_sample', string.format(
+				'kind=%s reason=%s sample=%d steps=%d sample_x=%.1f sample_y=%.1f target_x=%.1f target_y=%.1f',
+				kind, tostring(sample.reason), detail.index or 0, detail.steps or 0,
+				point.x or 0, point.y or 0, sample.target.x, sample.target.y))
+		end
+	end
+	LogTerrain(stats.terrainSamples, 'full_exit')
+	if target == nil then
+		local stepStats
+		target, stepStats = Geometry.FindRecoveryStep(current, anchor, zones, margin, state.recoveryRejected)
+		state.recoveryPartial = target ~= nil
+		LogTerrain(stepStats.terrainSamples, 'short_step')
+		Log(bot, state, 'recovery-step', target ~= nil and 'selected' or 'unavailable', string.format(
+			'candidates=%d rejected_geometry=%d rejected_terrain=%d rejected_recent=%d',
+			stepStats.candidates, stepStats.geometry, stepStats.terrain, stepStats.recent))
+	end
+	if target == nil then
+		-- 标准短步仍无解时追加更细的48候选；不放宽单调向外和邻塔门禁。
+		local compactStats
+		target, compactStats = Geometry.FindRecoveryStep(current, anchor, zones, margin, state.recoveryRejected, true)
+		state.recoveryPartial = target ~= nil
+		LogTerrain(compactStats.terrainSamples, 'compact_step')
+		Log(bot, state, 'recovery-compact', target ~= nil and 'selected' or 'unavailable', string.format(
+			'candidates=%d rejected_geometry=%d rejected_terrain=%d rejected_recent=%d',
+			compactStats.candidates, compactStats.geometry, compactStats.terrain, compactStats.recent))
+	end
+	Log(bot, state, 'recovery', target ~= nil and 'target_selected' or 'no_safe_target', string.format(
+		'partial_exit=%s reason=%s search=%d candidates=%d rejected_geometry=%d rejected_terrain=%d rejected_recent=%d rejected_range=%d margin=%.1f current_x=%.1f current_y=%.1f target_x=%.1f target_y=%.1f zones=%s',
+		tostring(state.recoveryPartial), tostring(reason), state.recoverySearches, stats.candidates, stats.geometry, stats.terrain,
+		stats.recent, stats.range, margin, current.x, current.y, target and target.x or 0, target and target.y or 0,
+		#zones > 0 and FormatZones(zones) or 'none'))
+	if target ~= nil then
+		state.recoveryTarget = SnapshotLocation(target)
+		state.recoveryReach = math.min(48, Geometry.Distance(current, target) * 0.25)
+		state.recoveryRequested = false
+		ResetProgress(state, current)
+		AvoidancePath.MarkNeedsRepath(bot, 'recovery_target_selected')
+		MoveDirect(bot, state, target, 'recovery_move', state.recoveryPartial)
+	end
 	return true
 end
 
@@ -912,13 +810,16 @@ local function RejectUnsafePathSegment(bot, state, anchor, latestZones, routeZon
 		current.x or 0, current.y or 0, target.x or 0, target.y or 0,
 		tostring(zone.key or 'none'), center.x or 0, center.y or 0,
 		zone.effectiveRadius or zone.radius or 0, requested, GetRouteSafetyMargin()))
+	AvoidancePath.NoteExecutionFailure(bot, reason)
 	AvoidancePath.MarkNeedsRepath(bot, 'unsafe_current_segment')
 	SetModeState(bot, state, Controller.ESCAPE_DIRECT, 'unsafe_current_segment')
 	local rejectedZones = details.zone ~= nil and {details.zone} or {}
 	local escapeZones = UniqueZones(routeZones, rejectedZones)
 	local escapePoint = Geometry.FindDirectEscapePoint(current, anchor, latestZones,
 		GetRouteSafetyMargin(), escapeZones)
-	if escapePoint ~= nil then MoveDirect(bot, state, escapePoint, 'unsafe_path_egress') end
+	if escapePoint == nil or not MoveDirect(bot, state, escapePoint, 'unsafe_path_egress') then
+		RecoverMovement(bot, state, current, anchor, latestZones, GetRouteSafetyMargin(), reason)
+	end
 	return true
 end
 
@@ -967,10 +868,28 @@ function Controller.IsActionLocked(bot)
 		or (type(state) == 'table' and state.active == true)
 end
 
+local function FindRecoveryAdmission(bot, state, scan, knownZones, authorization, teamfight)
+	local failed = state.failedRecovery
+	local current = bot:GetLocation()
+	local zones = BuildMovementGeometry(bot, state, scan, knownZones, authorization, teamfight)
+	local geometryKey = RecoveryGeometryKey(zones)
+	if Now() < failed.nextProbeAt and geometryKey == failed.geometryKey
+	and Geometry.Distance(current, failed.origin) < Config.RECOVERY_PROGRESS_DISTANCE then return nil end
+	failed.origin, failed.geometryKey = SnapshotLocation(current), geometryKey
+	failed.nextProbeAt = Now() + Config.RECOVERY_ADMISSION_INTERVAL
+	-- 只探查48个细步，不在无解时反复新建最高欲望租约；执行前仍重新验证。
+	local target, stats = Geometry.FindRecoveryStep(current, scan.anchor, zones,
+		GetRouteSafetyMargin(), {}, true)
+	Log(bot, state, 'recovery-admission', target ~= nil and 'ready' or 'unavailable', string.format(
+		'candidates=%d rejected_geometry=%d rejected_terrain=%d current_x=%.1f current_y=%.1f retry_at=%.3f',
+		stats.candidates, stats.geometry, stats.terrain, current.x, current.y, failed.nextProbeAt))
+	return target
+end
+
 function Controller.GetDesire(bot)
 	if not Controller.IsEnabled(bot) then
 		if bot ~= nil and bot.THD_AvoidanceControllerState ~= nil then
-			StopHandoffFallback(bot, GetState(bot), 'feature_disabled')
+			Handoff.Stop(bot, GetState(bot), 'feature_disabled')
 			Clear(bot, GetState(bot), 'feature_disabled')
 			if bot.THD_AvoidanceZoneState ~= nil then ZoneManager.Reset(bot, 'runtime') end
 		end
@@ -979,7 +898,7 @@ function Controller.GetDesire(bot)
 	end
 	if not IsValidBot(bot) then
 		if bot ~= nil and bot.THD_AvoidanceControllerState ~= nil then
-			StopHandoffFallback(bot, GetState(bot), 'invalid_bot')
+			Handoff.Stop(bot, GetState(bot), 'invalid_bot')
 			Clear(bot, GetState(bot), 'invalid_bot')
 			if bot.THD_AvoidanceZoneState ~= nil then ZoneManager.Reset(bot, 'runtime') end
 		end
@@ -988,7 +907,7 @@ function Controller.GetDesire(bot)
 	end
 
 	local state = GetState(bot)
-	ObserveModeHandoff(bot, state)
+	Handoff.Observe(bot, state)
 	local highGroundAuthorization = GetHighGroundAssaultAuthorization(bot)
 	local highLevelTeamfight = GetHighLevelTeamfightPriority(bot)
 	local scan = TowerSafety.Scan(bot, {
@@ -1015,7 +934,20 @@ function Controller.GetDesire(bot)
 			CandidateDebug.Note('no_trigger_or_anchor')
 			return BOT_MODE_DESIRE_NONE
 		end
+		local admission
+		if state.failedRecovery ~= nil then
+			admission = FindRecoveryAdmission(bot, state, scan, knownZones, highGroundAuthorization, highLevelTeamfight)
+			if admission == nil then
+				CandidateDebug.Note('recovery_admission_wait')
+				return BOT_MODE_DESIRE_NONE
+			end
+		end
 		SetActive(bot, state, scan)
+		if admission ~= nil then
+			state.recoveryTarget, state.recoveryPartial = SnapshotLocation(admission), true
+			state.recoveryReach = math.min(48, Geometry.Distance(bot:GetLocation(), admission) * 0.25)
+			state.recoverySince = Now()
+		end
 	else
 		state.lastReasons = scan.reasons or state.lastReasons
 	end
@@ -1028,11 +960,23 @@ function Controller.GetDesire(bot)
 		CandidateDebug.Note('high_ground_authorized')
 		return BOT_MODE_DESIRE_NONE
 	end
-	if state.active and UpdateClearance(bot, state, scan, containingZones, routeZones) then
+	local geometryZones = BuildMovementGeometry(bot, state, scan, knownZones,
+		highGroundAuthorization, highLevelTeamfight)
+	if state.active and UpdateClearance(bot, state, scan, containingZones, routeZones, geometryZones) then
 		CandidateDebug.Note('clearance_confirmed')
 		return BOT_MODE_DESIRE_NONE
 	end
-	CandidateDebug.Note(state.active and 'escape_lease_active' or 'no_escape_lease')
+	if state.recoverySince ~= nil then
+		if TryReleaseRecovery(bot, state, scan, geometryZones) then
+			CandidateDebug.Note('recovery_safe_release')
+			return BOT_MODE_DESIRE_NONE
+		end
+		CandidateDebug.Detail('recovery_searches', state.recoverySearches)
+		CandidateDebug.Detail('recovery_target', state.recoveryTarget ~= nil)
+		CandidateDebug.Detail('recovery_no_progress', Now() - (state.progressAt or Now()))
+	end
+	CandidateDebug.Note(state.recoverySince ~= nil and 'escape_recovery_active'
+		or (state.active and 'escape_lease_active' or 'no_escape_lease'))
 	return state.active and BOT_MODE_DESIRE_ABSOLUTE or BOT_MODE_DESIRE_NONE
 end
 
@@ -1046,25 +990,14 @@ function Controller.OnEnd(bot)
 	if bot == nil or bot.THD_AvoidanceControllerState == nil then return end
 	local state = GetState(bot)
 	-- 模式竞争结束不等于危险消失；租约只由同帧安全检查释放。
-	if state.handoffPending == true then
-		state.handoffModeEnded = true
-		local heldFor = state.handoffStartedAt ~= nil
-			and math.max(0, Now() - state.handoffStartedAt) or 0
-		Log(bot, state, 'mode-handoff', 'mode_end',
-			string.format('held_for=%.3f release_reason=%s fallback_action_count=%d fallback_retarget_count=%d',
-				heldFor, tostring(state.handoffReleaseReason),
-				state.handoffFallbackActionCount or 0,
-				state.handoffFallbackRetargetCount or 0))
-		StopHandoffFallback(bot, state, 'mode_ended')
-	end
-	Log(bot, state, 'mode-end', 'yielded', '')
+	Handoff.OnEnd(bot, state)
 end
 
 function Controller.Think(bot)
 	if not Controller.IsEnabled(bot) or not IsValidBot(bot) then return false end
 	local state = GetState(bot)
-	ObserveModeHandoff(bot, state)
-	if not state.active then return ExecuteModeHandoffFallback(bot, state) end
+	Handoff.Observe(bot, state)
+	if not state.active then return Handoff.Execute(bot, state) end
 	local highGroundAuthorization = GetHighGroundAssaultAuthorization(bot)
 	local highLevelTeamfight = GetHighLevelTeamfightPriority(bot)
 	local scan = TowerSafety.Scan(bot, {
@@ -1109,20 +1042,32 @@ function Controller.Think(bot)
 		AvoidancePath.MarkNeedsRepath(bot, 'escape_anchor_reached')
 		containingZones, routeZones = GetRouteGeometry(bot, anchor, knownZones, state)
 	end
-	if UpdateClearance(bot, state, scan, containingZones, routeZones) then return true end
-	if IsProtectedAction(bot) then
+	local geometryZones, geometryAudit = BuildMovementGeometry(bot, state, scan, knownZones,
+		highGroundAuthorization, highLevelTeamfight)
+	if UpdateClearance(bot, state, scan, containingZones, routeZones, geometryZones) then return true end
+	if IsProtectedAction(bot) or Safe(-1, function() return bot:NumQueuedActions() end) ~= 0
+	or Safe(false, function() return bot:IsStunned() end)
+	or Safe(false, function() return bot:IsRooted() end) then
+		-- 施法/确认队列或控制期间不累计停滞，也不把跨保护窗口位移归给旧命令。
+		state.motionLocation, state.motionAt = nil, nil
+		ResetProgress(state, current)
 		Log(bot, state, 'execute', 'protected_action', '')
 		return true
 	end
 
-	local geometryZones, geometryAudit = BuildMovementGeometry(bot, state, scan, knownZones,
-		highGroundAuthorization, highLevelTeamfight)
+	state.movementGeometry = geometryZones
+	state.movementMargin = #containingZones > 0
+		and math.max(Config.PATH_CLEARANCE_TOLERANCE, Config.DIRECT_EGRESS_SAFETY_MARGIN)
+		or GetRouteSafetyMargin()
 	local movementRouteZones = anchor ~= nil
 		and Geometry.FilterIntersectingZones(current, anchor, geometryZones, GetRouteSafetyMargin()) or {}
 	LogMovementGeometry(bot, state, geometryZones, movementRouteZones, geometryAudit, false)
-	local records = UniqueZones(containingZones, routeZones)
-	-- 每帧同步路线塔区，既维持短 TTL，也会在路线清除或进入圆内时提前 Remove。
-	ZoneManager.SyncNative(bot, records, BuildExcludedKeys(containingZones), 'runtime')
+	if ObserveActualMotion(bot, state, current, geometryZones)
+	or RevalidateOwnedMove(bot, state, current, geometryZones, state.movementMargin) then return true end
+	if Config.USE_NATIVE_ZONES or Config.USE_NATIVE_REMOVE then
+		ZoneManager.SyncNative(bot, UniqueZones(containingZones, routeZones), BuildExcludedKeys(containingZones), 'runtime')
+	end
+	if TryReleaseRecovery(bot, state, scan, geometryZones) then return true end
 	if #containingZones > 0 then
 		local pathState = AvoidancePath.GetState(bot)
 		local pathOwned = state.state == Controller.FOLLOWING_PATH
@@ -1141,24 +1086,32 @@ function Controller.Think(bot)
 				currentLocation.y or 0, waypoint.x or 0, waypoint.y or 0,
 				FormatPathZones(containingZones, pathContext.requestZoneKeys, currentLocation)))
 		end
+		if state.recoveryRequested or state.recoveryTarget ~= nil or IsStalled(state, current) then
+			return RecoverMovement(bot, state, current, anchor, geometryZones,
+				state.movementMargin, 'no_progress_or_recovery_target')
+		end
 		SetModeState(bot, state, Controller.ESCAPE_DIRECT, 'inside_tower_zone')
 		AvoidancePath.MarkNeedsRepath(bot, 'inside_tower_zone')
 		local directMargin = math.max(tonumber(Config.PATH_CLEARANCE_TOLERANCE) or 0,
 			tonumber(Config.DIRECT_EGRESS_SAFETY_MARGIN) or 0)
 		local escapePoint = Geometry.FindDirectEscapePoint(bot:GetLocation(), anchor,
 			geometryZones, directMargin, containingZones)
-		if escapePoint ~= nil then return MoveDirect(bot, state, escapePoint, 'direct_egress') end
+		if escapePoint ~= nil and MoveDirect(bot, state, escapePoint, 'direct_egress') then return true end
 		-- 候选全部失败时不能再发一条未经检查的 anchor 穿塔命令。
-		if anchor ~= nil and Geometry.ValidateMovementSegment(current, anchor, geometryZones, directMargin) then
-			return MoveDirect(bot, state, anchor, 'direct_anchor_fallback')
+		if anchor ~= nil and MoveDirect(bot, state, anchor, 'direct_anchor_fallback') then
+			return true
 		end
 		if Now() - (state.lastNoSafeEgressLogAt or -90) >= 1.0 then
 			state.lastNoSafeEgressLogAt = Now()
 			Log(bot, state, 'path-policy', 'no_safe_egress_segment', 'new_order_issued=0')
 		end
-		return true
+		return RecoverMovement(bot, state, current, anchor, geometryZones, directMargin, 'no_safe_egress_segment')
 	end
 
+	if state.recoveryRequested or state.recoveryTarget ~= nil or IsStalled(state, current) then
+		return RecoverMovement(bot, state, current, anchor, geometryZones,
+			state.movementMargin, 'no_progress_or_recovery_target')
+	end
 	if anchor == nil then return false end
 	if #movementRouteZones == 0 then
 		local pathState = AvoidancePath.GetState(bot)
@@ -1181,7 +1134,8 @@ function Controller.Think(bot)
 		if scan.triggered then
 			SetModeState(bot, state, Controller.ESCAPE_DIRECT, 'route_clear_danger_active')
 		end
-		return MoveDirect(bot, state, anchor, 'clear_route_anchor')
+		if MoveDirect(bot, state, anchor, 'clear_route_anchor') then return true end
+		return RecoverMovement(bot, state, current, anchor, geometryZones, GetRouteSafetyMargin(), 'anchor_terrain_blocked')
 	end
 	ResetRouteClearCommit(bot, state, 'route_intersection')
 
@@ -1195,8 +1149,10 @@ function Controller.Think(bot)
 	end
 	if pathState.status == 'idle' or pathState.status == 'failed' or pathState.status == 'complete' then
 		-- escape_only 会偏离原锚点直线，构造器也必须看到所有有效侧面塔区。
-		AvoidancePath.Request(bot, bot:GetLocation(), anchor, geometryZones, 'runtime')
-		LogMovementGeometry(bot, state, geometryZones, movementRouteZones, geometryAudit, true)
+		if AvoidancePath.CanRequest(bot, current, anchor, geometryZones) then
+			AvoidancePath.Request(bot, current, anchor, geometryZones, 'runtime')
+			LogMovementGeometry(bot, state, geometryZones, movementRouteZones, geometryAudit, true)
+		end
 		pathState = AvoidancePath.GetState(bot)
 	end
 	if pathState.status == 'pending' then
@@ -1229,10 +1185,11 @@ function Controller.Think(bot)
 	-- 路径候选耗尽时继续远离相交塔圆，不允许直接穿圆冲向 anchor。
 	local escapePoint = Geometry.FindDirectEscapePoint(bot:GetLocation(), anchor, geometryZones,
 		GetRouteSafetyMargin(), movementRouteZones)
-	if escapePoint ~= nil then
-		return MoveDirect(bot, state, escapePoint, 'path_unavailable_egress')
+	if escapePoint ~= nil and MoveDirect(bot, state, escapePoint, 'path_unavailable_egress') then
+		return true
 	end
-	return true
+	return RecoverMovement(bot, state, current, anchor, geometryZones, GetRouteSafetyMargin(),
+		pathState.failureReason or 'path_unavailable')
 end
 
 function Controller.Reset(bot, reason)
@@ -1265,6 +1222,10 @@ function Controller.GetSnapshot(bot)
 		anchor = state.lastAnchor,
 		pathStatus = path.status,
 		pathFailureReason = path.failureReason,
+		pathFailedAttempts = path.failedAttempts,
+		recoveryTarget = state.recoveryTarget,
+		recoverySearches = state.recoverySearches,
+		progressAt = state.progressAt,
 		directActionCount = state.actionCount or 0,
 		pathActionCount = path.actionCount or 0,
 	}

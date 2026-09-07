@@ -1,7 +1,8 @@
+local TowerSafety = require(GetScriptDirectory()..'/THDFuncLib/tower_safety')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 local Geometry = require(GetScriptDirectory()..'/THDFuncLib/avoidance_geometry')
-local Config = require(GetScriptDirectory()..'/THDFuncLib/avoidance_config')
+local Config = require(GetScriptDirectory()..'/THDFuncLib/bot_diagnostics_config')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Work = {}
 
@@ -13,7 +14,7 @@ local REACH_DISTANCE = 180
 local TASK_DURATION = 12.0
 local NO_PROGRESS_TIME = 3.0
 local TOWER_MARGIN = 96
-local DESIRE = {clear_wave = 0.28, escort_wave = 0.22, stage_lane = 0.18}
+local DESIRE = {clear_wave = 0.28, escort_wave = 0.22, stage_lane = 0.18, approach_lane = 0.16}
 
 local function State(bot)
 	if bot.THD_PushLaneWork == nil then
@@ -33,11 +34,12 @@ end
 local function Log(bot, task, event, reason)
 	if Config.DEBUG_LOG ~= true or task == nil then return end
 	local current = bot:GetLocation()
-	print(string.format('[BOT][LaneWork] run=%s team=%s player=%s generation=%s lane=%s kind=%s event=%s reason=%s dota_time=%.3f action_intent_count=%d x=%.1f y=%.1f target_x=%.1f target_y=%.1f distance=%.1f expires_at=%.3f',
+	print(string.format('[BOT][LaneWork] run=%s team=%s player=%s generation=%s lane=%s kind=%s event=%s reason=%s dota_time=%.3f action_intent_count=%d x=%.1f y=%.1f target_x=%.1f target_y=%.1f distance=%.1f expires_at=%.3f goal_x=%.1f goal_y=%.1f',
 		tostring(Config.RUN_ID), tostring(bot:GetTeam()), tostring(bot:GetPlayerID()),
 		tostring(task.generation), tostring(task.lane), tostring(task.kind), event, tostring(reason),
 		DotaTime(), task.actions or 0, current.x, current.y, task.location.x, task.location.y,
-		Geometry.Distance(current, task.location), task.expiresAt))
+		Geometry.Distance(current, task.location), task.expiresAt,
+		(task.goal or task.location).x, (task.goal or task.location).y))
 end
 
 function Work.Release(bot, reason, lane)
@@ -120,12 +122,9 @@ local function SafeSegment(bot, state, location)
 	local current = bot:GetLocation()
 	local distance = Geometry.Distance(current, location)
 	if distance > MAX_DISTANCE then return false, 'beyond_local_range' end
-	local controller = bot.THD_AvoidanceControllerState
-	-- 必须有新鲜的原始可见塔快照，不能拿绕过授权后的空区域当安全证据。
-	if controller == nil or controller.lastScan == nil
-	or DotaTime() - (controller.lastScanAt or -90) > 0.75
-	or controller.lastScan.visibleTowers == nil then return false, 'tower_snapshot_stale' end
-	if not Geometry.ValidateMovementSegment(current, location, controller.lastScan.visibleTowers, TOWER_MARGIN) then
+	local observation = TowerSafety.Observe(bot)
+	if observation.available ~= true then return false, 'tower_snapshot_stale' end
+	if not Geometry.ValidateMovementSegment(current, location, observation.towers, TOWER_MARGIN) then
 		return false, 'tower_segment'
 	end
 	for _, enemy in ipairs(state.enemies or {}) do
@@ -186,6 +185,7 @@ local function Choose(bot, state, lane)
 		end
 	end
 	-- 冻结一个安全集合点；已在该点就不伪造任务，也不持续向敌方 Ancient 续步。
+	local distantGoals = {}
 	for _, offset in ipairs({-1200, -1800, -2400}) do
 		local location = GetLaneFrontLocation(bot:GetTeam(), lane, offset)
 		if CanChoose(bot, state, location) then
@@ -195,6 +195,23 @@ local function Choose(bot, state, lane)
 			end
 			return {kind = 'stage_lane', location = Copy(location)}
 		end
+		if state.lastRejection == 'beyond_local_range'
+		and Geometry.Distance(current, location) <= 6000 then
+			table.insert(distantGoals, {location = location, offset = offset})
+		end
+	end
+	-- 远处真实集合目标只授权一段可见、安全的短程接近，抵达后必须重新竞争。
+	-- 优先保留上面的近处任务；最多检查三目标 x 三步长，不放宽 siege/伤害门槛。
+	for _, goal in ipairs(distantGoals) do
+		local location = goal.location
+		local distance = Geometry.Distance(current, location)
+		for _, step in ipairs({900, 600, 360}) do
+			local target = Geometry.MakeVector(current.x + (location.x - current.x) * step / distance,
+				current.y + (location.y - current.y) * step / distance, current.z)
+			if CanChoose(bot, state, target) then
+				return {kind = 'approach_lane', location = Copy(target), goal = Copy(location), offset = goal.offset}
+			end
+		end
 	end
 	return nil
 end
@@ -202,6 +219,10 @@ end
 local function Validate(bot, state, task)
 	local now = DotaTime()
 	if now >= task.expiresAt then return false, 'expired' end
+	if task.kind == 'approach_lane' and Geometry.Distance(task.goal,
+		GetLaneFrontLocation(bot:GetTeam(), task.lane, task.offset)) > 600 then
+		return false, 'lane_goal_changed'
+	end
 	if task.unit ~= nil then
 		if not VisibleUnit(task.unit) then return false, 'target_lost' end
 		if task.kind == 'clear_wave' then

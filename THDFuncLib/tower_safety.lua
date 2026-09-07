@@ -99,6 +99,29 @@ local function GetTowerSnapshots(bot)
 	return snapshots
 end
 
+local function CopySnapshots(snapshots)
+	local copy = {}
+	for _, snapshot in ipairs(snapshots) do
+		local value = {}
+		for key, field in pairs(snapshot) do value[key] = field end
+		value.center = Geometry.MakeVector(snapshot.center.x, snapshot.center.y, snapshot.center.z)
+		table.insert(copy, value)
+	end
+	return copy
+end
+
+-- 同一 Bot 同一时刻只观测一次；返回独立数值副本，调用方策略不能修改公共缓存。
+function TowerSafety.Observe(bot)
+	local now = Safe(nil, function() return DotaTime() end)
+	if not IsValidUnit(bot) or now == nil then return {available = false, towers = {}} end
+	local cached = bot.THD_TowerObservation
+	if cached == nil or cached.observedAt ~= now then
+		cached = {observedAt = now, towers = GetTowerSnapshots(bot)}
+		bot.THD_TowerObservation = cached
+	end
+	return {available = true, observedAt = cached.observedAt, towers = CopySnapshots(cached.towers)}
+end
+
 local function CountHighGroundAttackRanges(location, snapshots)
 	local count = 0
 	for _, snapshot in ipairs(snapshots or {}) do
@@ -250,7 +273,8 @@ function TowerSafety.Scan(bot, options)
 	if not IsValidUnit(bot) then return result end
 
 	local botLocation = bot:GetLocation()
-	local snapshots = GetTowerSnapshots(bot)
+	local observation = TowerSafety.Observe(bot)
+	local snapshots = observation.towers
 	-- 复用本次可见塔快照；普通兵线任务不能继承团战/围攻的塔圈绕过授权。
 	result.visibleTowers = snapshots
 	local highLevelTeamfight = type(options.highLevelTeamfight) == 'table'

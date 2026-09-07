@@ -1,3 +1,4 @@
+local TowerSafety = require(GetScriptDirectory()..'/THDFuncLib/tower_safety')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local bot = GetBot()
 local botName = bot:GetUnitName();
@@ -6,6 +7,7 @@ local X = {}
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
+local Geometry = require(GetScriptDirectory()..'/THDFuncLib/avoidance_geometry')
 
 local RUNE_DESIRE_EARLY_INTERVAL = 0.35
 local RUNE_DESIRE_MID_INTERVAL = 0.9
@@ -65,6 +67,51 @@ local runeModeStartTime = -9999
 local wisdomRuneEnterTime = -9999
 local lastRunePickupTime = -9999
 local lastRunePickupLocation = nil
+local idleRuneTask = nil
+
+local function IdleRuneSafe(rune)
+	if J.CanNotUseAction(bot) or J.GetHP(bot) < 0.55
+	or bot:WasRecentlyDamagedByAnyHero(2.0) or bot:WasRecentlyDamagedByTower(2.0)
+	or J.IsRoshanCommitmentActive(bot) then return false, 'protected_or_danger' end
+	local ability = bot:GetCurrentActiveAbility()
+	if ability ~= nil then
+		local ok, protected = pcall(function() return ability:IsInAbilityPhase() or ability:IsChanneling() end)
+		if not ok or protected then return false, 'protected_phase' end
+	end
+	local location = GetRuneSpawnLocation(rune)
+	if location == nil or GetRuneStatus(rune) ~= RUNE_STATUS_AVAILABLE then return false, 'not_available' end
+	local current = bot:GetLocation()
+	local distance = Geometry.Distance(current, location)
+	if distance > 900 then return false, 'outside_local_range' end
+	local observation = TowerSafety.Observe(bot)
+	if observation.available ~= true then return false, 'tower_snapshot_stale' end
+	if not Geometry.ValidateMovementSegment(current, location, observation.towers, 96) then
+		return false, 'tower_segment'
+	end
+	if #J.GetLastSeenEnemiesNearLoc(current, distance + 1200) > 0 then return false, 'recent_enemy' end
+	return Geometry.ValidateLocalTerrainSegment(current, location, true)
+end
+
+local function ValidateIdleRuneTask()
+	if idleRuneTask == nil then return false end
+	local now = DotaTime()
+	local distance = GetUnitToLocationDistance(bot, GetRuneSpawnLocation(idleRuneTask.rune))
+	if idleRuneTask.bestDistance - distance >= 48 then
+		idleRuneTask.bestDistance, idleRuneTask.progressAt = distance, now
+	end
+	local reason = now >= idleRuneTask.expiresAt and 'expired'
+		or (now - idleRuneTask.progressAt >= 3.0 and 'no_progress' or nil)
+	if reason == nil and now >= idleRuneTask.nextSafetyAt then
+		idleRuneTask.nextSafetyAt = now + 0.5
+		local safe, safetyReason = IdleRuneSafe(idleRuneTask.rune)
+		if not safe then reason = safetyReason end
+	end
+	if reason == nil then return true end
+	CandidateDebug.Note('idle_rune_' .. reason)
+	X.MarkRuneAbandoned(idleRuneTask.rune)
+	idleRuneTask = nil
+	return false
+end
 
 local function ClearWisdomRuneMode()
 	wisdomRuneInfo[1] = 0
@@ -102,12 +149,18 @@ local function IsRecentlyPickedRuneLocation(vLoc)
 end
 
 local function ClearActiveRuneTarget()
+	idleRuneTask = nil
 	ClosestRune = -1
 	ClosestDistance = -1
 	nRuneStatus = -1
 end
 
 local function GetActiveRuneDesire()
+	if idleRuneTask ~= nil then
+		if ValidateIdleRuneTask() then return 0.28 end
+		ClearActiveRuneTarget()
+		return BOT_MODE_DESIRE_NONE
+	end
 	if wisdomRuneInfo[3] then
 		if wisdomRuneInfo[2] == nil
 		or bot.wisdom == nil
@@ -247,8 +300,9 @@ local function ComputeDesire()
 		return BOT_MODE_DESIRE_NONE
 	end
 
-	if DotaTime() > -10 and bot:GetCurrentActionType() == BOT_ACTION_TYPE_IDLE then
-		CandidateDebug.Note('idle_action_blocks_rune')
+	local idleCandidate = DotaTime() > -10 and bot:GetCurrentActionType() == BOT_ACTION_TYPE_IDLE
+	if idleCandidate and (DotaTime() < 0 or bot:GetLevel() <= 15 or bot:GetActiveModeDesire() > 0) then
+		CandidateDebug.Note('idle_has_owner_or_laning')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -291,6 +345,17 @@ local function ComputeDesire()
 			X.MarkRuneAbandoned(ClosestRune)
 			CandidateDebug.Note('enemy_picked_rune')
 			return 0
+		end
+
+		if idleCandidate then
+			local safe, reason = IdleRuneSafe(ClosestRune)
+			if not safe then CandidateDebug.Note('idle_rune_' .. tostring(reason)); return 0 end
+			-- IDLE 只接已出现、可达的近处符文；冻结目标，不升级为普通符文的高粘性欲望。
+			idleRuneTask = {rune = ClosestRune, expiresAt = DotaTime() + 6.0,
+				progressAt = DotaTime(), bestDistance = ClosestDistance, nextSafetyAt = DotaTime() + 0.5}
+			CandidateDebug.Note('idle_available_rune')
+			CandidateDebug.Detail('idle_rune_target', ClosestRune)
+			return 0.28
 		end
 
         if ClosestRune == RUNE_BOUNTY_1 or ClosestRune == RUNE_BOUNTY_2 then
@@ -450,6 +515,7 @@ end
 
 function OnEnd()
 	runeModeStartTime = -9999
+	idleRuneTask = nil
 end
 
 function Think()
@@ -517,7 +583,13 @@ function Think()
     if botAttackRange > 1400 then botAttackRange = 1400 end
     local nEnemyHeroes = J.GetEnemiesNearLoc(bot:GetLocation(), botAttackRange)
 
-	ClosestRune, ClosestDistance = X.GetBestRuneForThink()
+	if idleRuneTask ~= nil then
+		if bot:GetActiveModeDesire() <= 0 then ClearActiveRuneTarget(); return end
+		if not ValidateIdleRuneTask() then ClearActiveRuneTarget(); return end
+		ClosestRune = idleRuneTask.rune
+	else
+		ClosestRune, ClosestDistance = X.GetBestRuneForThink()
+	end
 
 	if ClosestRune == nil or ClosestRune == -1 then
 		return
@@ -530,6 +602,19 @@ function Think()
 
 	ClosestDistance = GetUnitToLocationDistance(bot, closestRuneLoc)
 	nRuneStatus = GetRuneStatus(ClosestRune)
+
+	if idleRuneTask ~= nil then
+		-- 低欲望接管只执行已验证的精确符点，不沿用普通分支的随机偏移或攻击转移。
+		if not IdleRuneSafe(ClosestRune) then ClearActiveRuneTarget(); return end
+		if ClosestDistance <= RUNE_PICKUP_DISTANCE then
+			bot:Action_PickUpRune(ClosestRune)
+			lastRunePickupTime, lastRunePickupLocation = DotaTime(), closestRuneLoc
+			ClearActiveRuneTarget()
+		else
+			J.ActionMoveToLocation(bot, 'idle_available_rune', closestRuneLoc, 0.35, 120)
+		end
+		return
+	end
 
 	if nRuneStatus == RUNE_STATUS_AVAILABLE then
 		if ClosestDistance <= RUNE_PICKUP_DISTANCE then

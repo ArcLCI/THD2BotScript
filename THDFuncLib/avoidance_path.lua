@@ -124,25 +124,29 @@ function AvoidancePath.IsCurrentPathUsable(bot, destination, zones)
 	return Geometry.ValidatePath(current, remaining, zones or {}, Config.PATH_CLEARANCE_TOLERANCE)
 end
 
+local function SelectNextWaypoint(state, current)
+	local index = math.max(1, state.waypointIndex or 1)
+	local target = state.waypoints and state.waypoints[index] or nil
+	if state.status == 'following' and not state.nativeExecution
+	and target ~= nil and Geometry.Distance(current, target) <= 120 then
+		index = index + 1
+		target = state.waypoints[index]
+	end
+	return index, target
+end
+
 function AvoidancePath.ValidateCurrentSegment(bot, zones, margin)
 	if bot == nil or bot.THD_AvoidancePathState == nil then
 		return false, 'missing_path_state', nil
 	end
 	local state = GetState(bot)
+	state.executionZones, state.executionMargin = zones, margin
 	if state.status ~= 'ready' and state.status ~= 'following' then
 		return false, 'path_not_executable', nil
 	end
 	local ok, current = pcall(function() return bot:GetLocation() end)
 	if not ok or current == nil then return false, 'missing_current_location', nil end
-	local waypointIndex = math.max(1, state.waypointIndex or 1)
-	local target = state.waypoints and state.waypoints[waypointIndex] or nil
-	if state.status == 'following' and not state.nativeExecution
-	and target ~= nil and Geometry.Distance(current, target) <= 120
-	then
-		-- 与 Continue 同步只前进一个索引，确保复核的正是本帧可能下单的 waypoint。
-		waypointIndex = waypointIndex + 1
-		target = state.waypoints[waypointIndex]
-	end
+	local waypointIndex, target = SelectNextWaypoint(state, current)
 	local details = {
 		current = current,
 		target = target,
@@ -151,98 +155,30 @@ function AvoidancePath.ValidateCurrentSegment(bot, zones, margin)
 	if target == nil then return true, 'complete', details end
 	local safe, reason, zone = Geometry.ValidateMovementSegment(current, target, zones or {}, margin)
 	details.zone = zone
+	if safe then safe, reason = Geometry.ValidateLocalTerrainSegment(current, target, false) end
 	return safe, reason, details
 end
 
-local function NormalizeWaypoints(value)
-	if type(value) ~= 'table' then return nil end
-	local result = {}
-	for _, rawWaypoint in ipairs(value) do
-		local waypoint = type(rawWaypoint) == 'table' and (rawWaypoint.location or rawWaypoint) or rawWaypoint
-		if waypoint ~= nil and waypoint.x ~= nil and waypoint.y ~= nil then
-			table.insert(result, Geometry.MakeVector(waypoint.x, waypoint.y, waypoint.z or 0))
-		end
+local Native
+local function NativeAdapter()
+	if Native == nil and (Config.USE_NATIVE_PATH or Config.EXECUTE_NATIVE_PATH) then
+		Native = require(GetScriptDirectory()..'/THDFuncLib/avoidance_native_path')
 	end
-	if #result == 0 then return nil end
-	return result
+	return Native
 end
 
-local function DecodeNativeCallback(...)
-	local count = select('#', ...)
-	local raw = {...}
-	if count >= 3 and type(raw[1]) == 'number'
-	and type(raw[2]) == 'number' and type(raw[3]) == 'table'
-	then
-		return raw[1], raw[2], raw[3], 'distance_request_waypoints'
-	end
-	if count >= 2 and type(raw[1]) == 'number' and type(raw[2]) == 'table' then
-		return raw[1], nil, raw[2], 'distance_waypoints'
-	end
-	return raw[1], raw[2], raw[3], 'unsupported'
+local function RecordFailure(state)
+	state.failedAttempts = math.min(Config.PATH_FAILURE_MAX_ATTEMPTS, (state.failedAttempts or 0) + 1)
+	state.nextRetryAt = Now() + Config.PATH_FAILURE_RETRY_TIME * (2 ^ (state.failedAttempts - 1))
 end
 
-local function FinishWithWaypoints(bot, generation, distance, callbackRequestID, rawWaypoints, phase, contract)
+function AvoidancePath.NoteExecutionFailure(bot, reason)
 	local state = GetState(bot)
-	if generation ~= state.generation or state.pending == nil then
-		Log(bot, phase, generation, 'GeneratePath', 'callback', 'result=stale_callback')
-		return
-	end
-	if contract ~= 'distance_waypoints' and contract ~= 'distance_request_waypoints' then
-		state.status = 'failed'
-		state.failureReason = 'callback_contract_invalid'
-		state.pending = nil
-		Log(bot, phase, generation, 'GeneratePath', 'callback',
-			'result=invalid reason=' .. tostring(state.failureReason)
-			.. ' contract=' .. tostring(contract)
-			.. ' expected_request=' .. tostring(state.nativeRequestID)
-			.. ' callback_request=' .. tostring(callbackRequestID))
-		return
-	end
-	if callbackRequestID ~= nil
-	and (type(callbackRequestID) ~= 'number' or callbackRequestID ~= state.nativeRequestID)
-	then
-		state.status = 'failed'
-		state.failureReason = 'callback_request_mismatch'
-		state.pending = nil
-		Log(bot, phase, generation, 'GeneratePath', 'callback',
-			'result=invalid reason=' .. tostring(state.failureReason)
-			.. ' contract=' .. tostring(contract)
-			.. ' expected_request=' .. tostring(state.nativeRequestID)
-			.. ' callback_request=' .. tostring(callbackRequestID))
-		return
-	end
-	if type(distance) ~= 'number' or distance <= 0
-	or type(rawWaypoints) ~= 'table' or #rawWaypoints == 0
-	then
-		state.status = 'failed'
-		state.failureReason = 'pathfind_failed'
-		state.pending = nil
-		Log(bot, phase, generation, 'GeneratePath', 'callback',
-			'result=invalid reason=' .. tostring(state.failureReason)
-			.. ' distance=' .. tostring(distance)
-			.. ' waypoint_count=' .. tostring(type(rawWaypoints) == 'table' and #rawWaypoints or -1))
-		return
-	end
-	local waypoints = NormalizeWaypoints(rawWaypoints)
-	local request = state.pending
-	local valid, reason = Geometry.ValidatePath(request.start, waypoints, request.zones,
-		Config.PATH_CLEARANCE_TOLERANCE)
-	if not valid then
-		state.status = 'failed'
-		state.failureReason = reason or 'invalid_native_path'
-		state.pending = nil
-		Log(bot, phase, generation, 'GeneratePath', 'callback',
-			'result=invalid distance_type=' .. type(distance) .. ' waypoint_type=' .. type(rawWaypoints)
-			.. ' reason=' .. tostring(state.failureReason))
-		return
-	end
-	state.status = 'ready'
-	state.distance = distance
-	state.waypoints = waypoints
-	state.failureReason = nil
-	state.pending = nil
-	Log(bot, phase, generation, 'GeneratePath', 'callback',
-		'result=ready distance=' .. tostring(distance) .. ' waypoint_count=' .. tostring(#waypoints))
+	-- 构造成功但地形/实际线段不可执行也消耗同一预算，不能逐帧重建同一条坏路线。
+	RecordFailure(state)
+	Log(bot, 'runtime', state.generation, 'none', 'request-policy', string.format(
+		'result=execution_failed reason=%s failed_attempts=%d next_retry_at=%.3f',
+		tostring(reason), state.failedAttempts, state.nextRetryAt))
 end
 
 local function BuildLuaFallback(bot, state, startLocation, destination, zones, phase)
@@ -253,6 +189,11 @@ local function BuildLuaFallback(bot, state, startLocation, destination, zones, p
 		state.status = 'failed'
 		state.failureReason = reason or 'lua_fallback_failed'
 		state.waypoints = nil
+		RecordFailure(state)
+		Log(bot, phase, state.generation, 'none', 'fallback', string.format(
+			'result=lua_path_failed reason=%s failed_attempts=%d next_retry_at=%.3f exhausted=%d',
+			tostring(state.failureReason), state.failedAttempts, state.nextRetryAt,
+			state.failedAttempts >= Config.PATH_FAILURE_MAX_ATTEMPTS and 1 or 0))
 		return false
 	end
 	state.status = 'ready'
@@ -266,8 +207,29 @@ local function BuildLuaFallback(bot, state, startLocation, destination, zones, p
 	return true
 end
 
+function AvoidancePath.CanRequest(bot, startLocation, destination, zones)
+	local state = GetState(bot)
+	local signature = AvoidancePath.MakeRequestSignature(destination, zones)
+	if state.retrySignature ~= signature or state.retryOrigin == nil
+	or Geometry.Distance(startLocation, state.retryOrigin) >= Config.RECOVERY_PROGRESS_DISTANCE then
+		state.retrySignature = signature
+		state.retryOrigin = Geometry.MakeVector(startLocation.x, startLocation.y, startLocation.z)
+		state.failedAttempts, state.nextRetryAt = 0, -90
+	end
+	local reason = (state.failedAttempts or 0) >= Config.PATH_FAILURE_MAX_ATTEMPTS and 'retry_exhausted'
+		or (Now() < (state.nextRetryAt or -90) and 'retry_backoff' or nil)
+	if reason ~= nil and Now() - (state.lastRetryLogAt or -90) >= 1.0 then
+		state.lastRetryLogAt = Now()
+		Log(bot, 'runtime', state.generation, 'none', 'request-policy', string.format(
+			'result=%s failed_attempts=%d next_retry_at=%.3f', reason, state.failedAttempts, state.nextRetryAt))
+	end
+	return reason == nil, reason
+end
+
 function AvoidancePath.Request(bot, startLocation, destination, zones, phase)
 	if bot == nil or startLocation == nil or destination == nil then return false, 'missing_argument' end
+	local allowed, reason = AvoidancePath.CanRequest(bot, startLocation, destination, zones)
+	if not allowed then return false, reason end
 	local state = GetState(bot)
 	state.generation = state.generation + 1
 	bot.THD_TowerEscapeGeneration = state.generation
@@ -284,6 +246,7 @@ function AvoidancePath.Request(bot, startLocation, destination, zones, phase)
 		destination.z or 0)
 	state.requestSignature = AvoidancePath.MakeRequestSignature(destination, zones)
 	state.requestZoneKeys = MakeZoneKeySet(zones)
+	state.executionZones, state.executionMargin = zones or {}, Config.LUA_ROUTE_SAFETY_MARGIN
 	state.pending = {
 		generation = state.generation,
 		requestedAt = Now(),
@@ -297,62 +260,68 @@ function AvoidancePath.Request(bot, startLocation, destination, zones, phase)
 		#(zones or {}), FormatRequestZones(zones), startLocation.x or 0, startLocation.y or 0,
 		destination.x or 0, destination.y or 0))
 
-	if Config.USE_NATIVE_PATH ~= true or type(GeneratePath) ~= 'function' then
-		state.pending = nil
-		return BuildLuaFallback(bot, state, startLocation, destination, zones or {}, phase), 'lua_fallback'
+	local adapter = NativeAdapter()
+	if Config.USE_NATIVE_PATH == true and adapter ~= nil then
+		local accepted, nativeReason = adapter.Request(bot, state.generation, startLocation, destination, zones or {}, phase)
+		if accepted then return true, nativeReason end
 	end
-
-	local generation = state.generation
-	local requestResolved = false
-	local deferred = nil
-	local callback = function(...)
-		if not requestResolved then
-			deferred = {count = select('#', ...), args = {...}}
-			return
-		end
-		local distance, callbackRequestID, waypoints, contract = DecodeNativeCallback(...)
-		FinishWithWaypoints(bot, generation, distance, callbackRequestID, waypoints,
-			phase or 'runtime', contract)
-	end
-	Log(bot, phase, generation, 'GeneratePath', 'before-call',
-		'explicit_zone_count=0 global_zones=registered')
-	local ok, requestID = pcall(function()
-		-- AddAvoidanceZone 的全局区域会被自动采用；整数句柄只供 Remove 使用。
-		return GeneratePath(startLocation, destination, {}, callback)
-	end)
-	if not ok then
-		Log(bot, phase, generation, 'GeneratePath', 'after-call',
-			'result=lua-error error=' .. tostring(requestID))
-		state.pending = nil
-		return BuildLuaFallback(bot, state, startLocation, destination, zones or {}, phase), 'native_lua_error'
-	end
-	state.nativeRequestID = requestID
-	Log(bot, phase, generation, 'GeneratePath', 'after-call',
-		'result=returned request_type=' .. type(requestID) .. ' request=' .. tostring(requestID))
-	if type(requestID) ~= 'number' then
-		state.pending = nil
-		return BuildLuaFallback(bot, state, startLocation, destination, zones or {}, phase),
-			'native_request_not_number'
-	end
-	requestResolved = true
-	if deferred ~= nil then
-		callback(unpack(deferred.args, 1, deferred.count))
-	end
-	return true, 'native_pending'
+	state.pending = nil
+	return BuildLuaFallback(bot, state, startLocation, destination, zones or {}, phase), 'lua_fallback'
 end
 
 function AvoidancePath.Poll(bot)
 	if bot == nil then return 'idle', nil, 'missing_bot' end
 	local state = GetState(bot)
-	if state.status == 'pending' and state.pending ~= nil
-	and Now() - state.pending.requestedAt >= Config.PATH_TIMEOUT
-	then
-		local request = state.pending
-		state.pending = nil
-		Log(bot, 'runtime', state.generation, 'GeneratePath', 'callback', 'result=timeout')
-		BuildLuaFallback(bot, state, request.start, request.destination, request.zones, 'runtime')
+	if state.status == 'pending' and Native ~= nil then
+		local result = Native.Poll(bot)
+		if result.generation == state.generation then
+			state.nativeRequestID = result.nativeRequestID
+			if result.status == 'timeout' then
+				local request = state.pending
+				state.pending = nil
+				BuildLuaFallback(bot, state, request.start, request.destination, request.zones, 'runtime')
+			elseif result.status == 'ready' or result.status == 'failed' then
+				state.status, state.waypoints = result.status, result.waypoints
+				state.distance, state.failureReason = result.distance, result.failureReason
+				state.pending = nil
+			end
+		end
 	end
 	return state.status, state.waypoints, state.failureReason
+end
+
+local function Advance(bot, phase)
+	local state = GetState(bot)
+	if state.nativeExecution then return true, 'native_following' end
+	if state.waypoints == nil or state.waypoints[state.waypointIndex or 1] == nil then
+		return false, 'missing_waypoint'
+	end
+	local safe, reason, details = AvoidancePath.ValidateCurrentSegment(bot, state.executionZones or {},
+		state.executionMargin or Config.LUA_ROUTE_SAFETY_MARGIN)
+	if not safe then return false, reason end
+	local index, target = details.waypointIndex, details.target
+	if target == nil then state.status = 'complete'; return true, 'complete' end
+	-- 校验和执行使用同一选择结果；仍由控制器提供本帧完整几何及拒绝后的恢复策略。
+	state.waypointIndex = index
+	if Now() - (state.lastExecuteAt or -90) < Config.NATIVE_ACTION_INTERVAL then return true, 'throttled' end
+	local adapter = NativeAdapter()
+	local native = state.status == 'ready' and adapter ~= nil
+		and adapter.Execute(bot, state.waypoints, state.generation, phase)
+	if not native then
+		if type(bot.Action_MoveToLocation) ~= 'function' then return false, 'move_unavailable' end
+		bot:Action_MoveToLocation(target)
+		bot.THD_AvoidanceOwnedMove = {target = target, generation = state.generation}
+	end
+	state.lastExecuteAt = Now()
+	state.actionCount = (state.actionCount or 0) + 1
+	state.totalActionCount = (state.totalActionCount or 0) + 1
+	state.status, state.nativeExecution = 'following', native == true
+	if not native then
+		Log(bot, phase, state.generation, 'none', 'execute', string.format(
+			'action=MoveToLocation action_count=%d waypoint_index=%d target_x=%.1f target_y=%.1f',
+			state.actionCount, index, target.x or 0, target.y or 0))
+	end
+	return true, native and 'native_path' or 'waypoint_following'
 end
 
 function AvoidancePath.Execute(bot, phase)
@@ -361,70 +330,20 @@ function AvoidancePath.Execute(bot, phase)
 	if state.status ~= 'ready' or type(state.waypoints) ~= 'table' or #state.waypoints == 0 then
 		return false, 'path_not_ready'
 	end
-	local now = Now()
-	if now - (state.lastExecuteAt or -90) < Config.NATIVE_ACTION_INTERVAL then
-		return true, 'throttled'
-	end
-	state.lastExecuteAt = now
-	if Config.EXECUTE_NATIVE_PATH == true and type(bot.Action_MovePath) == 'function' then
-		Log(bot, phase, state.generation, 'Action_MovePath', 'before-call',
-			'waypoint_count=' .. tostring(#state.waypoints))
-		local ok, err = pcall(function() return bot:Action_MovePath(state.waypoints) end)
-		if ok then
-			state.actionCount = (state.actionCount or 0) + 1
-			state.totalActionCount = (state.totalActionCount or 0) + 1
-			Log(bot, phase, state.generation, 'Action_MovePath', 'after-call', 'result=returned')
-			state.status = 'following'
-			state.nativeExecution = true
-			return true, 'native_path'
-		end
-		Log(bot, phase, state.generation, 'Action_MovePath', 'after-call',
-			'result=lua-error error=' .. tostring(err))
-	end
-	if type(bot.Action_MoveToLocation) ~= 'function' then return false, 'move_unavailable' end
-	state.waypointIndex = math.max(1, state.waypointIndex or 1)
-	local target = state.waypoints[state.waypointIndex]
-	bot:Action_MoveToLocation(target)
-	state.actionCount = (state.actionCount or 0) + 1
-	state.totalActionCount = (state.totalActionCount or 0) + 1
-	Log(bot, phase, state.generation, 'none', 'execute', string.format(
-		'action=MoveToLocation action_count=%d waypoint_index=%d target_x=%.1f target_y=%.1f',
-		state.actionCount, state.waypointIndex, target.x or 0, target.y or 0))
-	state.status = 'following'
-	state.nativeExecution = false
-	return true, 'waypoint_fallback'
+	local ok, reason = Advance(bot, phase)
+	return ok, reason == 'waypoint_following' and 'waypoint_fallback' or reason
 end
 
 function AvoidancePath.Continue(bot)
 	if bot == nil then return false, 'missing_bot' end
-	local state = GetState(bot)
-	if state.status ~= 'following' then return false, 'not_following' end
-	if state.nativeExecution then return true, 'native_following' end
-	local target = state.waypoints and state.waypoints[state.waypointIndex or 1] or nil
-	if target == nil then return false, 'missing_waypoint' end
-	local location = bot:GetLocation()
-	if Geometry.Distance(location, target) <= 120 then
-		state.waypointIndex = (state.waypointIndex or 1) + 1
-		target = state.waypoints[state.waypointIndex]
-		if target == nil then
-			state.status = 'complete'
-			return true, 'complete'
-		end
-	end
-	if Now() - (state.lastExecuteAt or -90) >= Config.NATIVE_ACTION_INTERVAL then
-		state.lastExecuteAt = Now()
-		bot:Action_MoveToLocation(target)
-		state.actionCount = (state.actionCount or 0) + 1
-		state.totalActionCount = (state.totalActionCount or 0) + 1
-		Log(bot, 'runtime', state.generation, 'none', 'execute', string.format(
-			'action=MoveToLocation action_count=%d waypoint_index=%d target_x=%.1f target_y=%.1f',
-			state.actionCount, state.waypointIndex or 1, target.x or 0, target.y or 0))
-	end
-	return true, 'waypoint_following'
+	if GetState(bot).status ~= 'following' then return false, 'not_following' end
+	local ok, reason = Advance(bot, 'runtime')
+	return ok, reason == 'throttled' and 'waypoint_following' or reason
 end
 
 function AvoidancePath.MarkNeedsRepath(bot, reason)
 	if bot == nil then return end
+	if Native ~= nil then Native.Cancel(bot) end
 	local state = GetState(bot)
 	local invalidated = state.requestSignature ~= nil or state.status ~= 'idle'
 	if invalidated then
@@ -452,6 +371,7 @@ end
 
 function AvoidancePath.Cancel(bot, reason)
 	if bot == nil then return end
+	if Native ~= nil then Native.Cancel(bot) end
 	local state = GetState(bot)
 	state.generation = state.generation + 1
 	bot.THD_TowerEscapeGeneration = state.generation
@@ -469,6 +389,8 @@ function AvoidancePath.Cancel(bot, reason)
 	state.actionCount = 0
 	state.totalActionCount = 0
 	state.requestDestination = nil
+	state.retrySignature, state.retryOrigin = nil, nil
+	state.failedAttempts, state.nextRetryAt = 0, -90
 end
 
 function AvoidancePath.GetState(bot)
@@ -479,6 +401,8 @@ function AvoidancePath.GetState(bot)
 		status = state.status,
 		generation = state.generation,
 		failureReason = state.failureReason,
+		failedAttempts = state.failedAttempts or 0,
+		nextRetryAt = state.nextRetryAt,
 		nativeRequestID = state.nativeRequestID,
 		requestSignature = state.requestSignature,
 		requestZoneKeys = state.requestZoneKeys or {},

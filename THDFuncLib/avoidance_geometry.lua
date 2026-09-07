@@ -71,7 +71,7 @@ function Geometry.SegmentIntersectsCircle(startLocation, endLocation, zone, marg
 		<= GetRadius(zone, margin)
 end
 
-function Geometry.ValidateMovementSegment(startLocation, endLocation, zones, margin)
+function Geometry.ValidateMovementSegment(startLocation, endLocation, zones, margin, partialExit)
 	if startLocation == nil or endLocation == nil then return false, 'missing_location', nil end
 	local startX, startY = GetXY(startLocation)
 	local endX, endY = GetXY(endLocation)
@@ -91,7 +91,7 @@ function Geometry.ValidateMovementSegment(startLocation, endLocation, zones, mar
 				if outwardDot < -EPSILON then
 					return false, 'initially_inward', zone
 				end
-				if endDistance <= radius + EPSILON then
+				if not partialExit and endDistance <= radius + EPSILON then
 					return false, 'target_inside_margin', zone
 				end
 			elseif Geometry.SegmentIntersectsCircle(startLocation, endLocation, zone, margin) then
@@ -100,6 +100,14 @@ function Geometry.ValidateMovementSegment(startLocation, endLocation, zones, mar
 		end
 	end
 	return true, nil, nil
+end
+
+-- 恢复专用短步只放开“本段必须到圆外”，仍要求每个起点圆单调向外、不得进入其他圆。
+function Geometry.ValidateRecoverySegment(origin, target, zones, margin)
+	if origin == nil or target == nil or Distance(origin, target) > 480.1 then
+		return false, 'recovery_step_range'
+	end
+	return Geometry.ValidateMovementSegment(origin, target, zones, margin, true)
 end
 
 function Geometry.FilterIntersectingZones(startLocation, endLocation, zones, margin)
@@ -186,6 +194,113 @@ function Geometry.FindDirectEscapePoint(origin, preferredDestination, zones, mar
 		end
 	end
 	return best
+end
+
+function Geometry.ValidateLocalTerrainSegment(origin, target, requireVisible)
+	if origin == nil or target == nil then return false, 'missing_location' end
+	if type(IsLocationPassable) ~= 'function'
+	or (requireVisible and type(IsLocationVisible) ~= 'function') then
+		return false, 'terrain_api_unavailable'
+	end
+	local steps = math.max(1, math.ceil(Distance(origin, target) / 96))
+	if steps > 64 then return false, 'segment_too_long' end
+	-- 恢复不能只看终点；采样有硬上限，API 缺失时不把未知地形当可走。
+	for index = 1, steps do
+		local point = MakeVector(origin.x + (target.x - origin.x) * index / steps,
+			origin.y + (target.y - origin.y) * index / steps, target.z)
+		local ok, passable = pcall(IsLocationPassable, point)
+		if not ok or passable ~= true then return false, ok and 'impassable_segment' or 'terrain_query_error', {point = point, index = index, steps = steps} end
+		if requireVisible then
+			local visibleOK, visible = pcall(IsLocationVisible, point)
+			if not visibleOK or visible ~= true then return false, 'unseen_segment', {point = point, index = index, steps = steps} end
+		end
+	end
+	return true
+end
+
+function Geometry.FindRecoveryPoint(origin, preferred, zones, margin, maxDistance, rejected)
+	local stats = {candidates = 0, geometry = 0, terrain = 0, recent = 0, range = 0, terrainSamples = {}}
+	if origin == nil or preferred == nil then return nil, stats end
+	local baseX, baseY = BuildDirection(origin, preferred, zones, margin, false)
+	local best, bestScore = nil, math.huge
+	-- 最多 16 方向 x 3 距离；联合圆只做约束，不删除侧面塔，也不缩小半径。
+	for index = 0, 15 do
+		local dx, dy = Rotate(baseX, baseY, index * math.pi / 8)
+		local exitDistance = RequiredExitDistance(origin, dx, dy, zones, margin) + 96
+		local previousDistance = -1
+		for _, step in ipairs({220, 480, 960}) do
+			local distance = math.max(step, exitDistance)
+			if distance ~= previousDistance then
+				previousDistance = distance
+				stats.candidates = stats.candidates + 1
+				local candidate = MakeVector(origin.x + dx * distance, origin.y + dy * distance, origin.z)
+				local recentlyFailed = false
+				for _, point in ipairs(rejected or {}) do
+					if Distance(candidate, point) < 240 then recentlyFailed = true; break end
+				end
+				if distance > maxDistance then
+					stats.range = stats.range + 1
+				elseif recentlyFailed then
+					stats.recent = stats.recent + 1
+				elseif not Geometry.ValidateMovementSegment(origin, candidate, zones, margin) then
+					stats.geometry = stats.geometry + 1
+				else
+					local passable, reason, detail = Geometry.ValidateLocalTerrainSegment(origin, candidate, false)
+					if not passable then
+						stats.terrain = stats.terrain + 1
+						if #stats.terrainSamples < 4 then
+							table.insert(stats.terrainSamples, {reason = reason, detail = detail, target = candidate})
+						end
+					else
+						local score = Distance(candidate, preferred) + distance * 0.25
+						if score < bestScore then best, bestScore = candidate, score end
+					end
+				end
+			end
+		end
+	end
+	return best, stats
+end
+
+-- 完整直线出口无解时，额外最多 48 个短步候选；真实进度后才允许下一批搜索。
+function Geometry.FindRecoveryStep(origin, preferred, zones, margin, rejected, compact)
+	local stats = {candidates = 0, geometry = 0, terrain = 0, recent = 0, range = 0, terrainSamples = {}}
+	if origin == nil or preferred == nil then return nil, stats end
+	local baseX, baseY = BuildDirection(origin, preferred, zones, margin, false)
+	local best, bestScore = nil, math.huge
+	for index = 0, 15 do
+		local dx, dy = Rotate(baseX, baseY, index * math.pi / 8)
+		-- 细步仅缩短长度，不改变任何塔圆/向外推进/地形约束。
+		for _, distance in ipairs(compact and {64, 96, 128} or {160, 320, 480}) do
+			stats.candidates = stats.candidates + 1
+			local candidate = MakeVector(origin.x + dx * distance, origin.y + dy * distance, origin.z)
+			local recent = false
+			for _, point in ipairs(rejected or {}) do
+				if Distance(candidate, point) < 120 then recent = true; break end
+			end
+			if recent then
+				stats.recent = stats.recent + 1
+			elseif not Geometry.ValidateRecoverySegment(origin, candidate, zones, margin) then
+				stats.geometry = stats.geometry + 1
+			else
+				local passable, reason, detail = Geometry.ValidateLocalTerrainSegment(origin, candidate, false)
+				if not passable then
+					stats.terrain = stats.terrain + 1
+					if #stats.terrainSamples < 4 then
+						table.insert(stats.terrainSamples, {reason = reason, detail = detail, target = candidate})
+					end
+				else
+					local deficit = 0
+					for _, zone in ipairs(zones or {}) do
+						deficit = deficit + math.max(0, GetRadius(zone, margin) - Distance(candidate, zone.center))
+					end
+					local score = deficit * 4 + Distance(candidate, preferred) + distance * 0.25
+					if score < bestScore then best, bestScore = candidate, score end
+				end
+			end
+		end
+	end
+	return best, stats
 end
 
 local function CandidateIsSafe(startLocation, candidate, destination, zones, margin)

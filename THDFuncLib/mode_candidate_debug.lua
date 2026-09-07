@@ -1,4 +1,4 @@
-local Config = require(GetScriptDirectory()..'/THDFuncLib/avoidance_config')
+local Config = require(GetScriptDirectory()..'/THDFuncLib/bot_diagnostics_config')
 local Debug = {}
 local currentCall = nil
 local modeNames = {'laning', 'farm', 'assemble', 'push_top', 'push_mid', 'push_bot',
@@ -121,7 +121,7 @@ local function Flush(bot, loggerInstance)
 	state.lastMode = mode
 	state.lastFlush = now
 	state.sequence = state.sequence + 1
-	local avoidance = bot.THD_AvoidanceControllerState or {}
+	local avoidance = require(GetScriptDirectory()..'/THDFuncLib/avoidance_controller').GetSnapshot(bot)
 	local location = Read(bot, 'GetLocation', {})
 	local common = ' schema=1 run=' .. Token(Config.RUN_ID)
 		.. ' team=' .. Token(Read(bot, 'GetTeam', -1))
