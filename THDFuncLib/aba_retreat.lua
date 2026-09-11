@@ -237,15 +237,16 @@ local function SimulateTower(bot, tower, record, incomingCount, horizon, protect
 		record.highGround = highGround
 	end
 
-	local damagePerStack = record.damagePerStack or (highGround and 25 or 0)
+	-- 与当前 T3/T4 三级被动一致；缺失热血战魂时不再虚构攻速增长。
+	local damagePerStack = record.damagePerStack or (highGround and 15 or 0)
 	local resetTime = record.resetTime or 15
-	local attackSpeedPerStack = record.attackSpeedPerStack or (highGround and 25 or 0)
-	local maxFervor = record.maxFervor or (highGround and 5 or 0)
+	local attackSpeedPerStack = record.attackSpeedPerStack or 0
+	local maxFervor = record.maxFervor or 0
 	if canInspect and highGround then
-		damagePerStack = GetAbilitySpecial(tower, 'tower_ursa_fury_swipes', 'damage_per_stack', 25)
+		damagePerStack = GetAbilitySpecial(tower, 'tower_ursa_fury_swipes', 'damage_per_stack', 15)
 		resetTime = GetAbilitySpecial(tower, 'tower_ursa_fury_swipes', 'bonus_reset_time', 15)
-		attackSpeedPerStack = GetAbilitySpecial(tower, 'tower_troll_warlord_fervor', 'attack_speed', 25)
-		maxFervor = GetAbilitySpecial(tower, 'tower_troll_warlord_fervor', 'max_stacks', 5)
+		attackSpeedPerStack = GetAbilitySpecial(tower, 'tower_troll_warlord_fervor', 'attack_speed', 0)
+		maxFervor = GetAbilitySpecial(tower, 'tower_troll_warlord_fervor', 'max_stacks', 0)
 		record.damagePerStack = damagePerStack
 		record.resetTime = resetTime
 		record.attackSpeedPerStack = attackSpeedPerStack

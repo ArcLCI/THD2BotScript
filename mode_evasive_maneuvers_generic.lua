@@ -1,15 +1,21 @@
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/avoidance_config')
 local Controller = require(GetScriptDirectory()..'/THDFuncLib/avoidance_controller')
+local Skill = require(GetScriptDirectory()..'/THDFuncLib/skill_avoidance')
 local Probe
 if Config.IsAnyProbeEnabled() then
 	Probe = require(GetScriptDirectory()..'/THDFuncLib/avoidance_native_probe')
 end
 
+local SourceObserver = Config.SOURCE_OBSERVATION_ENABLED and require(GetScriptDirectory()..'/THDFuncLib/skill_circle_observer') or nil
 local bot = GetBot()
+if bot ~= nil then
+	print(string.format('[BOT][SkillAvoidance] run=%s team=%s player=%s event=loaded enabled=%d', tostring(Config.RUN_ID), tostring(bot:GetTeam()), tostring(bot:GetPlayerID()), Config.ENABLED and Config.SKILL_AVOIDANCE_ENABLED and 1 or 0))
+end
+if SourceObserver ~= nil then SourceObserver.OnLoaded(bot) end
 if Probe ~= nil then Probe.OnModeLoaded(bot) end
 
-if not Config.IsModeOverrideEnabled() and not Config.IsAnyProbeEnabled() then
+if not Config.IsModeOverrideEnabled() and not (Config.ENABLED and Config.SKILL_AVOIDANCE_ENABLED) and not Config.IsAnyProbeEnabled() then
 	-- 默认关闭时不注册回调，避免仅因文件存在就覆盖 Valve 原生 EVASIVE_MANEUVERS。
 	GetDesire = nil
 	OnStart = nil
@@ -21,23 +27,40 @@ end
 if bot == nil or not bot:IsHero() or bot:IsIllusion() then return end
 
 function GetDesire()
+	-- 下单尚未进入原生施法状态时，GetDesire 也不能清除其动作。
+	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then
+		return bot:GetActiveMode() == BOT_MODE_EVASIVE_MANEUVERS and BOT_MODE_DESIRE_ABSOLUTE or BOT_MODE_DESIRE_NONE
+	end
+	if SourceObserver ~= nil then SourceObserver.Observe(bot) end
 	local probeDesire = Probe ~= nil and Probe.GetDesire(bot) or nil
 	if probeDesire ~= nil and probeDesire > BOT_MODE_DESIRE_NONE then CandidateDebug.Note('probe_desire'); return probeDesire end
+	local desire = Skill.GetDesire(bot)
+	if Skill.IsActive(bot) then
+		Controller.YieldToSkill(bot)
+		return desire
+	end
 	return Controller.GetDesire(bot)
 end
 
 function OnStart()
 	if Probe ~= nil then Probe.OnStart(bot) end
-	Controller.OnStart(bot)
+	if not Skill.IsActive(bot) then Controller.OnStart(bot) end
 end
 
 function OnEnd()
 	if Probe ~= nil then Probe.OnEnd(bot) end
+	Skill.OnEnd(bot)
 	Controller.OnEnd(bot)
 end
 
 function Think()
+	-- 技能规避分支也必须保护探女已提交动作的前摇与确认。
+	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then
+		local util = require(GetScriptDirectory()..'/THDFuncLib/sagume_util')
+		if util.Update(bot) then return end
+	end
 	if Probe ~= nil and Probe.Think(bot) then return end
+	if Skill.IsActive(bot) then Skill.Think(bot);return end
 	Controller.Think(bot)
 end
 

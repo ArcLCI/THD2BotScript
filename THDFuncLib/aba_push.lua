@@ -26,10 +26,10 @@ local PUSH_LOCAL_HERO_RETREAT_OFFSET = -1200
 local PUSH_ENEMY_PRESSURE_SCORE_PER_HERO = 0.18
 local PUSH_LANE_SWITCH_IMPROVEMENT_RATIO = 0.88
 local PUSH_HIGH_GROUND_ASSAULT_AUTH_TTL = 0.80
-local PUSH_HIGH_GROUND_FORCE_BUILDING_HP = 0.35
+local PUSH_HIGH_GROUND_FORCE_BUILDING_HP = 0.45 -- 弱化高地塔的收尾窗口适度提前
 local PUSH_HIGH_GROUND_FORCE_MIN_ATTACKERS = 2
-local PUSH_HIGH_GROUND_COMMIT_MIN_HP = 0.45
-local PUSH_HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO = 0.25
+local PUSH_HIGH_GROUND_COMMIT_MIN_HP = Wasteland.HIGH_GROUND_COMMIT_MIN_HP
+local PUSH_HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO = Wasteland.HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO
 local LANE_MODE_DEBUG = false -- 验证期间输出三路推塔评分，确认后可关闭。
 
 
@@ -420,8 +420,11 @@ function Push.BuildPushSnapshot(bot, lane, objective, objectiveLocation, laneBui
 end
 
 function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
+	-- 与入口共用本帧安全审查，避免已授权的纯塔风险被第二道旧门槛否决。
+	local authorized = bot ~= nil and Wasteland.HasLiveHighGroundAssaultAuthorization(bot)
+		and bot.THD_HighGroundAssaultAuthorization.lane == lane
 	if bot == nil
-	or J.Retreat.ShouldYield(bot, J.Retreat.HIGH)
+	or (not authorized and J.Retreat.ShouldYield(bot, J.Retreat.HIGH))
 	or J.CanNotUseAction(bot)
 	or J.IsRoshanCommitmentActive(bot)
 	then
@@ -854,7 +857,10 @@ function Push.ShouldForceHighGroundObjective(context)
 	local health, maxHealth = tonumber(context.targetHealth), tonumber(context.targetMaxHealth)
 	local healthRatio = health ~= nil and maxHealth ~= nil and maxHealth > 0
 		and health / maxHealth or 1
-	return healthRatio <= PUSH_HIGH_GROUND_FORCE_BUILDING_HP
+	-- 安全且有兵线的人数优势窗口允许输出位启动拆塔，不要求先有两人攻击。
+	return (context.creepSupport == true and (tonumber(context.allyCount) or 0) >= 3
+		and (tonumber(context.allyCount) or 0) > (tonumber(context.enemyCount) or 0))
+		or healthRatio <= PUSH_HIGH_GROUND_FORCE_BUILDING_HP
 		or (tonumber(context.allyBuildingAttackers) or 0) >= PUSH_HIGH_GROUND_FORCE_MIN_ATTACKERS
 end
 
@@ -883,6 +889,28 @@ function Push.TryAttackObjectiveBuilding(bot, lane, pushObjective, observedTarge
 		end
 	end
 	return false
+end
+
+-- 围绕共享建筑接近；普通兵线前沿不再承担高地目标的最后一段移动。
+function Push.TryApproachObjective(bot, lane, objective, target, attackRange, authorized)
+	if not authorized or objective == nil or objective.lane ~= lane
+	or (objective.phase ~= Wasteland.PHASE_ESCORT and objective.phase ~= Wasteland.PHASE_SIEGE)
+	or not Wasteland.IsPushObjectiveParticipant(bot, objective)
+	or not J.IsValidBuilding(target) or not J.CanBeAttacked(target)
+	or Push.HasBackdoorProtect(target) then return false end
+	local distance = GetUnitToUnitDistance(bot, target)
+	if distance <= math.max(100, attackRange - 50) then return false end
+	local center, current = target:GetLocation(), bot:GetLocation()
+	local offset = math.max(100, attackRange - 75)
+	local goal = center + (current - center):Normalized() * offset
+	if not IsLocationPassable(goal) then
+		Wasteland.NoteHighGroundAssaultDecision(bot, objective, 'approach_blocked', 'reason=terrain')
+		return false
+	end
+	Wasteland.NoteHighGroundAssaultDecision(bot, objective, 'approach_objective',
+		string.format('distance=%.1f attack_range=%.1f goal_x=%.1f goal_y=%.1f',
+			distance, attackRange, goal.x, goal.y))
+	return J.ActionMoveToLocation(bot, 'push_approach_objective', goal, 0.35, 100)
 end
 
 local fNextMovementTime = 0
@@ -1035,17 +1063,19 @@ function Push.PushThink(bot, lane)
         and Push.HasBackdoorProtect(hLaneBuildingTarget)
 	local observedTarget = pushObjective ~= nil and pushObjective.target or (hLaneBuildingTarget or hEnemyAncient)
 	local observedTargetHealth, observedTargetMaxHealth = nil, nil
+	local objectiveCreepDistance = math.huge
 	if pushObjective ~= nil and pushObjective.lane == lane and Push.IsObjectiveValid(observedTarget) then
 		local objectiveLocation = Push.GetObjectiveLocation(lane, observedTarget)
 		observedTargetHealth, observedTargetMaxHealth = J.Utils.GetVisibleHealth(observedTarget)
 		local botDistance = GetUnitToUnitDistance(bot, observedTarget)
 		local attackableDistance = math.min(1600, botAttackRange + 400)
+		objectiveCreepDistance = GetClosestVisibleCreepDistance(
+			UNIT_LIST_ALLIED_CREEPS, objectiveLocation, 5000) or math.huge
 		pushObjective = Wasteland.ObservePushObjective(bot, lane, observedTarget, {
 			baseThreat = baseThreat,
 			hardEmergency = baseThreat ~= nil and baseThreat.hardEmergency == true,
 			botDistance = botDistance,
-			allyCreepDistance = GetClosestVisibleCreepDistance(
-				UNIT_LIST_ALLIED_CREEPS, objectiveLocation, 5000),
+			allyCreepDistance = objectiveCreepDistance,
 			targetHealth = observedTargetHealth,
 			targetMaxHealth = observedTargetMaxHealth,
 			backdoorProtected = J.IsValidBuilding(observedTarget)
@@ -1105,30 +1135,28 @@ function Push.PushThink(bot, lane)
 		attackable = Push.IsObjectiveValid(observedTarget)
 			and J.IsValidBuilding(observedTarget)
 			and J.CanBeAttacked(observedTarget)
-			and Push.CanAttackManagedBuilding(bot, lane, observedTarget, pushObjective)
-			and GetUnitToUnitDistance(bot, observedTarget) <= math.min(1600, botAttackRange + 400),
+			and Push.CanAttackManagedBuilding(bot, lane, observedTarget, pushObjective),
 		backdoorProtected = Push.IsObjectiveValid(observedTarget)
 			and J.IsValidBuilding(observedTarget) and Push.HasBackdoorProtect(observedTarget),
 		botHP = J.GetHP(bot),
 		allyCount = #nearbyAllies,
 		enemyCount = #nearbyEnemies,
+		creepSupport = objectiveCreepDistance <= 850,
 		targetHealth = observedTargetHealth,
 		targetMaxHealth = observedTargetMaxHealth,
 		allyBuildingAttackers = Push.IsObjectiveValid(observedTarget)
 			and #Push.GetAllyHeroesAttackingUnit(observedTarget) or 0,
 	})
-	if forceHighGroundObjective
-	and Push.TryAttackObjectiveBuilding(
-		bot, lane, pushObjective, observedTarget, botAttackRange, 'push_force_high_ground_objective')
-	then
-		-- 仅在建筑已进入收尾窗口或已有两名队友集火时强拆；否则先处理高地团战。
-		if Wasteland.NoteHighGroundAssaultDecision ~= nil then
+	if forceHighGroundObjective then
+		if Push.TryAttackObjectiveBuilding(
+			bot, lane, pushObjective, observedTarget, botAttackRange, 'push_force_high_ground_objective') then
+			-- 只有实际攻击指令才记 force_building；接近动作使用独立日志。
 			Wasteland.NoteHighGroundAssaultDecision(bot, pushObjective, 'force_building',
 				string.format('target_hp=%s/%s enemies=%s',
-					tostring(observedTargetHealth or 'na'), tostring(observedTargetMaxHealth or 'na'),
-					tostring(#nearbyEnemies)))
+					tostring(observedTargetHealth or 'na'), tostring(observedTargetMaxHealth or 'na'), #nearbyEnemies))
+			return
 		end
-		return
+		if Push.TryApproachObjective(bot, lane, pushObjective, observedTarget, botAttackRange, highGroundAssaultAllowed) then return end
 	end
 	local handledEnemyHeroes, heroResponse = Push.HandleNearbyEnemyHeroes(
 		bot, lane, nearbyAllies, nearbyEnemies)
@@ -1155,6 +1183,9 @@ function Push.PushThink(bot, lane)
 	then
 		return
 	end
+
+	if objectiveRole == Wasteland.ROLE_BUILDING_DAMAGE
+	and Push.TryApproachObjective(bot, lane, pushObjective, observedTarget, botAttackRange, highGroundAssaultAllowed) then return end
 
 	-- 欲望函数只决定优先级；远古目标与所有攻击指令统一在动作阶段下达。
 	if Push.IsObjectiveValid(hEnemyAncient)
@@ -1250,11 +1281,22 @@ function Push.PushThink(bot, lane)
         end
     end
 
+	-- 先使用共享目标，避免普通选塔挑中另一座 T4 后被 exact-target 许可拒绝。
+	if highGroundAssaultAllowed and pushObjective ~= nil then
+		if Push.TryAttackObjectiveBuilding(bot, lane, pushObjective, observedTarget, botAttackRange) then return end
+		if Push.TryApproachObjective(bot, lane, pushObjective, observedTarget, botAttackRange, true) then return end
+		Wasteland.NoteHighGroundAssaultDecision(bot, pushObjective, 'objective_action_blocked',
+			string.format('visible=%s backdoor=%s distance=%.1f phase=%s',
+				tostring(J.IsValidBuilding(observedTarget)), tostring(Push.HasBackdoorProtect(observedTarget)),
+				GetUnitToUnitDistance(bot, observedTarget), tostring(pushObjective.phase)))
+	end
+
     if J.IsValidBuilding(nEnemyTowers[1]) and J.CanBeAttacked(nEnemyTowers[1]) and not Push.HasBackdoorProtect(nEnemyTowers[1]) then
         local hTowerTarget = nil
         local hTowerTargetDistance = math.huge
         for _, tower in pairs(nEnemyTowers) do
-            if J.IsValidBuilding(tower) and J.CanBeAttacked(tower) and not Push.HasBackdoorProtect(tower) then
+            if J.IsValidBuilding(tower) and J.CanBeAttacked(tower) and not Push.HasBackdoorProtect(tower)
+			and Push.CanAttackManagedBuilding(bot, lane, tower, pushObjective) then
                 local towerDistance = GetUnitToLocationDistance(tower, targetLoc)
                 if towerDistance < hTowerTargetDistance then
                     hTowerTarget = tower

@@ -8,7 +8,7 @@ if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() o
 if bot.PushLaneDesire == nil then bot.PushLaneDesire = {0, 0, 0} end
 
 function GetDesire()
-	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then CandidateDebug.Note('high_retreat'); return BOT_MODE_DESIRE_NONE end
+	-- 撤退与高地授权统一交由共享入口即时审查，避免提前返回使授权无法刷新。
     bot.PushLaneDesire[LANE_BOT] = Push.GetPushDesire(bot, LANE_BOT)
     return bot.PushLaneDesire[LANE_BOT]
 end

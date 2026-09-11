@@ -1,3 +1,4 @@
+local SkillMovement = require(GetScriptDirectory()..'/THDFuncLib/skill_avoidance')
 local TowerSafety = require(GetScriptDirectory()..'/THDFuncLib/tower_safety')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local bot = GetBot()
@@ -69,6 +70,15 @@ local lastRunePickupTime = -9999
 local lastRunePickupLocation = nil
 local idleRuneTask = nil
 
+local function RuneMove(unit, actionName, location, interval, distance)
+	return J.ActionMoveToLocation(unit, actionName, location, interval, distance, function(point)
+		local observation=TowerSafety.Observe(unit, 'rune')
+		if observation.available~=true or not Geometry.ValidateMovementSegment(unit:GetLocation(), point, observation.towers, 96) then return false end
+		if actionName=='idle_available_rune' and #J.GetLastSeenEnemiesNearLoc(unit:GetLocation(), Geometry.Distance(unit:GetLocation(),point)+1200)>0 then return false end
+		return Geometry.ValidateLocalTerrainSegment(unit:GetLocation(), point, true)
+	end)
+end
+
 local function IdleRuneSafe(rune)
 	if J.CanNotUseAction(bot) or J.GetHP(bot) < 0.55
 	or bot:WasRecentlyDamagedByAnyHero(2.0) or bot:WasRecentlyDamagedByTower(2.0)
@@ -83,7 +93,7 @@ local function IdleRuneSafe(rune)
 	local current = bot:GetLocation()
 	local distance = Geometry.Distance(current, location)
 	if distance > 900 then return false, 'outside_local_range' end
-	local observation = TowerSafety.Observe(bot)
+	local observation = TowerSafety.Observe(bot, 'rune')
 	if observation.available ~= true then return false, 'tower_snapshot_stale' end
 	if not Geometry.ValidateMovementSegment(current, location, observation.towers, 96) then
 		return false, 'tower_segment'
@@ -523,7 +533,7 @@ function Think()
     if bot:IsInvulnerable()
     and J.GetHP(bot) > 0.95
     and bot:DistanceFromFountain() < 100 then
-        J.ActionMoveToLocation(bot, "rune_fountain_leave", J.GetStableRandomLocation(bot, 'rune_fountain_leave', bot:GetLocation(), 450, 550, 1.5), 0.5)
+        RuneMove(bot, "rune_fountain_leave", J.GetStableRandomLocation(bot, 'rune_fountain_leave', bot:GetLocation(), 450, 550, 1.5), 0.5)
         return
     end
 
@@ -549,7 +559,7 @@ function Think()
             local vGoOutLocation = X.GetGoOutLocation()
 
             if GetUnitToLocationDistance(bot, vGoOutLocation) > 500 then
-                J.ActionMoveToLocation(bot, "rune_pre_go_out", vGoOutLocation, 0.5)
+                RuneMove(bot, "rune_pre_go_out", vGoOutLocation, 0.5)
                 return
             end
 
@@ -561,19 +571,19 @@ function Think()
 		then
 			if bot:GetAssignedLane() == LANE_BOT
 			then
-				J.ActionMoveToLocation(bot, "rune_pre_bounty_2", J.GetStableRandomLocation(bot, 'rune_pre_bounty_2', GetRuneSpawnLocation(RUNE_BOUNTY_2), 30, 60, 1.0), 0.5)
+				RuneMove(bot, "rune_pre_bounty_2", J.GetStableRandomLocation(bot, 'rune_pre_bounty_2', GetRuneSpawnLocation(RUNE_BOUNTY_2), 30, 60, 1.0), 0.5)
 				return
             else
-                J.ActionMoveToLocation(bot, "rune_pre_power_1", J.GetStableRandomLocation(bot, 'rune_pre_power_1', GetRuneSpawnLocation(RUNE_POWERUP_1), 30, 60, 1.0), 0.5)
+                RuneMove(bot, "rune_pre_power_1", J.GetStableRandomLocation(bot, 'rune_pre_power_1', GetRuneSpawnLocation(RUNE_POWERUP_1), 30, 60, 1.0), 0.5)
 				return
 			end
 		else
 			if bot:GetAssignedLane() == LANE_TOP
 			then
-				J.ActionMoveToLocation(bot, "rune_pre_bounty_1", J.GetStableRandomLocation(bot, 'rune_pre_bounty_1', GetRuneSpawnLocation(RUNE_BOUNTY_1), 30, 60, 1.0), 0.5)
+				RuneMove(bot, "rune_pre_bounty_1", J.GetStableRandomLocation(bot, 'rune_pre_bounty_1', GetRuneSpawnLocation(RUNE_BOUNTY_1), 30, 60, 1.0), 0.5)
 				return
             else
-                J.ActionMoveToLocation(bot, "rune_pre_power_2", J.GetStableRandomLocation(bot, 'rune_pre_power_2', GetRuneSpawnLocation(RUNE_POWERUP_2), 30, 60, 1.0), 0.5)
+                RuneMove(bot, "rune_pre_power_2", J.GetStableRandomLocation(bot, 'rune_pre_power_2', GetRuneSpawnLocation(RUNE_POWERUP_2), 30, 60, 1.0), 0.5)
 				return
 			end
 		end
@@ -611,7 +621,7 @@ function Think()
 			lastRunePickupTime, lastRunePickupLocation = DotaTime(), closestRuneLoc
 			ClearActiveRuneTarget()
 		else
-			J.ActionMoveToLocation(bot, 'idle_available_rune', closestRuneLoc, 0.35, 120)
+			RuneMove(bot, 'idle_available_rune', closestRuneLoc, 0.35, 120)
 		end
 		return
 	end
@@ -643,7 +653,7 @@ function Think()
 				return
 			end
 
-			J.ActionMoveToLocation(bot, "rune_move_closest", J.GetStableRandomLocation(bot, 'rune_move_closest_'..tostring(ClosestRune), GetRuneSpawnLocation(ClosestRune), 15, 30, 0.8), 0.4)
+			RuneMove(bot, "rune_move_closest", J.GetStableRandomLocation(bot, 'rune_move_closest_'..tostring(ClosestRune), GetRuneSpawnLocation(ClosestRune), 15, 30, 0.8), 0.4)
 			return
 		end
 	else
@@ -663,7 +673,7 @@ function Think()
             return
         end
 
-		J.ActionMoveToLocation(bot, "rune_move_spawn", GetRuneSpawnLocation(ClosestRune), 0.4)
+		RuneMove(bot, "rune_move_spawn", GetRuneSpawnLocation(ClosestRune), 0.4)
 		return
 	end
  end
@@ -714,7 +724,15 @@ function PickWisdomRune()
 		wisdomRuneEnterTime = -9999
 	end
 
-	bot:Action_MoveDirectly(wisdomLoc + RandomVector(15))
+	local point, kind = SkillMovement.ResolveMove(bot, 'rune_wisdom_move', wisdomLoc + RandomVector(15))
+	if point == nil then return 1 end
+	if kind == 'detour' then
+		bot:Action_MoveToLocation(point)
+		SkillMovement.NoteTaskMove(bot, 'rune_wisdom_move', point, kind)
+	else
+		bot:Action_MoveDirectly(point)
+		SkillMovement.NoteTaskMove(bot, 'rune_wisdom_move', point, kind, BOT_ACTION_TYPE_MOVE_TO_DIRECTLY)
+	end
 	return 1
 end
 

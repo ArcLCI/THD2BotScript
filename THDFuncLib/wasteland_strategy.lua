@@ -16,8 +16,8 @@ Strategy.ENABLED = true
 Strategy.BALANCE_START_TIME = 15 * 60
 Strategy.BALANCE_END_TIME = 20 * 60
 Strategy.OUTER_TOWER_DEADLINE = 30 * 60
-Strategy.MIN_TEAM_AVERAGE_LEVEL_FOR_HIGH_GROUND = 25
-Strategy.MIN_EXCEPTION_TEAM_AVERAGE_LEVEL_FOR_HIGH_GROUND = 23
+Strategy.MIN_TEAM_AVERAGE_LEVEL_FOR_HIGH_GROUND = 20 -- 本轮实机测试：默认团队平均20级上高
+Strategy.MIN_EXCEPTION_TEAM_AVERAGE_LEVEL_FOR_HIGH_GROUND = 20 -- 最低等级检查与本轮默认门槛一致
 Strategy.MIN_LEVEL_LEAD = 1.0
 Strategy.MIN_KILL_RATIO = 1.25
 Strategy.MAX_LEVEL_DEFICIT_FOR_KILL_LEAD = 0.5
@@ -42,6 +42,9 @@ Strategy.OBJECTIVE_PARTICIPANT_PROGRESS_EXTENSION = 12.0
 Strategy.OBJECTIVE_NO_PROGRESS_RESELECT_BLOCK_TIME = 12.0
 Strategy.OBJECTIVE_MAX_REASSIGNMENTS = 4
 Strategy.OBJECTIVE_MIN_HEALTH = 0.60
+-- 高地塔已移除叠攻速：统一围攻血线与三秒塔伤容忍，致命/非塔危险仍单独否决。
+Strategy.HIGH_GROUND_COMMIT_MIN_HP = 0.40
+Strategy.HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO = 0.35
 Strategy.OBJECTIVE_APPROACH_PROGRESS_DISTANCE = 300
 Strategy.OBJECTIVE_CREEP_PROGRESS_DISTANCE = 250
 Strategy.OBJECTIVE_ARRIVAL_DISTANCE = 1600
@@ -423,12 +426,12 @@ function Strategy.EvaluateHighGroundPermission(tier, context)
 	local averageLevel = tonumber(context.averageLevel or context.allyAverageLevel)
 	if averageLevel == nil then return false, 'average_level_unknown' end
 	if averageLevel < Strategy.MIN_EXCEPTION_TEAM_AVERAGE_LEVEL_FOR_HIGH_GROUND then
-		return false, 'average_level_below_23'
+		return false, 'average_level_below_20'
 	end
 	local eligibleCount = tonumber(context.initialEligibleCount or context.eligibleCount or context.participantCount) or 0
 	if eligibleCount < 4 then return false, 'eligible_below_4' end
 	if averageLevel >= Strategy.MIN_TEAM_AVERAGE_LEVEL_FOR_HIGH_GROUND then
-		return true, 'default_level_25'
+		return true, 'default_level_20'
 	end
 	local creepDistance = tonumber(context.alliedCreepDistance or context.allyCreepDistance)
 	if creepDistance == nil or creepDistance > Strategy.OBJECTIVE_ESCORT_CREEP_DISTANCE then
@@ -643,6 +646,16 @@ local function IsAlive(unit)
 	return false
 end
 
+-- 只校验已有短租约，直接读取目标表以免资格检查递归刷新/释放任务。
+function Strategy.HasLiveHighGroundAssaultAuthorization(unit)
+	local authorization = unit ~= nil and unit.THD_HighGroundAssaultAuthorization or nil
+	if type(authorization) ~= 'table' or GetNow() > (authorization.expiresAt or -9999) then return false end
+	local objective = objectives[GetTeamKey()]
+	return objective ~= nil and objective.id == authorization.objectiveID
+		and (objective.phase == Strategy.PHASE_ESCORT or objective.phase == Strategy.PHASE_SIEGE)
+		and objective.participantByID[GetPlayerID(unit)] ~= nil
+end
+
 local function GetParticipantBlockReason(unit, initialSelection)
 	if not IsAlive(unit) then return 'dead' end
 	local mode = Safe(BOT_MODE_NONE, function() return unit:GetActiveMode() end)
@@ -668,6 +681,7 @@ local function GetParticipantBlockReason(unit, initialSelection)
 		return 'base_defense'
 	end
 	if J.Retreat ~= nil and J.Retreat.ShouldYield ~= nil
+	and not Strategy.HasLiveHighGroundAssaultAuthorization(unit)
 	and Safe(true, function() return J.Retreat.ShouldYield(unit, J.Retreat.HIGH) end)
 	then
 		return 'high_retreat'
@@ -1055,6 +1069,28 @@ local function ParticipantNeedsReplacement(participant, objective, now)
 	return false, nil
 end
 
+-- 四人是创建门槛；新鲜可拆窗口内允许三名健康、在场且人数不劣的原成员续攻。
+-- 不延长进度/掉血期限，兵线或安全窗口失效后仍按原有规则退出。
+local function CanContinueLocalSiege(objective, retained, now)
+	if (tonumber(objective.tier) or 0) < 3 or objective.phase ~= Strategy.PHASE_SIEGE
+	or objective.defaultHighGroundUnlocked ~= true or #retained < 3
+	or now - (objective.lastAttackableObservationAt or -9999) > 1.5
+	or now - (objective.lastCreepSupportAt or -9999) > 1.5
+	or objective.lastBackdoorProtected ~= false
+	or not J.IsValidBuilding(objective.target) or not J.CanBeAttacked(objective.target) then return false end
+	local center = GetUnitLocation(objective.target)
+	local localCount = 0
+	for _, participant in ipairs(retained) do
+		if GetParticipantBlockReason(participant.unit, false) == nil
+		and (GetVisibleHealthFraction(participant.unit) or 0) > Strategy.HIGH_GROUND_COMMIT_MIN_HP
+		and GetDistanceToLocation(participant.unit, center) <= Strategy.OBJECTIVE_ARRIVAL_DISTANCE then
+			localCount = localCount + 1
+		end
+	end
+	local enemies = J.GetEnemiesNearLoc(center, Strategy.OBJECTIVE_ARRIVAL_DISTANCE)
+	return localCount >= 3 and localCount >= #enemies
+end
+
 local function RefreshParticipants(objective, bot)
 	if objective == nil then return false end
 	local now = GetNow()
@@ -1087,7 +1123,14 @@ local function RefreshParticipants(objective, bot)
 			table.insert(retained, participant)
 		end
 	end
-	if replacementReason == nil then return true end
+	if replacementReason == nil then
+		if not objective.continuingShortHanded then return true end
+		if not CanContinueLocalSiege(objective, retained, now) then
+			ClearObjective(team, 'local_siege_window_lost', bot)
+			return false
+		end
+		replacementReason = 'restore_full_group'
+	end
 	if now - (objective.lastAssignmentAt or objective.createdAt or now)
 		< Strategy.OBJECTIVE_ASSIGNMENT_STABLE_TIME
 	then
@@ -1110,6 +1153,23 @@ local function RefreshParticipants(objective, bot)
 		objective.requiredCount
 	)
 	if participants == nil then
+		if CanContinueLocalSiege(objective, retained, now) then
+			objective.participants = retained
+			objective.continuingShortHanded = true
+			objective.lastAssignmentAt = now
+			local hasDamageRole = false
+			for _, participant in ipairs(retained) do
+				if participant.role == Strategy.ROLE_BUILDING_DAMAGE then hasDamageRole = true end
+			end
+			if not hasDamageRole then AssignParticipantRoles(retained) end
+			RebuildParticipantMap(objective)
+			DebugLimited(bot, 'local_siege_continue:' .. objective.id, Strategy.OBJECTIVE_AUDIT_LOG_INTERVAL,
+				string.format('action=objective_local_continue id=%s count=%s required=%s removed=%s participants=%s',
+					objective.id, #retained, objective.requiredCount, table.concat(removedIDs, ','), FormatParticipantIDs(objective)))
+			return true
+		end
+		Debug(bot, string.format('action=objective_replacement_failed id=%s removed=%s eligible=%s required=%s',
+			objective.id, table.concat(removedIDs, ','), eligibleCount, requiredCount))
 		ClearObjective(team, 'insufficient_eligible_participants_' .. tostring(eligibleCount)
 			.. '_of_' .. tostring(requiredCount), bot)
 		return false
@@ -1121,6 +1181,7 @@ local function RefreshParticipants(objective, bot)
 		if oldIDs[participant.playerID] ~= true then table.insert(addedIDs, tostring(participant.playerID)) end
 	end
 	objective.participants = participants
+	objective.continuingShortHanded = false
 	-- 创建时的限额属于任务契约，换人时只补位，不能随可用人数缩成零。
 	objective.requiredCount = objective.requiredCount or requiredCount
 	objective.lastAssignmentAt = now
@@ -1665,7 +1726,7 @@ function Strategy.GetHighGroundAssaultAuthorization(bot, objective)
 	objective = objective or Strategy.GetPushObjective(true)
 	if bot == nil or objective == nil then return nil end
 	if (tonumber(objective.tier) or 1) < 3 then return nil end
-	-- 这里只放行已经达到默认 25 级门槛的团队；低等级临时例外不扩大塔圈作战权限。
+	-- 这里只放行已经达到默认 20 级门槛的团队；低等级临时例外不扩大塔圈作战权限。
 	if objective.defaultHighGroundUnlocked ~= true then return nil end
 	if objective.phase ~= Strategy.PHASE_ESCORT and objective.phase ~= Strategy.PHASE_SIEGE then return nil end
 	if not Strategy.IsPushObjectiveReservedParticipant(bot, objective) then return nil end
@@ -1704,7 +1765,7 @@ function Strategy.ValidatePushObjectiveHighGround(bot, objective)
 	if not Strategy.IsEnabled() then return true, 'legacy_disabled' end
 	objective = objective or Strategy.GetPushObjective()
 	if objective == nil or (tonumber(objective.tier) or 1) < 3 then return true, 'not_high_ground' end
-	if objective.defaultHighGroundUnlocked == true then return true, 'default_level_25' end
+	if objective.defaultHighGroundUnlocked == true then return true, 'default_level_20' end
 	local context = Strategy.GetHighGroundPermissionContext(objective.target, {
 		initialEligibleCount = objective.initialEligibleCount or objective.requiredCount,
 	})
@@ -1712,8 +1773,8 @@ function Strategy.ValidatePushObjectiveHighGround(bot, objective)
 	if allowed and tonumber(context.averageLevel) >= Strategy.MIN_TEAM_AVERAGE_LEVEL_FOR_HIGH_GROUND then
 		objective.defaultHighGroundUnlocked = true
 		objective.highGroundException = false
-		objective.highGroundPermissionReason = 'default_level_25'
-		return true, 'default_level_25'
+		objective.highGroundPermissionReason = 'default_level_20'
+		return true, 'default_level_20'
 	end
 	DebugLimited(bot, 'high_ground_permission_action:' .. tostring(objective.targetKey),
 		Strategy.OBJECTIVE_AUDIT_LOG_INTERVAL,
@@ -1857,6 +1918,14 @@ function Strategy.ObservePushObjective(bot, lane, target, observation)
 			RenewObjective(objective, now, 'participant_approach_' .. tostring(participant.playerID), bot)
 		end
 	end
+	if observation.attackable == true and observation.backdoorProtected ~= true then
+		objective.lastAttackableObservationAt = now
+	end
+	if (tonumber(observation.allyCreepDistance) or math.huge) <= 850 then
+		objective.lastCreepSupportAt = now
+	end
+	local previousBackdoorProtected = objective.lastBackdoorProtected
+	objective.lastBackdoorProtected = observation.backdoorProtected == true
 	if not RefreshParticipants(objective, bot) then return nil end
 
 	local creepDistance = tonumber(observation.allyCreepDistance)
@@ -1888,7 +1957,7 @@ function Strategy.ObservePushObjective(bot, lane, target, observation)
 
 	local backdoorProtected = observation.backdoorProtected == true
 	local attackable = observation.attackable == true and not backdoorProtected
-	if objective.lastBackdoorProtected == true and not backdoorProtected then
+	if previousBackdoorProtected == true and not backdoorProtected then
 		RenewObjective(objective, now, 'backdoor_disabled', bot)
 	end
 	objective.lastBackdoorProtected = backdoorProtected

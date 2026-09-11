@@ -380,12 +380,27 @@ function J.ActionAttackUnit(bot, actionName, target, once, interval)
 	return true
 end
 
-function J.ActionMoveToLocation(bot, actionName, vLoc, interval, distance)
+local SkillMovement = nil
+function J.ActionMoveToLocation(bot, actionName, vLoc, interval, distance, validateStep)
 	if vLoc == nil then return false end
-	local targetKey = GetLocationActionKey(vLoc, distance)
-	if J.ShouldThrottleAction(bot, actionName, targetKey, interval) then return true end
+	local routed, kind, force = false, 'original', false
+	-- 只接入明确上报目标的兵线/Rune移动，不推测Valve内部路径。
+	if type(actionName)=='string' and (string.sub(actionName,1,10)=='lane_work_' or string.sub(actionName,1,5)=='rune_' or actionName=='idle_available_rune') then
+		if SkillMovement == nil then SkillMovement=require(GetScriptDirectory()..'/THDFuncLib/skill_avoidance') end
+		vLoc,kind,force=SkillMovement.ResolveMove(bot,actionName,vLoc)
+		if vLoc==nil then return false end
+		routed=true
+		if kind=='detour' and type(validateStep)=='function' and not validateStep(vLoc) then
+			SkillMovement.RejectTaskMove(bot,actionName,'caller_safety')
+			return false
+		end
+	end
+	local throttleName=kind=='detour' and actionName..'_skill_detour' or actionName
+	local targetKey = GetLocationActionKey(vLoc, kind=='detour' and 24 or distance)
+	if not force and J.ShouldThrottleAction(bot, throttleName, targetKey, interval) then return true end
 	IncrementActionPressure(bot, 'Action_MoveToLocation')
 	bot:Action_MoveToLocation(vLoc)
+	if routed then SkillMovement.NoteTaskMove(bot,actionName,vLoc,kind) end
 	return true
 end
 
@@ -1447,6 +1462,7 @@ end
 
 function J.CanNotUseAction( bot )
 	return not bot:IsAlive()
+			or (bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil)
 			or J.IsTowerEscapeActive(bot)
 			or J.HasQueuedAction( bot )
 			or (bot:IsInvulnerable() and not bot:HasModifier('modifier_fountain_invulnerability'))

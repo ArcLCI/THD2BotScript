@@ -10,4 +10,12 @@ return {
 	},
 }
 ]]
-return {}
+return {
+	["npc_dota_hero_queenofpain"] = {
+		-- 只覆盖探女的先验，最终分路仍由团队分配器决定。
+		profiles = {
+			damage = {mid=22, safe_core=20, off_core=6, soft_support=4, hard_support=1},
+			support = {mid=3, safe_core=2, off_core=2, soft_support=22, hard_support=18},
+		},
+	},
+}

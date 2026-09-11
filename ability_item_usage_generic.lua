@@ -585,6 +585,8 @@ function CourierUsageThink()
 end
 
 local function ItemUsageComplement()
+	-- 探女的短确认窗口先于物品交换，避免瞬发道具覆盖技能前摇。
+	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then return BOT_ACTION_DESIRE_NONE end
 
 	X.SetStashItemTimeUpdate()
 	-- 副包消耗品租约优先持有物品生命周期，避免通用道具动作覆盖交换与恢复。
@@ -1013,6 +1015,7 @@ end
 
 function ItemUsageThink()
 	if RefreshBotHandle() then return end
+	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 	if J.IsTowerEscapeActive(bot) then return end
 	if bot.lastItemFrameProcessTime == nil then bot.lastItemFrameProcessTime = DotaTime() end

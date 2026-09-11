@@ -111,13 +111,22 @@ local function CopySnapshots(snapshots)
 end
 
 -- 同一 Bot 同一时刻只观测一次；返回独立数值副本，调用方策略不能修改公共缓存。
-function TowerSafety.Observe(bot)
+function TowerSafety.Observe(bot, consumer)
 	local now = Safe(nil, function() return DotaTime() end)
 	if not IsValidUnit(bot) or now == nil then return {available = false, towers = {}} end
 	local cached = bot.THD_TowerObservation
 	if cached == nil or cached.observedAt ~= now then
 		cached = {observedAt = now, towers = GetTowerSnapshots(bot)}
 		bot.THD_TowerObservation = cached
+	end
+	if Config.OBSERVATION_DIAGNOSTICS then
+		consumer = consumer or 'unspecified'
+		bot.THD_TowerObservationLogs = bot.THD_TowerObservationLogs or {}
+		if now >= (bot.THD_TowerObservationLogs[consumer] or -90) then
+			bot.THD_TowerObservationLogs[consumer] = now + 10
+			print(string.format('[BOT][TowerObservation] run=%s team=%s player=%s dota_time=%.3f consumer=%s towers=%d available=1 avoidance_enabled=%d',
+				tostring(Config.RUN_ID), tostring(bot:GetTeam()), tostring(bot:GetPlayerID()), now, consumer, #cached.towers, Config.ENABLED and 1 or 0))
+		end
 	end
 	return {available = true, observedAt = cached.observedAt, towers = CopySnapshots(cached.towers)}
 end
@@ -273,7 +282,7 @@ function TowerSafety.Scan(bot, options)
 	if not IsValidUnit(bot) then return result end
 
 	local botLocation = bot:GetLocation()
-	local observation = TowerSafety.Observe(bot)
+	local observation = TowerSafety.Observe(bot, 'avoidance')
 	local snapshots = observation.towers
 	-- 复用本次可见塔快照；普通兵线任务不能继承团战/围攻的塔圈绕过授权。
 	result.visibleTowers = snapshots

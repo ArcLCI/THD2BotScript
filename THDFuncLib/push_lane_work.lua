@@ -122,7 +122,7 @@ local function SafeSegment(bot, state, location)
 	local current = bot:GetLocation()
 	local distance = Geometry.Distance(current, location)
 	if distance > MAX_DISTANCE then return false, 'beyond_local_range' end
-	local observation = TowerSafety.Observe(bot)
+	local observation = TowerSafety.Observe(bot, 'push_lane')
 	if observation.available ~= true then return false, 'tower_snapshot_stale' end
 	if not Geometry.ValidateMovementSegment(current, location, observation.towers, TOWER_MARGIN) then
 		return false, 'tower_segment'
@@ -324,7 +324,7 @@ function Work.TryThink(bot, lane)
 			Log(bot, task, 'attack_preserved', 'same_target_attack')
 		end
 	else
-		acted = J.ActionMoveToLocation(bot, 'lane_work_' .. task.kind, task.location, 0.35, 120)
+		acted = J.ActionMoveToLocation(bot, 'lane_work_' .. task.kind, task.location, 0.35, 120, function(point) return SafeSegment(bot, state, point) end)
 	end
 	if acted then
 		-- 共享动作助手命中节流也返回 true；这里计意图，不冒充引擎实际下单数。

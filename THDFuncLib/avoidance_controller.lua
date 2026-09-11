@@ -6,6 +6,7 @@ local ZoneManager = require(GetScriptDirectory()..'/THDFuncLib/avoidance_zone_ma
 local AvoidancePath = require(GetScriptDirectory()..'/THDFuncLib/avoidance_path')
 local Pickoff = require(GetScriptDirectory()..'/THDFuncLib/roam_pickoff')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
+local Retreat = require(GetScriptDirectory()..'/THDFuncLib/aba_retreat')
 
 local Controller = {}
 local Handoff
@@ -164,6 +165,7 @@ local function SetActive(bot, state, scan)
 	state.recoveryTarget, state.recoverySince, state.recoverySafeSince = nil, nil, nil
 	state.recoveryRequested = false
 	state.recoverySignature, state.recoveryOrigin = nil, nil
+	state.recoveryGoal, state.recoveryBudgetDeficit, state.recoveryBudgetGoalDistance = nil, nil, nil
 	state.recoverySearches, state.nextRecoveryAt = 0, -90
 	state.failedRecovery = nil
 	state.recoveryReach = 48
@@ -308,6 +310,13 @@ local function GetHighLevelTeamfightPriority(bot)
 	if location == nil or Pickoff.GetTeamfightStatus == nil then return nil end
 	local ok, active, details = pcall(Pickoff.GetTeamfightStatus, bot, location)
 	if not ok or active ~= true or type(details) ~= 'table' then return nil end
+	-- 双塔放宽必须有足够血量与人数，使用与围攻相同的三秒原始塔伤预测。
+	local health = math.max(1, bot:GetHealth())
+	if health / math.max(1, bot:GetMaxHealth()) <= 0.50
+	or (tonumber(details.allyCount) or 0) < (tonumber(details.enemyCount) or 0) then return nil end
+	local tower = Retreat.GetTowerThreat(bot, 3.0, nil, true)
+	if tower.unseenIncoming == true or (tower.unavoidableDamage or 0) >= health
+	or (tower.predictedDamage or 0) / health >= Wasteland.HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO then return nil end
 	return {
 		botLevel = botLevel,
 		teamAverageLevel = teamAverageLevel,
@@ -320,7 +329,8 @@ end
 local function GetHighGroundAssaultAuthorization(bot)
 	local authorization = bot ~= nil and bot.THD_HighGroundAssaultAuthorization or nil
 	if type(authorization) ~= 'table' then return nil end
-	if tonumber(authorization.expiresAt) == nil or Now() > authorization.expiresAt then
+	-- 目标释放或成员被移除后立即失效，避免仅按 TTL 继续绕过塔圈。
+	if not Wasteland.HasLiveHighGroundAssaultAuthorization(bot) then
 		bot.THD_HighGroundAssaultAuthorization = nil
 		return nil
 	end
@@ -541,14 +551,27 @@ local function LogMovementGeometry(bot, state, geometryZones, routeZones, audit,
 			.. ' observations=' .. (#parts > 0 and table.concat(parts, '|') or 'none'))
 end
 
+local function IsOwnedMoveAction(bot, owned)
+	local expected = owned ~= nil and owned.actionType or BOT_ACTION_TYPE_MOVE_TO
+	return owned ~= nil and type(expected) == 'number'
+		and Safe(-1, function() return bot:GetCurrentActionType() end) == expected
+end
+
 local function MoveDirect(bot, state, location, reason, partialExit)
 	if location == nil or type(bot.Action_MoveToLocation) ~= 'function' then return false end
 	local current = bot:GetLocation()
 	local validate = partialExit and Geometry.ValidateRecoverySegment or Geometry.ValidateMovementSegment
 	if state.movementGeometry == nil or not validate(current, location,
 		state.movementGeometry, state.movementMargin) then return false end
+	-- 主参考说明MoveDirectly绕过Bot寻路；仍可能受导航/碰撞影响，不当成直线保证。
+	local useDirect = partialExit == true and Config.RECOVERY_DIRECT_MOVE_ENABLED == true
+		and type(bot.Action_MoveDirectly) == 'function' and type(BOT_ACTION_TYPE_MOVE_TO_DIRECTLY) == 'number'
+	local actionType = useDirect and BOT_ACTION_TYPE_MOVE_TO_DIRECTLY or BOT_ACTION_TYPE_MOVE_TO
+	local moveApi = useDirect and 'Action_MoveDirectly' or 'Action_MoveToLocation'
 	local now = Now()
 	if now - (state.lastDirectActionAt or -90) < Config.DIRECT_ACTION_INTERVAL
+	and bot.THD_AvoidanceOwnedMove ~= nil
+	and (bot.THD_AvoidanceOwnedMove.actionType or BOT_ACTION_TYPE_MOVE_TO) == actionType
 	and state.lastDirectTarget ~= nil
 	and Geometry.Distance(state.lastDirectTarget, location) <= 80
 	then
@@ -557,13 +580,15 @@ local function MoveDirect(bot, state, location, reason, partialExit)
 	if not Geometry.ValidateLocalTerrainSegment(current, location, false) then return false end
 	state.lastDirectActionAt = now
 	state.lastDirectTarget = location
-	bot:Action_MoveToLocation(location)
-	bot.THD_AvoidanceOwnedMove = {target = location, generation = bot.THD_TowerEscapeGeneration or 0, partialExit = partialExit == true}
+	if useDirect then bot:Action_MoveDirectly(location)
+	else bot:Action_MoveToLocation(location) end
+	bot.THD_AvoidanceOwnedMove = {target = location, generation = bot.THD_TowerEscapeGeneration or 0,
+		partialExit = partialExit == true, actionType = actionType, moveApi = moveApi}
 	state.actionCount = (state.actionCount or 0) + 1
 	local current = Safe(nil, function() return bot:GetLocation() end) or {}
 	Log(bot, state, 'execute', reason or 'direct_move', string.format(
-		'current_x=%.1f current_y=%.1f target_x=%.1f target_y=%.1f',
-		current.x or 0, current.y or 0, location.x or 0, location.y or 0))
+		'current_x=%.1f current_y=%.1f target_x=%.1f target_y=%.1f move_api=%s expected_action=%s',
+		current.x or 0, current.y or 0, location.x or 0, location.y or 0, moveApi, tostring(actionType)))
 	return true
 end
 
@@ -573,16 +598,15 @@ local function StopOwnedMove(bot, state, reason)
 	or Safe(-1, function() return bot:NumQueuedActions() end) ~= 0
 	or BOT_MODE_EVASIVE_MANEUVERS == nil
 	or Safe(-1, function() return bot:GetActiveMode() end) ~= BOT_MODE_EVASIVE_MANEUVERS
-	or type(BOT_ACTION_TYPE_MOVE_TO) ~= 'number'
-	or Safe(-1, function() return bot:GetCurrentActionType() end) ~= BOT_ACTION_TYPE_MOVE_TO
+	or not IsOwnedMoveAction(bot, owned)
 	or type(bot.Action_ClearActions) ~= 'function' then return false end
 	-- 已确认是避塔自己的普通移动；true 立即停止，避免不安全旧命令继续执行。
 	bot:Action_ClearActions(true)
 	bot.THD_AvoidanceOwnedMove = nil
 	state.lastDirectTarget, state.lastDirectActionAt = nil, -90
 	Log(bot, state, 'recovery', 'owned_move_stopped', string.format(
-		'reason=%s order_generation=%s target_x=%.1f target_y=%.1f',
-		tostring(reason), tostring(owned.generation), owned.target.x, owned.target.y))
+		'reason=%s order_generation=%s target_x=%.1f target_y=%.1f move_api=%s',
+		tostring(reason), tostring(owned.generation), owned.target.x, owned.target.y, tostring(owned.moveApi or 'Action_MoveToLocation')))
 	return true
 end
 
@@ -606,13 +630,16 @@ end
 local function RevalidateOwnedMove(bot, state, current, zones, margin)
 	local owned = bot.THD_AvoidanceOwnedMove
 	if owned == nil then return false end
-	if Safe(-1, function() return bot:GetCurrentActionType() end) ~= BOT_ACTION_TYPE_MOVE_TO then
+	if not IsOwnedMoveAction(bot, owned) then
 		-- 其他动作已经接管时，仅清理旧移动归属，不撤销当前动作。
 		bot.THD_AvoidanceOwnedMove = nil
 		return false
 	end
-	-- 已到短步容差内交给到点处理停止，不再把零长度剩余段当向内运动。
-	if owned.partialExit and Geometry.Distance(current, owned.target) <= (state.recoveryReach or 48) then return false end
+	-- 当前恢复目标到点后由统一到点分支停止；路径waypoint不走这条豁免。
+	if state.recoveryTarget ~= nil and Geometry.Distance(owned.target, state.recoveryTarget) < 1
+	and Geometry.Distance(current, owned.target) <= (owned.partialExit and (state.recoveryReach or 48) or 120) then
+		return false
+	end
 	local validate = owned.partialExit and Geometry.ValidateRecoverySegment or Geometry.ValidateMovementSegment
 	local safe, reason, zone = validate(current, owned.target, zones, margin)
 	if safe then return end
@@ -633,7 +660,7 @@ local function ObserveActualMotion(bot, state, current, zones)
 	local now, before = Now(), state.motionAt
 	state.motionAt = now
 	if previous == nil or owned == nil or Geometry.Distance(previous, current) < 1
-	or Safe(-1, function() return bot:GetCurrentActionType() end) ~= BOT_ACTION_TYPE_MOVE_TO then return false end
+	or not IsOwnedMoveAction(bot, owned) then return false end
 	-- 与规划/执行共享当前有效几何，已获穿塔许可的圆不作为移动违例。
 	local safe, reason, zone = Geometry.ValidateMovementSegment(previous, current, zones, 0, true)
 	local offset = Geometry.SegmentDistanceToPoint(previous, owned.target, current)
@@ -683,17 +710,24 @@ local function RecoveryGeometryKey(zones)
 	return AvoidancePath.MakeRequestSignature(Geometry.MakeVector(0, 0, 0), zones)
 end
 
-local function ReleaseFailedRecovery(bot, state, current, zones)
+local function ReleaseFailedRecovery(bot, state, current, zones, failureReason)
 	-- 无可执行动作不能无限占绝对欲望；失败释放不是净空成功，补步也不得启动。
-	StopOwnedMove(bot, state, 'recovery_exhausted')
+	failureReason = failureReason or 'recovery_exhausted'
+	StopOwnedMove(bot, state, failureReason)
+	local blockedZones, inside = {}, false
+	for _, zone in ipairs(zones) do
+		table.insert(blockedZones, {center = SnapshotLocation(zone.center), radius = zone.effectiveRadius or zone.radius})
+		if Geometry.PointInCircle(current, zone, GetRouteSafetyMargin()) then inside = true end
+	end
 	state.failedRecovery = {
 		origin = SnapshotLocation(current), geometryKey = RecoveryGeometryKey(zones),
+		blockedZones = blockedZones, wasInside = inside, exited = false,
 		nextProbeAt = Now() + Config.RECOVERY_ADMISSION_INTERVAL,
 	}
 	Log(bot, state, 'recovery', 'failed_release', string.format(
-		'current_x=%.1f current_y=%.1f safe_release=0 retry_at=%.3f',
-		current.x, current.y, state.failedRecovery.nextProbeAt))
-	Clear(bot, state, 'recovery_exhausted')
+		'current_x=%.1f current_y=%.1f safe_release=0 retry_at=%.3f failure_reason=%s',
+		current.x, current.y, state.failedRecovery.nextProbeAt, failureReason))
+	Clear(bot, state, failureReason)
 	return true
 end
 
@@ -714,11 +748,13 @@ local function RecoverMovement(bot, state, current, anchor, zones, margin, reaso
 		local validate = state.recoveryPartial and Geometry.ValidateRecoverySegment or Geometry.ValidateMovementSegment
 		local safe = validate(current, target, zones, margin)
 		if Geometry.Distance(current, target) <= (state.recoveryPartial and (state.recoveryReach or 48) or 120) then
-			-- 到达短步就停止原命令，下一步必须重新选点和校验。
-			if state.recoveryPartial then StopOwnedMove(bot, state, 'recovery_step_reached') end
+			-- 完整恢复到点同样停住旧命令，避免目标清除后仍被导航带回上一侧。
+			StopOwnedMove(bot, state, state.recoveryPartial and 'recovery_step_reached' or 'recovery_target_reached')
 			state.recoveryTarget = nil
 			ResetProgress(state, current)
-			Log(bot, state, 'recovery', 'target_reached', '')
+			Log(bot, state, 'recovery', 'target_reached', string.format(
+				'current_x=%.1f current_y=%.1f target_x=%.1f target_y=%.1f partial_exit=%s',
+				current.x, current.y, target.x, target.y, tostring(state.recoveryPartial)))
 			return true
 		elseif not stalled and safe and MoveDirect(bot, state, target, 'recovery_move', state.recoveryPartial) then
 			return true
@@ -728,11 +764,27 @@ local function RecoverMovement(bot, state, current, anchor, zones, margin, reaso
 		state.recoveryTarget = nil
 		StopOwnedMove(bot, state, stalled and 'no_progress' or 'recovery_target_invalid')
 	end
-	local signature = AvoidancePath.MakeRequestSignature(anchor, zones) .. ':margin=' .. tostring(margin)
-	if state.recoverySignature ~= signature or state.recoveryOrigin == nil
-	or Geometry.Distance(current, state.recoveryOrigin) >= Config.RECOVERY_PROGRESS_DISTANCE then
+	-- 同一有效几何下只认净进展；在两个点之间往返不能反复重置搜索预算。
+	local signature = RecoveryGeometryKey(zones) .. ':margin=' .. tostring(margin)
+	local deficit = 0
+	for _, zone in ipairs(zones) do
+		deficit = deficit + math.max(0, (zone.effectiveRadius or zone.radius or 0) + margin
+			- Geometry.Distance(current, zone.center))
+	end
+	local changed = state.recoverySignature ~= signature or state.recoveryGoal == nil
+	if changed then state.recoveryGoal = SnapshotLocation(anchor or current) end
+	local goalDistance = Geometry.Distance(current, state.recoveryGoal)
+	local progress = not changed and (
+		deficit <= (state.recoveryBudgetDeficit or deficit) - Config.RECOVERY_PROGRESS_DISTANCE
+		or (deficit <= 0 and goalDistance <= (state.recoveryBudgetGoalDistance or goalDistance)
+			- Config.RECOVERY_PROGRESS_DISTANCE))
+	if changed or progress then
 		state.recoverySignature, state.recoveryOrigin = signature, SnapshotLocation(current)
+		state.recoveryBudgetDeficit, state.recoveryBudgetGoalDistance = deficit, goalDistance
 		state.recoverySearches = 0
+		Log(bot, state, 'recovery-budget', changed and 'geometry_changed' or 'net_progress', string.format(
+			'deficit=%.1f goal_distance=%.1f current_x=%.1f current_y=%.1f goal_x=%.1f goal_y=%.1f',
+			deficit, goalDistance, current.x, current.y, state.recoveryGoal.x, state.recoveryGoal.y))
 	end
 	if Now() < (state.nextRecoveryAt or -90) then return true end
 	state.nextRecoveryAt = Now() + Config.RECOVERY_SEARCH_INTERVAL
@@ -864,8 +916,21 @@ end
 function Controller.IsActionLocked(bot)
 	if bot == nil then return false end
 	local state = bot.THD_AvoidanceControllerState
-	return bot.THD_TowerEscapeActive == true
+	return bot.THD_SkillEscapeActive == true
+		or bot.THD_TowerEscapeActive == true
 		or (type(state) == 'table' and state.active == true)
+end
+
+local function ObserveFailedExposure(bot, state)
+	local failed = state.failedRecovery
+	if failed == nil then return end
+	local inside = false
+	for _, zone in ipairs(failed.blockedZones or {}) do
+		if Geometry.PointInCircle(bot:GetLocation(), zone, GetRouteSafetyMargin()) then inside = true; break end
+	end
+	-- 只记录真实离开边界的转换，不把冷却到期或局部来回移动当新事件。
+	if failed.wasInside and not inside then failed.exited = true end
+	failed.wasInside = inside
 end
 
 local function FindRecoveryAdmission(bot, state, scan, knownZones, authorization, teamfight)
@@ -873,8 +938,9 @@ local function FindRecoveryAdmission(bot, state, scan, knownZones, authorization
 	local current = bot:GetLocation()
 	local zones = BuildMovementGeometry(bot, state, scan, knownZones, authorization, teamfight)
 	local geometryKey = RecoveryGeometryKey(zones)
-	if Now() < failed.nextProbeAt and geometryKey == failed.geometryKey
-	and Geometry.Distance(current, failed.origin) < Config.RECOVERY_PROGRESS_DISTANCE then return nil end
+	if Now() < failed.nextProbeAt then return nil end
+	if geometryKey == failed.geometryKey and not failed.exited then return nil end
+	failed.exited = false
 	failed.origin, failed.geometryKey = SnapshotLocation(current), geometryKey
 	failed.nextProbeAt = Now() + Config.RECOVERY_ADMISSION_INTERVAL
 	-- 只探查48个细步，不在无解时反复新建最高欲望租约；执行前仍重新验证。
@@ -929,6 +995,7 @@ function Controller.GetDesire(bot)
 	CandidateDebug.Detail('anchor_available', scan.anchor ~= nil)
 	CandidateDebug.Detail('high_ground_overlap', scan.highGroundAttackRangeCount)
 	CandidateDebug.Detail('controller_active', state.active)
+	ObserveFailedExposure(bot, state)
 	if not state.active then
 		if not scan.triggered or scan.anchor == nil then
 			CandidateDebug.Note('no_trigger_or_anchor')
@@ -962,6 +1029,15 @@ function Controller.GetDesire(bot)
 	end
 	local geometryZones = BuildMovementGeometry(bot, state, scan, knownZones,
 		highGroundAuthorization, highLevelTeamfight)
+	if state.active and Now() - (state.startedAt or Now()) >= Config.CONTROL_LEASE_TIME then
+		if IsProtectedAction(bot) or Safe(-1, function() return bot:NumQueuedActions() end) ~= 0 then
+			CandidateDebug.Note('lease_expired_protected')
+			return BOT_MODE_DESIRE_ABSOLUTE
+		end
+		ReleaseFailedRecovery(bot, state, bot:GetLocation(), geometryZones, 'control_budget_exhausted')
+		CandidateDebug.Note('control_budget_exhausted')
+		return BOT_MODE_DESIRE_NONE
+	end
 	if state.active and UpdateClearance(bot, state, scan, containingZones, routeZones, geometryZones) then
 		CandidateDebug.Note('clearance_confirmed')
 		return BOT_MODE_DESIRE_NONE
@@ -998,6 +1074,20 @@ function Controller.Think(bot)
 	local state = GetState(bot)
 	Handoff.Observe(bot, state)
 	if not state.active then return Handoff.Execute(bot, state) end
+	-- 租约内由控制器确认探女位移，英雄入口不能绕过逃生租约。
+	local sagume = nil
+	if bot:GetUnitName() == 'npc_dota_hero_queenofpain' then
+		sagume = require(GetScriptDirectory()..'/THDFuncLib/sagume_combat')
+		local util = require(GetScriptDirectory()..'/THDFuncLib/sagume_util')
+		if util.Update(bot) then return true end
+		local confirmed = util.State(bot).lastBlinkConfirmed
+		if confirmed and confirmed ~= state.sagumeBlinkConfirmed then
+			state.sagumeBlinkConfirmed = confirmed
+			AvoidancePath.MarkNeedsRepath(bot, 'sagume_blink_confirmed')
+			state.motionLocation, state.motionAt = nil, nil
+			ResetProgress(state, bot:GetLocation())
+		end
+	end
 	local highGroundAuthorization = GetHighGroundAssaultAuthorization(bot)
 	local highLevelTeamfight = GetHighLevelTeamfightPriority(bot)
 	local scan = TowerSafety.Scan(bot, {
@@ -1055,7 +1145,11 @@ function Controller.Think(bot)
 		return true
 	end
 
+	if Now() - (state.startedAt or Now()) >= Config.CONTROL_LEASE_TIME then
+		return ReleaseFailedRecovery(bot, state, current, geometryZones, 'control_budget_exhausted')
+	end
 	state.movementGeometry = geometryZones
+	if sagume and sagume.TryEscape(bot, {anchor=anchor, zones=geometryZones}) then return true end
 	state.movementMargin = #containingZones > 0
 		and math.max(Config.PATH_CLEARANCE_TOLERANCE, Config.DIRECT_EGRESS_SAFETY_MARGIN)
 		or GetRouteSafetyMargin()
@@ -1196,6 +1290,13 @@ function Controller.Reset(bot, reason)
 	if bot == nil then return end
 	Clear(bot, GetState(bot), reason or 'manual_reset')
 	if bot.THD_AvoidanceZoneState ~= nil then ZoneManager.Reset(bot, 'runtime') end
+end
+
+-- 技能紧急脱离取得同一模式的执行权时，明确释放塔租约，避免两个控制器同帧下单。
+function Controller.YieldToSkill(bot)
+	if bot == nil then return end
+	local state=GetState(bot)
+	if state.active then StopOwnedMove(bot,state,'skill_priority');Clear(bot,state,'skill_priority') end
 end
 
 function Controller.GetSnapshot(bot)
