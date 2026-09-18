@@ -107,7 +107,8 @@ end
 
 function SafeCanBeSeen(unit)
 	if unit == nil or unit.CanBeSeen == nil then return false end
-	local ok, result = pcall(function() return unit:CanBeSeen() end)
+	-- 保留受保护查询，直接传入方法和自身，避免每次视野检查创建临时闭包。
+	local ok, result = pcall(unit.CanBeSeen, unit)
 	return ok and result == true
 end
 
@@ -371,6 +372,25 @@ local LastGetNearbyHeroesResult = {}
 local time_sum2=0
 local last_print_time2=-6000
 
+local function FilterVisibleNearbyHeroes(units)
+	local visible = nil
+	for index, unit in ipairs(units) do
+		-- 缓存只保存候选句柄；视野和生命周期必须在本次返回时重新确认。
+		if unit == nil or unit:IsNull() or not SafeCanBeSeen(unit) then
+			if visible == nil then
+				visible = {}
+				for previous = 1, index - 1 do
+					visible[#visible + 1] = units[previous]
+				end
+			end
+		elseif visible ~= nil then
+			visible[#visible + 1] = unit
+		end
+	end
+	-- 只有需要过滤时才构造新列表，不原地修改已交给其他调用者的缓存。
+	return visible or units
+end
+
 function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 
 	--[[
@@ -426,7 +446,9 @@ function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 			end
 			for _,unit in pairs( tmp )
 			do
-				if GetUnitToUnitDistanceSqr( bot, unit ) < RadiusSqr then
+				-- 全局单位列表不保证每个敌人当前可见，先过滤再读取距离。
+				if unit ~= nil and not unit:IsNull() and SafeCanBeSeen(unit)
+				and GetUnitToUnitDistanceSqr( bot, unit ) < RadiusSqr then
 					table.insert(LastGetNearbyHeroesResult[tag], unit)
 				end
 			end
@@ -442,7 +464,7 @@ function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 
 	--time_sum2 = time_sum2 + RealTime() - st
 
-	return LastGetNearbyHeroesResult[tag]
+	return FilterVisibleNearbyHeroes(LastGetNearbyHeroesResult[tag])
 
 end
 

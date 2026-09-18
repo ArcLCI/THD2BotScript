@@ -326,7 +326,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 		and J.GetLocationToLocationDistance(defendLoc, laneFront) < nSearchRange
 		and #J.GetNearbyHeroes(bot, math.max(attackRange + 100, 1000), true, BOT_MODE_NONE) <= 0
 		and ((#state.nInRangeEnemy <= 1 and not (J.IsValidHero(state.botTarget) and J.GetHP(state.botTarget) < 0.3)) or not bot:WasRecentlyDamagedByAnyHero(2)) then
-			print("Ancient is in danger for team " .. team)
+			if LANE_MODE_DEBUG or J.Utils.DebugMode then print("Ancient is in danger for team " .. team) end
 			local desire = RemapValClamped(J.GetHP(bot), 0.25, 0.5, BOT_ACTION_DESIRE_NONE, BOT_ACTION_DESIRE_ABSOLUTE)
 			CandidateDebug.Note('ancient_danger')
 			return desire

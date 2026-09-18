@@ -2,6 +2,17 @@ local C = require(GetScriptDirectory()..'/THDFuncLib/sagume_config')
 local Profile = require(GetScriptDirectory()..'/THDFuncLib/bot_profile')
 local U = {}
 
+-- 独立冷入口也使用物品模块的同一判据，避免依赖其先注册全局函数。
+local function SafeHasModifier(target, modifier)
+	if target == nil or target.HasModifier == nil then return false end
+	local ok, result = pcall(function() return target:HasModifier(modifier) end)
+	return ok and result == true
+end
+local function IsPossibleIllusion(target)
+	return SafeHasModifier(target, 'modifier_flandre01_illusion_model')
+		or SafeHasModifier(target, 'modifier_illusion')
+end
+
 function U.Safe(default, fn)
 	local ok, value = pcall(fn)
 	if ok and value ~= nil then return value end

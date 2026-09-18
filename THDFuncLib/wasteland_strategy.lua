@@ -74,7 +74,7 @@ Strategy.NON_PARTICIPANT_PUSH_DESIRE = 0.02
 Strategy.CONVERSION_OPPORTUNITY_DURATION = 12.0
 -- 击杀转推外塔时，低于此血量的 Bot 不再继续站在塔前承伤。
 Strategy.CONVERSION_PUSH_MIN_HEALTH = 0.45
-Strategy.DEBUG = true
+Strategy.DEBUG = false
 
 Strategy.PHASE_IDLE = 'IDLE'
 Strategy.PHASE_ASSEMBLE = 'ASSEMBLE'

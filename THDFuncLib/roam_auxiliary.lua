@@ -253,8 +253,8 @@ local function ComputeDesire()
 	botName = bot:GetUnitName()
 
 	if not debugPrinted then
-		print('roam_generic_ok')
-		print(_VERSION)
+		-- 常规运行不输出游走辅助入口与 Lua 版本探针。
+		-- native 适配证据由独立插件记录。
 		debugPrinted = true
 	end
 

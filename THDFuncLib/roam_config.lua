@@ -2,7 +2,7 @@ local RoamConfig = {}
 
 -- 新 gank 框架默认关闭；现有持续施法、连招和拾取逻辑不受此开关影响。
 RoamConfig.ENABLED = true
-RoamConfig.DEBUG = true
+RoamConfig.DEBUG = false
 RoamConfig.ANNOUNCE_CHAT = true
 
 RoamConfig.LANING_PHASE_END_TIME = 8 * 60

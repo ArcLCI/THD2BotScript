@@ -66,7 +66,9 @@ end
 
 local function IsTowerAttacking(unit)
 	for _, tower in pairs(unit:GetNearbyTowers(1000, true) or {}) do
-		if IsValidUnit(tower) and tower:GetAttackTarget() == unit then return true end
+		-- 塔句柄有效不代表当前可见，不能据此读取其攻击目标。
+		if IsValidUnit(tower) and tower:CanBeSeen()
+		and tower:GetAttackTarget() == unit then return true end
 	end
 	return false
 end

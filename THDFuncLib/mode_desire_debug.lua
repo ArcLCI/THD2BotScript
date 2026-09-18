@@ -16,8 +16,8 @@ local instanceClock = type(GameTime) == 'function' and GameTime()
 	or (type(DotaTime) == 'function' and DotaTime()) or 0
 local loggerInstance = string.format('%d-%d', math.floor(instanceClock * 1000 + 0.5), instanceSequence)
 
--- 当前模式倾向复测期间开启；完成日志采集后可改为 false。
-ModeDesireDebug.ENABLED = true
+-- 常规运行关闭模式倾向日志，避免干扰 native 适配诊断。
+ModeDesireDebug.ENABLED = false
 ModeDesireDebug.SAMPLE_INTERVAL = 0.5
 
 local MODE_NAMES = {}

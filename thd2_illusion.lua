@@ -4,6 +4,11 @@ local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 local ownerBot
 
+-- Minion 入口可独立加载，不依赖物品模块先注册同名全局函数。
+local function IsKeyWordUnit(keyWord, unit)
+    return string.find(unit:GetUnitName(), keyWord) ~= nil
+end
+
 local nEnemyAncient = GetAncient(GetOpposingTeam())
 local RadiantFountain = Vector( -6619, -6336, 384 )
 local DireFountain = Vector( 6928, 6372, 392 )

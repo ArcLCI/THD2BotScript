@@ -5,11 +5,53 @@ local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_invent
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 
-local X = {}
+local X = {ConsiderItemDesire = {}}
 local bot = GetBot()
-local botName = bot:GetUnitName()
+local botName = bot ~= nil and bot:GetUnitName() or ""
 if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 if not bot.frameProcessTime then bot.frameProcessTime = 0.1 end
+
+-- 只恢复本模块缺失的依赖；技能选择仍交给已有英雄入口。
+local backpackSeen = {}
+local backpackPurgeAt = -90
+local function RefreshBotHandle()
+    local fresh = GetBot()
+    if fresh == nil or (fresh.IsNull ~= nil and fresh:IsNull()) then return true end
+    if fresh:GetUnitName() ~= botName then return true end -- 旧英雄实例不接管新英雄。
+    if fresh ~= bot then backpackSeen = {}; backpackPurgeAt = -90 end
+    bot = fresh
+    if bot.frameProcessTime == nil then bot.frameProcessTime = 0.1 end
+    return false
+end
+
+-- 原参考的 Stash 命名实际用于背包 6~8 槽，防止移回主栏后过早使用。
+function X.SetStashItemTimeUpdate()
+    local now = DotaTime()
+    for slot = 6, 8 do
+        local item = bot:GetItemInSlot(slot)
+        if item ~= nil then backpackSeen[item:GetName()] = now end
+    end
+    if now - backpackPurgeAt >= 7.0 then
+        backpackPurgeAt = now
+        for name, seenAt in pairs(backpackSeen) do
+            if now - seenAt > 7.0 then backpackSeen[name] = nil end
+        end
+    end
+end
+
+function X.IsItemInStash(name)
+    local seenAt = backpackSeen[name]
+    return seenAt ~= nil and DotaTime() < seenAt + 6.05
+end
+
+-- 当前注册的通用物品只有 TP，所有成功分支均返回 ground。
+function X.SetUseItem(item, target, castType)
+    if item == nil or target == nil then return false end
+    if bot:IsChanneling() or bot:IsUsingAbility() or bot:IsCastingAbility() then return false end
+    if castType ~= 'ground' then error('Unsupported generic item cast type: ' .. tostring(castType)) end
+    bot:Action_UseAbilityOnLocation(item, target)
+    return true
+end
 
 local nCourierLastActionTime = -90
 local nCourierState = -1
@@ -1020,7 +1062,7 @@ function ItemUsageThink()
 	if J.IsTowerEscapeActive(bot) then return end
 	if bot.lastItemFrameProcessTime == nil then bot.lastItemFrameProcessTime = DotaTime() end
 
-	local itemThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25, 'item_usage_generic')
+	local itemThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime, 1.25, 'item_usage_generic')
 	if DotaTime() > 30 and (DotaTime() - bot.lastItemFrameProcessTime < itemThinkInterval) then return end
 
 	bot.lastItemFrameProcessTime = DotaTime()
@@ -1036,7 +1078,7 @@ function AbilityUsageThink()
 	if Consumables.IsCastConfirmationPending(bot) then return end
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end
 
-	local abilityThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime * (1 + Customize.ThinkLess), 1.25, 'ability_usage_generic')
+	local abilityThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime, 1.25, 'ability_usage_generic')
 	if DotaTime() > 30 and (DotaTime() - bot.lastAbilityFrameProcessTime < abilityThinkInterval) and bot.isBear == nil then return end
 
 	bot.lastAbilityFrameProcessTime = DotaTime()

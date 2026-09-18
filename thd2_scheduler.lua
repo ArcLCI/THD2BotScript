@@ -4,7 +4,7 @@ local DEFAULT_PHASE_INTERVAL = 0.12
 local BASE_ENEMY_SCAN_RANGE = 1800
 local OBJECTIVE_THINK_INTERVAL = 0.25
 -- 阶段 A 针对性复测期间临时开启；完成最终运行验收后恢复为 false。
-Scheduler.DEBUG_OBJECTIVE_INTERVAL = true
+Scheduler.DEBUG_OBJECTIVE_INTERVAL = false
 local OBJECTIVE_DEBUG_LOG_INTERVAL = 5.0
 
 local OBJECTIVE_MODES = {}
