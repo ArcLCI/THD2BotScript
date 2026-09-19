@@ -1,4 +1,5 @@
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
+local Scheduler = require(GetScriptDirectory()..'/thd2_scheduler')
 local Timer = {}
 
 local cacheStore = {}
@@ -59,6 +60,7 @@ function Timer.GetPlayerId(bot)
 end
 
 function Timer.GetStaggerOffset(bot, lane, staggerInterval)
+    if Scheduler.RELAXED_THINK_ENABLED then return 0 end
     if staggerInterval == nil then
         staggerInterval = DEFAULT_STAGGER_INTERVAL
     end
@@ -77,7 +79,8 @@ end
 
 function Timer.GetOrComputeBotLane(prefix, bot, lane, interval, computeFn, staggerInterval)
     local key = Timer.GetBotLaneKey(prefix, bot, lane)
-    local effectiveInterval = interval + Timer.GetStaggerOffset(bot, lane, staggerInterval)
+    -- 守塔欲望缓存与公共决策周期一致，避免玩家编号叠加出额外响应延迟。
+    local effectiveInterval = Scheduler.GetDecisionInterval(interval) + Timer.GetStaggerOffset(bot, lane, staggerInterval)
     return Timer.GetOrCompute(key, effectiveInterval, computeFn)
 end
 
@@ -89,6 +92,7 @@ function Timer.ShouldRunBotTask(bot, taskName, interval, staggerInterval)
     if interval == nil then
         interval = 1.0
     end
+    interval = Scheduler.GetDecisionInterval(interval)
 
     local key = 'timer-task-' .. taskName .. '-' .. tostring(Timer.GetPlayerId(bot))
     local now = Timer.Now()

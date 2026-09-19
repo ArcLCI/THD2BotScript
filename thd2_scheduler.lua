@@ -1,5 +1,17 @@
 local Scheduler = {}
 
+-- 性能压力降低后提高公共决策频率；只调整调度，不改变施法保护或重复指令冷却。
+-- 设为 false 可恢复原有低功耗周期及错峰策略。
+Scheduler.RELAXED_THINK_ENABLED = true
+local MAX_DECISION_INTERVAL = 0.10
+
+function Scheduler.GetDecisionInterval(interval)
+    if Scheduler.RELAXED_THINK_ENABLED then
+        return math.min(interval or MAX_DECISION_INTERVAL, MAX_DECISION_INTERVAL)
+    end
+    return interval
+end
+
 local DEFAULT_PHASE_INTERVAL = 0.12
 local BASE_ENEMY_SCAN_RANGE = 1800
 local OBJECTIVE_THINK_INTERVAL = 0.25
@@ -50,6 +62,7 @@ function Scheduler.GetPlayerId(bot)
 end
 
 function Scheduler.GetPhaseOffset(bot, phaseInterval)
+    if Scheduler.RELAXED_THINK_ENABLED then return 0 end
     if phaseInterval == nil then phaseInterval = DEFAULT_PHASE_INTERVAL end
     return (Scheduler.GetPlayerId(bot) % 10) * phaseInterval
 end
@@ -57,6 +70,7 @@ end
 function Scheduler.ShouldRunBotTask(bot, taskName, interval, phaseInterval)
     if bot == nil then return true end
     if interval == nil then interval = 1.0 end
+    interval = Scheduler.GetDecisionInterval(interval)
 
     local fieldName = 'SchedulerNext_' .. taskName
     local now = Scheduler.Now()
@@ -185,6 +199,8 @@ function Scheduler.ObserveTaskRun(bot, taskName, configuredInterval)
 end
 
 function Scheduler.GetLowPowerThinkInterval(bot, normalInterval, lowPowerInterval, taskName)
+	-- 放宽模式不再随非战斗状态或 30/40 分钟局时降频，原本更快的周期保持不变。
+	if Scheduler.RELAXED_THINK_ENABLED then return Scheduler.GetDecisionInterval(normalInterval) end
 	-- 六个实际推塔/守塔模式采用固定目标周期，避免误落入 1.25 秒以上的低功耗分支。
 	if bot ~= nil and Scheduler.IsObjectiveMode(bot:GetActiveMode()) then
 		if Scheduler.DEBUG_OBJECTIVE_INTERVAL == true then

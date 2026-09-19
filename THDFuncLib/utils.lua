@@ -798,7 +798,8 @@ ____exports.ImportantSpells = {
     [HeroName.Bloodseeker] = {"bloodseeker_rupture"},
     [HeroName.Clinkz] = {"clinkz_burning_barrage"},
     [HeroName.FacelessVoid] = {"faceless_void_chronosphere"},
-    [HeroName.Gyrocopter] = {"gyrocopter_flak_cannon"},
+    -- 因幡帝的团战窗口由枪斗术和开运决定。
+    [HeroName.Gyrocopter] = {"ability_thdots_tei03", "ability_thdots_tei04"},
     [HeroName.Hoodwink] = {"hoodwink_sharpshooter"},
     [HeroName.Juggernaut] = {"juggernaut_omni_slash"},
     [HeroName.Luna] = {"luna_eclipse"},

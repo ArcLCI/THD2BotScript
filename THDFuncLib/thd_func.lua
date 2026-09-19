@@ -1460,8 +1460,25 @@ function J.IsChasingTarget( bot, nTarget )
 	return false
 end
 
+-- 因幡帝只保护短转身、发单确认、施法前摇和后跳，不锁住枪斗术的普攻增益期。
+function J.IsTeiActionProtected(bot)
+	if bot == nil or bot:GetUnitName() ~= 'npc_dota_hero_gyrocopter' then return false end
+	if not bot:IsAlive() then bot.THD_TeiActionUntil = nil; bot.THD_TeiBackstep = nil; return false end
+	-- 二技能转身期间只允许专属规避模式推进；过期任务不能长期霸占模式。
+	local backstep = bot.THD_TeiBackstep
+	if backstep ~= nil and DotaTime() <= backstep.expires then return true end
+	if DotaTime() < (bot.THD_TeiActionUntil or -90)
+	or bot:HasModifier('modifier_ability_thdots_tei02_back') then return true end
+	for _, name in ipairs({'ability_thdots_tei01', 'ability_thdots_tei02', 'ability_thdots_tei03', 'ability_thdots_tei04'}) do
+		local ability = bot:GetAbilityByName(name)
+		if ability ~= nil and (ability:IsInAbilityPhase() or ability:IsChanneling()) then return true end
+	end
+	return false
+end
+
 function J.CanNotUseAction( bot )
 	return not bot:IsAlive()
+			or J.IsTeiActionProtected(bot)
 			or (bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil)
 			or J.IsTowerEscapeActive(bot)
 			or J.HasQueuedAction( bot )

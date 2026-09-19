@@ -1,5 +1,6 @@
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local configLoaded, Config = pcall(require, GetScriptDirectory()..'/THDFuncLib/roam_config')
 if not configLoaded or type(Config) ~= 'table' then Config = {} end
 local Auxiliary = require(GetScriptDirectory()..'/THDFuncLib/roam_auxiliary')
@@ -84,6 +85,9 @@ RouterDebugStatus('loaded enabled=' .. tostring(IsGankEnabled()), true)
 function GetDesire()
 	local currentBot = RefreshBot()
 	if currentBot == nil then CandidateDebug.Note('invalid_bot'); return BOT_MODE_DESIRE_NONE end
+	if J.IsTeiActionProtected(currentBot) then
+		return currentBot:GetActiveMode() == BOT_MODE_ROAM and currentBot:GetActiveModeDesire() or BOT_MODE_DESIRE_NONE
+	end
 	-- 每个 Bot 各自输出当前实际模式倾向，供赛后合并为统一时间序列。
 	ModeDesireDebug.Think(currentBot)
 	-- 现有持续施法、英雄连招和拾取租约始终优先，不受新 gank 总开关影响。
@@ -162,6 +166,7 @@ end
 function Think()
 	local currentBot = RefreshBot()
 	if currentBot == nil then return end
+	if J.IsTeiActionProtected(currentBot) then return end
 	-- Think 再检查一次独占辅助任务，确保技能前摇/引导不会被同模式的 gank 动作覆盖。
 	local auxiliaryDesire, auxiliarySource = Auxiliary.GetDesire(currentBot)
 	if auxiliaryDesire ~= nil and auxiliaryDesire > BOT_MODE_DESIRE_NONE then

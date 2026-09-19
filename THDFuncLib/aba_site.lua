@@ -1366,14 +1366,6 @@ ____exports.ConsiderIsTimeToFarm.npc_dota_hero_faceless_void = function()
     end
     return false
 end
-____exports.ConsiderIsTimeToFarm.npc_dota_hero_gyrocopter = function()
-    local bot = GetBot()
-    local botNetWorth = bot:GetNetWorth()
-    if bot:GetLevel() < 25 or botNetWorth < 22000 then
-        return true
-    end
-    return false
-end
 ____exports.ConsiderIsTimeToFarm.npc_dota_hero_hoodwink = function()
     local bot = GetBot()
     local botNetWorth = bot:GetNetWorth()

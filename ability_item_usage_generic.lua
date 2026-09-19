@@ -1057,6 +1057,7 @@ end
 
 function ItemUsageThink()
 	if RefreshBotHandle() then return end
+	if J.IsTeiActionProtected(bot) then return end
 	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 	if J.IsTowerEscapeActive(bot) then return end
