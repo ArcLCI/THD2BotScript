@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/bot_generic")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/wasteland_strategy")
@@ -79,27 +80,21 @@ local function ShouldThrottle(unit, actionName, key, interval)
 end
 
 local function AttackUnit(illusion, target)
-	if not IsValidUnit(target) or not J.CanBeAttacked(target) then return false end
+	if not Actions.ValidTarget(target) or not J.CanBeAttacked(target) then return false end
 	local isBuilding = target.IsBuilding ~= nil
 		and select(2, pcall(function() return target:IsBuilding() end)) == true
 	if isBuilding then
 		local allowed = Wasteland.CanControlledUnitAttackBuilding(bot, target)
 		if not allowed then return false end
 	end
-	if not ShouldThrottle(illusion, "attack", GetUnitKey(target), ATTACK_INTERVAL) then
-		illusion:Action_AttackUnit(target, false)
-	end
-	return true
+	return Actions.Attack(illusion,target,false)
 end
 
 local function MoveToLocation(illusion, location, actionName, interval, bucket)
 	if location == nil then return false end
 	actionName = actionName or "move"
 	interval = interval or MOVE_INTERVAL
-	if not ShouldThrottle(illusion, actionName, GetLocationKey(location, bucket), interval) then
-		illusion:Action_MoveToLocation(location)
-	end
-	return true
+	return Actions.Move(illusion,location,bucket)
 end
 
 local function GetOwnedIllusions()

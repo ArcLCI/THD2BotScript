@@ -1,3 +1,4 @@
+local Tasks = require(GetScriptDirectory()..'/THDFuncLib/mode_task')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Push = {}
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
@@ -212,7 +213,7 @@ function Push.RefreshHighGroundAssaultAuthorization(bot, lane)
 	return authorization
 end
 
-function Push.GetPushDesire(bot, lane)
+local function ComputeModeDesire(bot, lane)
 	local highGroundAuthorization = Push.RefreshHighGroundAssaultAuthorization(bot, lane)
 	-- 安全门不缓存；模式缓存窗口内发生撤退、基地告急或高地门槛变化时必须立即生效。
 	if bot == nil
@@ -280,6 +281,20 @@ function Push.GetPushDesire(bot, lane)
 	local immediateSafety = Push.GetImmediateSafetyState(bot)
 	return Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 end
+
+local function TaskName(lane) return 'push_'..tostring(lane) end
+function Push.GetPushDesire(bot,lane)
+	local name=TaskName(lane)
+	local active=Tasks.Active(bot,name)
+	if active~=nil and not Tasks.Check(bot,name,Push.IsObjectiveValid(active.objective)) then return 0 end
+	local score=ComputeModeDesire(bot,lane)
+	local objective=Push.GetLaneBuildingTarget(lane) or GetAncient(GetOpposingTeam())
+	if score<=0 or not Push.IsObjectiveValid(objective) then Tasks.Release(bot,name,'score_or_safety');return 0 end
+	local location=objective:CanBeSeen() and objective:GetLocation() or GetLaneFrontLocation(bot:GetTeam(),lane,0)
+	return Tasks.Offer(bot,name,score,{objective=objective,location=location,lane=lane,
+		reason='push_objective',arrivalRadius=1600,stallSeconds=8})
+end
+function Push.OnStart(bot,lane) Tasks.Start(bot,TaskName(lane)) end
 
 function Push.IsObjectiveValid(objective)
 	if objective == nil then return false end
@@ -915,10 +930,13 @@ end
 
 local fNextMovementTime = 0
 function Push.OnEnd(bot, lane)
+	Tasks.Release(bot,TaskName(lane),'mode_end')
 	LaneWork.Leave(bot, 'mode_ended', lane)
 end
 
 function Push.PushThink(bot, lane)
+	local task=Tasks.Commit(bot,TaskName(lane))
+	if not Tasks.Check(bot,TaskName(lane),task~=nil and Push.IsObjectiveValid(task.objective)) then return end
     if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
 	if J.CanNotUseAction(bot) then return end
 	if LaneWork.TryThink(bot, lane) then return end
@@ -1026,7 +1044,7 @@ function Push.PushThink(bot, lane)
     local nEnemyTowers = bot:GetNearbyTowers(1600, true)
     local nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
 
-	local hLaneBuildingTarget = Push.GetLaneBuildingTarget(lane)
+	local hLaneBuildingTarget = task.objective
 	local candidateTarget = hLaneBuildingTarget or hEnemyAncient
 	if wastelandState ~= nil and laneBuildingTier >= 3 and Push.IsObjectiveValid(candidateTarget) then
 		wastelandState.highGroundContext = Wasteland.GetHighGroundPermissionContext(candidateTarget, {

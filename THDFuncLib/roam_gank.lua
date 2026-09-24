@@ -673,7 +673,7 @@ function Gank.Think(bot)
 	if HasIssuedYumemiFlight(bot, activeMission) and TryUseYumemiFlight(bot, activeMission) then return end
 	if HasIssuedTP(bot, activeMission) and TryUseTP(bot, activeMission) then return end
 	if HasIssuedTwinGate(bot, activeMission) and TryUseTwinGate(bot, activeMission) then return end
-	if Coordinator.GetDesire(bot) <= BOT_MODE_DESIRE_NONE then
+	if Coordinator.RecheckMission(bot) <= BOT_MODE_DESIRE_NONE then
 		ReleaseConsumable(bot, activeMission, SMOKE_REQUESTER, 'mission_released')
 		ReleaseConsumable(bot, activeMission, DUST_REQUESTER, 'mission_released')
 		return

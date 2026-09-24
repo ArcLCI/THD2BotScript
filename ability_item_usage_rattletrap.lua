@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
@@ -431,7 +432,7 @@ function AbilityUsageThink()
 	local ultimateTarget, reason = ConsiderSunny04(bot, ability04, profile)
 	if ultimateTarget ~= nil then
 		if not bot:IsFacingLocation(ultimateTarget:GetLocation(), 18) then
-			bot:Action_MoveToLocation(ultimateTarget:GetLocation())
+			Actions.Move(bot, ultimateTarget:GetLocation(),10)
 			return
 		end
 		SunnyUltimate.BeginCast(bot, ultimateTarget, reason)

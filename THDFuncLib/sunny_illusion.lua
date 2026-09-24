@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local X = {}
 
 local SUNNY05_MODIFIER = "modifier_ability_thdots_sunny05"
@@ -34,7 +35,7 @@ function X.Think(bot, unit)
 	end
 	local scoutLocation = GetLaneFrontLocation(bot:GetTeam(), lane, SCOUT_AHEAD_DISTANCE)
 	if scoutLocation == nil then return false end
-	unit:Action_MoveToLocation(scoutLocation)
+	Actions.Move(unit, scoutLocation)
 	unit.sunnyScoutNextOrderTime = now + SCOUT_ORDER_INTERVAL
 	return true
 end

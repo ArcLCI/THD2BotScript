@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
@@ -640,7 +641,7 @@ function AbilityUsageThink()
 		YuukaUnits.Invalidate(bot)
 		return
 	elseif ultimateAction == "face" then
-		bot:Action_MoveToLocation(ultimateTarget)
+		Actions.Move(bot, ultimateTarget, 10)
 		return
 	end
 
@@ -672,7 +673,7 @@ function AbilityUsageThink()
 	local shouldPlant, faceLocation = ConsiderYuukaExPlant(bot, abilityEx, profile)
 	if shouldPlant then
 		if faceLocation ~= nil and not bot:IsFacingLocation(faceLocation, 20) then
-			bot:Action_MoveToLocation(faceLocation)
+			Actions.Move(bot, faceLocation, 10)
 			return
 		end
 		bot:Action_UseAbility(abilityEx)

@@ -85,6 +85,8 @@ RouterDebugStatus('loaded enabled=' .. tostring(IsGankEnabled()), true)
 function GetDesire()
 	local currentBot = RefreshBot()
 	if currentBot == nil then CandidateDebug.Note('invalid_bot'); return BOT_MODE_DESIRE_NONE end
+	if J.IsKasenActionProtected(currentBot) then return BOT_MODE_DESIRE_NONE end
+	if currentBot.THD_TeiBackstep~=nil and currentBot.THD_TeiBackstep.phase=='turn' then return BOT_MODE_DESIRE_NONE end
 	if J.IsTeiActionProtected(currentBot) then
 		return currentBot:GetActiveMode() == BOT_MODE_ROAM and currentBot:GetActiveModeDesire() or BOT_MODE_DESIRE_NONE
 	end
@@ -98,12 +100,6 @@ function GetDesire()
 			.. ' desire=' .. tostring(auxiliaryDesire))
 		pendingProvider = 'auxiliary'
 		pendingAuxiliarySource = auxiliarySource
-		if activeProvider == 'gank' then
-			StopGank('auxiliary_preempted', auxiliarySource, auxiliaryDesire)
-			activeProvider = 'auxiliary'
-			activeAuxiliarySource = auxiliarySource
-			Auxiliary.OnStart(currentBot)
-		end
 		return auxiliaryDesire
 	end
 	CandidateDebug.BeginPhase('gank_router')
@@ -166,15 +162,16 @@ end
 function Think()
 	local currentBot = RefreshBot()
 	if currentBot == nil then return end
+	if J.IsKasenActionProtected(currentBot) then return end
 	if J.IsTeiActionProtected(currentBot) then return end
 	-- Think 再检查一次独占辅助任务，确保技能前摇/引导不会被同模式的 gank 动作覆盖。
-	local auxiliaryDesire, auxiliarySource = Auxiliary.GetDesire(currentBot)
+	local auxiliaryDesire, auxiliarySource = Auxiliary.Recheck(currentBot)
 	if auxiliaryDesire ~= nil and auxiliaryDesire > BOT_MODE_DESIRE_NONE then
 		auxiliarySource = auxiliarySource or 'unknown'
 		RouterDebugStatus('reason=auxiliary_active_think provider=' .. tostring(auxiliarySource)
 			.. ' desire=' .. tostring(auxiliaryDesire))
 		if activeProvider == 'gank' then StopGank('auxiliary_preempted', auxiliarySource, auxiliaryDesire) end
-		if activeProvider ~= 'auxiliary' then Auxiliary.OnStart(currentBot) end
+		if activeProvider ~= 'auxiliary' or activeAuxiliarySource ~= auxiliarySource or Auxiliary.NeedsHandoff() then Auxiliary.OnStart(currentBot) end
 		activeProvider = 'auxiliary'
 		pendingProvider = 'auxiliary'
 		activeAuxiliarySource = auxiliarySource

@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/bot_generic")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/wasteland_strategy")
@@ -101,27 +102,21 @@ local function ShouldThrottle(wolf, actionName, targetKey, interval)
 end
 
 local function AttackUnit(wolf, target)
-	if not IsValidUnit(target) or not J.CanBeAttacked(target) then return false end
+	if not Actions.ValidTarget(target) or not J.CanBeAttacked(target) then return false end
 	local isBuilding = target.IsBuilding ~= nil
 		and select(2, pcall(function() return target:IsBuilding() end)) == true
 	if isBuilding then
 		local allowed = Wasteland.CanControlledUnitAttackBuilding(bot, target)
 		if not allowed then return false end
 	end
-	if not ShouldThrottle(wolf, "attack", GetUnitKey(target), ATTACK_INTERVAL) then
-		wolf:Action_AttackUnit(target, false)
-	end
-	return true
+	return Actions.Attack(wolf,target,false)
 end
 
 local function MoveToLocation(wolf, location, actionName, interval, bucket)
 	if location == nil then return false end
 	actionName = actionName or "move"
 	interval = interval or MOVE_INTERVAL
-	if not ShouldThrottle(wolf, actionName, GetLocationKey(location, bucket), interval) then
-		wolf:Action_MoveToLocation(location)
-	end
-	return true
+	return Actions.Move(wolf,location,bucket)
 end
 
 local function ClampToWorkDistance(location)

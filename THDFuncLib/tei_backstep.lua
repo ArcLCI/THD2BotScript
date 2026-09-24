@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local J = require(GetScriptDirectory() .. '/THDFuncLib/thd_func')
 local Geometry = require(GetScriptDirectory() .. '/THDFuncLib/avoidance_geometry')
 local TowerSafety = require(GetScriptDirectory() .. '/THDFuncLib/tower_safety')
@@ -7,10 +8,21 @@ local B = {}
 
 local ABILITY = 'ability_thdots_tei02'
 local MOTION = 'modifier_ability_thdots_tei02_back'
-local RUN = 'TEI-R3-20260919'
+local RUN = 'TEI-R5-20260922'
+local ACQUIRE_TIMEOUT = 0.40
 local TURN_TIMEOUT = 0.65
 local TURN_TOLERANCE = 8
-local MAX_TURN_TRAVEL = 48
+local SOFT_TURN_TRAVEL = 48
+local MAX_TURN_TRAVEL = 96
+local TURN_GUIDE_DISTANCE = 250
+local RETRY_AFTER = 0.18
+local NO_PROGRESS_TIMEOUT = 0.35
+
+local function AngleError(bot, direction)
+	local facing = math.rad(bot:GetFacing())
+	local dot = -direction.x * math.cos(facing) - direction.y * math.sin(facing)
+	return math.deg(math.acos(math.max(-1, math.min(1, dot))))
+end
 
 local function Special(ability, name, fallback)
 	local value = ability:GetSpecialValueFloat(name)
@@ -24,16 +36,25 @@ end
 
 local function Log(bot, state, event, reason)
 	local direction = state.direction or Vector(0, 0, 0)
-	print(string.format('[BOT][Tei] run=%s team=%d player=%d event=backstep_%s reason=%s kind=%s facing=%.1f hop_dx=%.3f hop_dy=%.3f blast_targets=%d game_time=%.2f',
-		RUN, bot:GetTeam(), bot:GetPlayerID(), event, reason or 'none', state.kind, bot:GetFacing(), direction.x, direction.y, state.blastTargets or 0, DotaTime()))
+	local now = DotaTime()
+	local travel = state.turnTravel or (state.startLocation and Geometry.Distance(bot:GetLocation(), state.startLocation)) or 0
+	local displacement = state.castOrigin and Geometry.Distance(bot:GetLocation(), state.castOrigin) or 0
+	print(string.format('[BOT][Tei] run=%s team=%d player=%d task=%d event=backstep_%s reason=%s phase=%s kind=%s facing=%.1f angle_error=%.1f hop_dx=%.3f hop_dy=%.3f blast_targets=%d acquire_elapsed=%.3f turn_elapsed=%.3f travel=%.1f issued=%d displacement=%.1f game_time=%.2f',
+		RUN, bot:GetTeam(), bot:GetPlayerID(), state.id or 0, event, reason or 'none', state.phase, state.kind, bot:GetFacing(), AngleError(bot, direction), direction.x, direction.y, state.blastTargets or 0,
+		(state.acquiredAt or now) - (state.plannedAt or now), state.turnElapsed or (state.turnStartedAt and now-state.turnStartedAt or 0), travel, state.moveCount or 0, displacement, now))
 end
 
 local function Finish(bot, state, reason, stopTurn)
 	-- 只取消本模块在当前规避模式内发出的转身移动，不能打断已经开始的施法。
 	if stopTurn and state.issuedMove and bot:IsAlive() and bot:GetActiveMode() == BOT_MODE_EVASIVE_MANEUVERS
 	and not bot:IsCastingAbility() and not bot:IsUsingAbility() and not bot:IsChanneling()
-	and not bot:HasModifier(MOTION) then bot:Action_ClearActions(true) end
+	and not bot:HasModifier(MOTION) then bot:Action_ClearActions(true); Actions.Forget(bot) end
 	Log(bot, state, state.phase == 'cast' and 'end' or 'cancel', reason)
+	if state.phase == 'turn' and (reason == 'turn_timeout' or reason == 'turn_no_angle_progress'
+	or reason == 'turn_hard_travel_limit' or reason == 'turn_travel_without_progress') then
+		-- 短暂避开无进展的方向；若随后已经转好，允许直接施法而不再重走转身流程。
+		bot.THD_TeiFailedTurn = {direction=state.direction, expires=DotaTime()+3.0}
+	end
 	bot.THD_TeiBackstep = nil
 	bot.THD_TeiBackstepRetry = DotaTime() + 0.8
 end
@@ -44,7 +65,8 @@ local function State(bot)
 	if state == nil then return nil end
 	if not bot:IsAlive() then Finish(bot, state, 'dead', false); return nil end
 	if DotaTime() > state.expires then
-		Finish(bot, state, state.phase == 'turn' and 'turn_timeout' or 'cast_timeout', state.phase == 'turn')
+		local reason = state.phase == 'await_mode' and 'acquire_timeout' or state.phase == 'turn' and 'turn_timeout' or 'cast_timeout'
+		Finish(bot, state, reason, state.phase == 'turn')
 		return nil
 	end
 	return state
@@ -131,9 +153,9 @@ local function SafeLanding(bot, state, landing, enemies, observation)
 end
 
 local function TurnPoint(bot, direction, observation)
-	-- API没有纯转身命令，给出短直线移动引导；到位即用技能替换，实际移动限48。
+	-- 较远引导点避免短移动到达容差吞掉转身；实际位移由独立预算限制。
 	local origin = bot:GetLocation()
-	local point = origin - direction * 72
+	local point = origin - direction * TURN_GUIDE_DISTANCE
 	if observation.available ~= true
 	or not Geometry.ValidateMovementSegment(origin, point, observation.towers, 96)
 	or not Geometry.ValidateLocalTerrainSegment(origin, point, true) then return nil end
@@ -172,7 +194,7 @@ function B.Start(bot, ability, kind, target, manaReserve)
 	if bot:IsSilenced() or bot:IsRooted() or not ability or ability:GetLevel() == 0 or not ability:IsFullyCastable() then return false end
 	local enemies = Survey(bot)
 	local near, nearest = Nearest(bot:GetLocation(), enemies)
-	local state = {kind = kind, target = target, manaReserve = manaReserve or 0, phase = 'turn'}
+	local state = {kind = kind, target = target, manaReserve = manaReserve or 0, phase = 'await_mode'}
 	if kind == 'kite' or not Valid(bot, target) then state.target = nearest end
 	if not MissionValid(bot, state, ability, enemies) then return false end
 	local origin = bot:GetLocation()
@@ -199,10 +221,14 @@ function B.Start(bot, ability, kind, target, manaReserve)
 		if direction:Length2D() > 0.9 and SafeLanding(bot, state, landing, enemies, observation) then
 			local facePoint = origin - direction * 72
 			local aligned = bot:IsFacingLocation(facePoint, TURN_TOLERANCE)
-			if (aligned or TurnPoint(bot, direction, observation) ~= nil)
+			local failed = bot.THD_TeiFailedTurn
+			local sameFailed = failed ~= nil and DotaTime() < failed.expires
+				and direction.x * failed.direction.x + direction.y * failed.direction.y > math.cos(math.rad(15))
+			if (aligned or (not sameFailed and TurnPoint(bot, direction, observation) ~= nil))
 			and TurnSurvivable(bot, enemies, ability, aligned and 0 or TURN_TIMEOUT) then
 				local after = Nearest(landing, enemies)
-				local score = after - near + (aligned and 120 or 0)
+				-- 逃生尤其偏好小角度方案，避免为稍远落点强行转近180度。
+				local score = after - near + (aligned and 120 or 0) - AngleError(bot, direction) * (kind == 'escape' and 3 or 2)
 				if kind ~= 'escape' then score = score - math.abs(Geometry.Distance(landing, state.target:GetExtrapolatedLocation(0.35)) - 500) end
 				if kind == 'escape' then
 					local ancient = GetAncient(bot:GetTeam())
@@ -222,9 +248,11 @@ function B.Start(bot, ability, kind, target, manaReserve)
 			state.blastTargets = state.blastTargets + 1
 		end
 	end
-	state.startLocation = Vector(origin.x, origin.y, origin.z)
-	state.expires = DotaTime() + TURN_TIMEOUT
-	state.lastMove = -90
+	bot.THD_TeiBackstepSequence = (bot.THD_TeiBackstepSequence or 0) + 1
+	state.id = bot.THD_TeiBackstepSequence
+	state.plannedAt = DotaTime()
+	state.expires = state.plannedAt + ACQUIRE_TIMEOUT
+	state.moveCount = 0
 	bot.THD_TeiBackstep = state
 	Log(bot, state, 'plan', 'safe_candidate')
 	return true
@@ -239,6 +267,11 @@ function B.Think(bot)
 	if state == nil then return false end
 	local ability = bot:GetAbilityByName(ABILITY)
 	if ability == nil then Finish(bot, state, 'missing_ability', false); return true end
+	if bot:GetActiveMode() ~= BOT_MODE_EVASIVE_MANEUVERS then return true end
+	if state.acquiredAt == nil then
+		state.acquiredAt = DotaTime()
+		Log(bot, state, 'acquired', 'mode_committed')
+	end
 	if state.phase == 'cast' then
 		if bot:HasModifier(MOTION) then return true end
 		if ability:IsInAbilityPhase() then
@@ -259,14 +292,19 @@ function B.Think(bot)
 	if bot:IsCastingAbility() or bot:IsUsingAbility() or bot:IsChanneling() then
 		Finish(bot, state, 'other_cast', false); return true
 	end
-	if Geometry.Distance(bot:GetLocation(), state.startLocation) > MAX_TURN_TRAVEL then
-		Finish(bot, state, 'turn_travel_limit', true); return true
-	end
 	local enemies = Survey(bot)
 	local facePoint = bot:GetLocation() - state.direction * 72
 	local aligned = bot:IsFacingLocation(facePoint, TURN_TOLERANCE)
+	local error = AngleError(bot, state.direction)
+	local now = DotaTime()
+	local travel = state.startLocation and Geometry.Distance(bot:GetLocation(), state.startLocation) or 0
+	if state.phase == 'turn' then
+		if error <= state.bestError - 4 then state.bestError, state.progressAt = error, now end
+		-- 接管前的旧动作位移不计入预算；硬上限不因角度进展而被取消。
+		if travel > MAX_TURN_TRAVEL then Finish(bot, state, 'turn_hard_travel_limit', true); return true end
+	end
 	if not MissionValid(bot, state, ability, enemies)
-	or not TurnSurvivable(bot, enemies, ability, aligned and 0 or math.max(0, state.expires - DotaTime())) then
+	or not TurnSurvivable(bot, enemies, ability, aligned and 0 or (state.phase == 'await_mode' and TURN_TIMEOUT or math.max(0, state.expires - now))) then
 		Finish(bot, state, 'mission_or_health_changed', true); return true
 	end
 	local origin = bot:GetLocation()
@@ -285,26 +323,50 @@ function B.Think(bot)
 			end
 		end
 		state.phase = 'cast'
+		state.turnTravel = travel
+		state.turnElapsed = state.turnStartedAt and now-state.turnStartedAt or 0
+		state.castOrigin = Vector(origin.x, origin.y, origin.z)
 		state.expires = DotaTime() + ability:GetCastPoint() + 0.55
 		bot.THD_TeiActionUntil = DotaTime() + ability:GetCastPoint() + 0.35
 		bot:Action_UseAbility(ability)
 		Log(bot, state, 'cast', 'facing_confirmed')
 		return true
 	end
+	if state.phase == 'turn' then
+		local stalled = now - state.progressAt
+		-- 先允许朝向合格的安全施法；未对准时才按软位移和角度停滞退出。
+		if travel > SOFT_TURN_TRAVEL and stalled >= RETRY_AFTER then
+			Finish(bot, state, 'turn_travel_without_progress', true); return true
+		end
+		if stalled >= NO_PROGRESS_TIMEOUT then Finish(bot, state, 'turn_no_angle_progress', true); return true end
+		if stalled < RETRY_AFTER or state.moveCount >= 2 or now-state.lastMove < RETRY_AFTER then return true end
+	end
 	local point = TurnPoint(bot, state.direction, observation)
 	if point == nil then Finish(bot, state, 'turn_path_changed', true); return true end
-	if DotaTime() - state.lastMove >= 0.10 then
-		state.lastMove = DotaTime()
-		state.issuedMove = true
-		bot:Action_MoveToLocation(point)
+	-- 有界强制发单绕过普通赶路的1.2秒复用窗口，仍经过真实施法保护。
+	local accepted, issued = Actions.Move(bot, point, 10, 'direct', true, 'tei_turn')
+	if not accepted or not issued then
+		Log(bot, state, 'move_rejected', accepted and 'not_submitted' or 'action_protected')
+		Finish(bot, state, 'turn_order_rejected', false); return true
 	end
+	state.issuedMove = true
+	state.moveCount = state.moveCount + 1
+	state.lastMove = now
+	if state.phase == 'await_mode' then
+		state.phase = 'turn'
+		state.turnStartedAt, state.progressAt = now, now
+		state.bestError = error
+		state.startLocation = Vector(origin.x, origin.y, origin.z)
+		state.expires = now + TURN_TIMEOUT
+	end
+	Log(bot, state, 'move', state.moveCount == 1 and 'direct_submitted' or 'no_progress_retry')
 	return true
 end
 
 function B.OnEnd(bot)
 	local state = State(bot)
 	if state == nil then return false end
-	if state.phase == 'turn' then Finish(bot, state, 'mode_lost', false) end
+	if state.phase ~= 'cast' then Finish(bot, state, 'mode_lost', false) end
 	return true
 end
 

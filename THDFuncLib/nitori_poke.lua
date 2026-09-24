@@ -44,7 +44,7 @@ end
 local function IsSpellProfile(bot)
 	return bot ~= nil
 		and SafeCall(bot, "GetUnitName", "") == HERO_NAME
-		and BotProfile.GetProfile(bot) == BotProfile.DAMAGE_SPELL
+		and BotProfile.GetProfile(bot) == BotProfile.SUPPORT
 end
 
 local function ShouldYield(bot)
@@ -413,7 +413,8 @@ function NitoriPoke.OnEnd(bot)
 	bot.thdNitoriPokeActive = false
 	bot.thdNitoriPokeSnapshot = nil
 	bot.thdNitoriPokeNextMoveTime = nil
-	ClearHarvest(bot)
+	-- 任务所有权已释放，已启动收割的施法/命中状态仍由英雄入口收尾。
+	if not IsCastLifecycleProtected(bot) then ClearHarvest(bot) end
 end
 
 return NitoriPoke

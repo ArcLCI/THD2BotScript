@@ -1,4 +1,5 @@
 local J = {}
+local ActionIntent = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 
 local RadiantFountain = Vector( -6619, -6336, 384 )
 local DireFountain = Vector( 6928, 6372, 392 )
@@ -285,6 +286,7 @@ function J.ClearActionsThrottled(bot, actionName, once, interval)
 	if bot == nil then return false end
 	if actionName == nil then actionName = 'clear_actions' end
 	if J.ShouldThrottleAction(bot, actionName, tostring(once), interval or 0.4) then return false end
+	ActionIntent.Forget(bot)
 	IncrementActionPressure(bot, 'ClearActions')
 	bot:Action_ClearActions(once == true)
 	return true
@@ -339,7 +341,7 @@ function J.QueueUseAbilityOnTreeThrottled(bot, actionName, ability, treeId, inte
 end
 
 local function IsStickyTargetValid(target)
-	if IsNullUnit(target) then return false end
+	if IsNullUnit(target) or not J.CanBeAttacked(target) then return false end
 	if target.IsAlive == nil then return false end
 	local ok, alive = pcall(function() return target:IsAlive() end)
 	return ok and alive == true
@@ -372,12 +374,9 @@ function J.GetStickyTarget(bot, stickyKey, candidate, holdInterval, maxDistance)
 end
 
 function J.ActionAttackUnit(bot, actionName, target, once, interval)
-	if IsNullUnit(target) then return false end
-	local targetKey = GetUnitActionKey(target)
-	if J.ShouldThrottleAction(bot, actionName, targetKey, interval) then return true end
-	IncrementActionPressure(bot, 'Action_AttackUnit')
-	bot:Action_AttackUnit(target, once)
-	return true
+	local accepted, issued = ActionIntent.Attack(bot, target, once)
+	if issued then IncrementActionPressure(bot, 'Action_AttackUnit') end
+	return accepted
 end
 
 local SkillMovement = nil
@@ -395,23 +394,18 @@ function J.ActionMoveToLocation(bot, actionName, vLoc, interval, distance, valid
 			return false
 		end
 	end
-	local throttleName=kind=='detour' and actionName..'_skill_detour' or actionName
-	local targetKey = GetLocationActionKey(vLoc, kind=='detour' and 24 or distance)
-	if not force and J.ShouldThrottleAction(bot, throttleName, targetKey, interval) then return true end
-	IncrementActionPressure(bot, 'Action_MoveToLocation')
-	bot:Action_MoveToLocation(vLoc)
-	if routed then SkillMovement.NoteTaskMove(bot,actionName,vLoc,kind) end
-	return true
+	local accepted, issued = ActionIntent.Move(bot, vLoc, kind=='detour' and 24 or distance, 'move', force)
+	if issued then IncrementActionPressure(bot, 'Action_MoveToLocation') end
+	if accepted and routed then SkillMovement.NoteTaskMove(bot,actionName,vLoc,kind) end
+	return accepted
 end
 
 function J.ActionAttackMove(bot, actionName, vLoc, interval, distance)
-	if vLoc == nil then return false end
-	local targetKey = GetLocationActionKey(vLoc, distance)
-	if J.ShouldThrottleAction(bot, actionName, targetKey, interval) then return true end
-	IncrementActionPressure(bot, 'Action_AttackMove')
-	bot:Action_AttackMove(vLoc)
-	return true
+	local accepted, issued = ActionIntent.Move(bot, vLoc, distance, 'attack_move')
+	if issued then IncrementActionPressure(bot, 'Action_AttackMove') end
+	return accepted
 end
+
 ----------------------------------------------------------------
 
 
@@ -1476,8 +1470,12 @@ function J.IsTeiActionProtected(bot)
 	return false
 end
 
+function J.IsKasenActionProtected(bot)
+	return ActionIntent.KasenProtected(bot)
+end
+
 function J.CanNotUseAction( bot )
-	return not bot:IsAlive()
+	return ActionIntent.Protected(bot)
 			or J.IsTeiActionProtected(bot)
 			or (bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil)
 			or J.IsTowerEscapeActive(bot)

@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/avoidance_config')
 local Geometry = require(GetScriptDirectory()..'/THDFuncLib/avoidance_geometry')
 
@@ -309,7 +310,9 @@ local function Advance(bot, phase)
 		and adapter.Execute(bot, state.waypoints, state.generation, phase)
 	if not native then
 		if type(bot.Action_MoveToLocation) ~= 'function' then return false, 'move_unavailable' end
-		bot:Action_MoveToLocation(target)
+		local accepted,issued=Actions.Move(bot,target,24,'move',false,'path_'..tostring(state.generation))
+		if not accepted then return false,'action_protected' end
+		if not issued then return true,'reused' end
 		bot.THD_AvoidanceOwnedMove = {target = target, generation = state.generation}
 	end
 	state.lastExecuteAt = Now()

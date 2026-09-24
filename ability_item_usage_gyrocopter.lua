@@ -9,7 +9,9 @@ local Backstep = require(GetScriptDirectory() .. '/THDFuncLib/tei_backstep')
 local E_BUFF = 'modifier_ability_thdots_tei03'
 local R_BUFF = 'modifier_ability_thdots_tei04'
 local HORSE_BUFF = 'modifier_item_horse_king_open'
-local RUN_ID = 'TEI-R3-20260919'
+local RUN_ID = 'TEI-R4-20260919'
+local TEETH_BUFF = 'modifier_item_teeth_berserk_buff'
+local TRINITY_BUFF = 'modifier_item_trinity_active_shield'
 
 local function Special(ability, name, fallback)
 	if ability == nil then return fallback end
@@ -149,6 +151,16 @@ local function GuaranteedMooncake(bot)
 	return false
 end
 
+local function BuffRemaining(bot, modifierName)
+	-- 用Bot侧索引读取剩余时间；刚发单或增益即将结束都不算爆发窗口。
+	for index = 0, bot:NumModifiers() - 1 do
+		if bot:GetModifierName(index) == modifierName then
+			return bot:GetModifierRemainingDuration(index)
+		end
+	end
+	return 0
+end
+
 function AbilityUsageThink()
 	local bot = GetBot()
 	-- 转身和后跳由高优先级规避模式推进，本入口不能被自己的保护锁卡住后另发动作。
@@ -181,6 +193,12 @@ function AbilityUsageThink()
 
 	if retreat and #enemies > 0 then
 		if Backstep.Start(bot, w, 'escape', nil) or TryJump(bot, enemies, true) then return end
+	end
+	-- 三位一体护盾用于受压/撤退，沉默期间仍可使用物品保护自身。
+	local trinity = Item(bot, 'item_trinity')
+	if trinity ~= nil and not bot:HasModifier(TRINITY_BUFF) and nearby <= 1000
+	and (retreat or (pressure and J.GetHP(bot) <= 0.75)) then
+		Issue(bot, trinity); return
 	end
 	local dragon = Item(bot, 'item_dragon_star')
 	if dragon ~= nil and not bot:HasModifier('modifier_item_dragon_star_buff')
@@ -224,6 +242,7 @@ function AbilityUsageThink()
 	local attackingEnemyHero = anchorAttack and attackTarget:IsHero() and not J.IsSuspiciousIllusion(attackTarget)
 	local buffContext = J.IsGoingOnSomeone(bot) or J.IsInTeamFight(bot, 1200) or pressure or attackingEnemyHero
 	local buffEnemyInRange = false
+	local buffEnemyCount = 0
 	local buffEnemyDistance = math.huge
 	local buffRange = math.min(eRadius, bot:GetAttackRange() + 250)
 	for _, enemy in ipairs(enemies) do
@@ -231,6 +250,7 @@ function AbilityUsageThink()
 		if not enemy:IsAttackImmune()
 		and ((buffContext and distance <= buffRange) or (anchorAttack and distance <= eRadius)) then
 			buffEnemyInRange = true
+			buffEnemyCount = buffEnemyCount + 1
 			buffEnemyDistance = math.min(buffEnemyDistance, distance)
 		end
 	end
@@ -248,6 +268,17 @@ function AbilityUsageThink()
 		if Ready(e) and not bot:HasModifier(E_BUFF) and bot:GetMana() >= e:GetManaCost() + reserve then
 			Issue(bot, e); return
 		end
+	end
+	-- 乳牙会沉默自身，必须先确认双增益；团战允许提前开，不强求已有普攻锁定。
+	local burstContact = attackingEnemyHero or (anchorAttack and buffEnemyDistance <= eRadius)
+	local teamfightBurst = (J.IsInTeamFight(bot, 1200) or buffEnemyCount >= 2)
+		and buffEnemyDistance <= eRadius
+	if not retreat and not bot:IsDisarmed() and buffEnemyInRange and (teamfightBurst or burstContact)
+	and bot:HasModifier(E_BUFF) and bot:HasModifier(R_BUFF)
+	and BuffRemaining(bot, E_BUFF) >= 1.0 and BuffRemaining(bot, R_BUFF) >= 1.0
+	and not bot:HasModifier(TEETH_BUFF) and SafeCombat(bot, enemies, true) then
+		local teeth = Item(bot, 'item_teeth')
+		if teeth ~= nil then Issue(bot, teeth); return end
 	end
 	if attackingHero and canCast and Ready(q) and GuaranteedMooncake(bot) then
 		local eReserve = Ready(e) and not bot:HasModifier(E_BUFF) and e:GetManaCost() or 0

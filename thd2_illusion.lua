@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local X = {}
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
@@ -90,19 +91,13 @@ local function MinionActionAttackUnit(unit, actionName, target, once, interval)
 		local allowed = Wasteland.CanControlledUnitAttackBuilding(ownerBot, target)
 		if not allowed then return false end
 	end
-    local targetKey = GetMinionUnitKey(target)
-    if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_ATTACK_INTERVAL) then return true end
-    unit:Action_AttackUnit(target, once)
-    return true
+    return Actions.Attack(unit,target,once)
 end
 
 local function MinionActionMoveToLocation(unit, actionName, vLoc, interval, bucket)
     if not CanIssueMinionAction(unit) then return false end
     if vLoc == nil then return false end
-    local targetKey = GetMinionLocationKey(vLoc, bucket)
-    if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_MOVE_INTERVAL) then return true end
-    unit:Action_MoveToLocation(vLoc)
-    return true
+    return Actions.Move(unit,vLoc,bucket)
 end
 
 local function MinionActionAttackMove(unit, actionName, vLoc, interval, bucket)
@@ -113,10 +108,7 @@ local function MinionActionAttackMove(unit, actionName, vLoc, interval, bucket)
 		-- 高地或共享目标尚未开放时降级为普通移动，禁止自动索敌建筑。
 		return MinionActionMoveToLocation(unit, actionName .. '_managed_move', vLoc, interval, bucket)
 	end
-    local targetKey = GetMinionLocationKey(vLoc, bucket)
-    if ShouldThrottleMinionAction(unit, actionName, targetKey, interval or MINION_MOVE_INTERVAL) then return true end
-    unit:Action_AttackMove(vLoc)
-    return true
+    return Actions.Move(unit,vLoc,bucket,'attack_move')
 end
 
 local function GetStableMinionRandomLocation(unit, key, center, minRadius, maxRadius, interval)

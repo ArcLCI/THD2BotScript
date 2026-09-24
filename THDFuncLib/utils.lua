@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 --[[ Generated with https://github.com/TypeScriptToLua/TypeScriptToLua ]]
 -- Lua Library inline imports
@@ -1471,9 +1472,9 @@ function ____exports.moveToPositionAvoidingZones(bot, targetPosition)
             bot:GetLocation(),
             targetPosition
         )
-        bot:Action_MoveToLocation(safePosition)
+        Actions.Move(bot, safePosition)
     else
-        bot:Action_MoveToLocation(targetPosition)
+        Actions.Move(bot, targetPosition)
     end
 end
 function ____exports.drawAvoidanceZones()
@@ -1915,7 +1916,7 @@ function ____exports.SmartSpreadOut(bot, allyDistanceThreshold, minDistance, avo
     end
     local dirAwayFromAlly = ____exports.SpreadBotApartDir(bot, minDistance, hNearbyUnits)
     if not dirAwayFromAlly then
-        bot:Action_MoveToLocation(add(
+        Actions.Move(bot, add(
             ____exports.GetTeamFountainTpPoint(),
             RandomVector(50)
         ))
@@ -1953,7 +1954,7 @@ function ____exports.SmartSpreadOut(bot, allyDistanceThreshold, minDistance, avo
             targetLoc = add(botLoc, finalDir)
         end
     end
-    bot:Action_MoveToLocation(add(
+    Actions.Move(bot, add(
         targetLoc,
         RandomVector(50)
     ))
@@ -2318,13 +2319,13 @@ function ____exports.MoveBotSafely(bot, targetPos)
     local botPos = bot:GetLocation()
     local safeDestination = ____exports.GetSafeDestination(bot, targetPos)
     if length2D(sub(botPos, safeDestination)) <= 100 then
-        bot:Action_MoveToLocation(safeDestination)
+        Actions.Move(bot, safeDestination)
         return
     end
-    bot:Action_MoveToLocation(safeDestination)
+    Actions.Move(bot, safeDestination)
 end
---- Minimum time a custom bot mode should remain preferred after it becomes active.
-____exports.BOT_MODE_SWITCH_LOCK_INTERVAL = 1.0
+-- 保留开始事件字段供诊断使用；模式稳定性由具体任务与引擎仲裁负责。
+____exports.BOT_MODE_SWITCH_LOCK_INTERVAL = 0
 function ____exports.NoteModeStart(bot, modeName)
     if bot == nil then
         return
@@ -2334,16 +2335,9 @@ function ____exports.NoteModeStart(bot, modeName)
         time = DotaTime()
     }
 end
+-- 引擎已有当前模式保持偏置；不再以全局一秒锁压制新的安全任务。
 function ____exports.AllowModeDesire(bot, modeName)
-    if bot == nil or bot.THD_ModeSwitchLock == nil then
-        return true
-    end
-    local lock = bot.THD_ModeSwitchLock
-    local lockTime = lock.time or -9999
-    if DotaTime() - lockTime >= ____exports.BOT_MODE_SWITCH_LOCK_INTERVAL then
-        return true
-    end
-    return lock.mode == modeName
+    return bot ~= nil and bot:IsAlive()
 end
 ____exports.BOT_MODE_DESIRE_RECALC_INTERVAL = 1.0
 function ____exports.GetCachedModeDesire(bot, modeName, computeFn, interval)

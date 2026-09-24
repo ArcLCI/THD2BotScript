@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 local Push = require( GetScriptDirectory()..'/THDFuncLib/aba_push')
@@ -12,9 +13,11 @@ function GetDesire()
     bot.PushLaneDesire[LANE_BOT] = Push.GetPushDesire(bot, LANE_BOT)
     return bot.PushLaneDesire[LANE_BOT]
 end
-function OnStart() Utils.NoteModeStart(bot, 'push_bot') end
+function OnStart() Utils.NoteModeStart(bot, 'push_bot'); Push.OnStart(bot, LANE_BOT) end
 function Think() Push.PushThink(bot, LANE_BOT) end
 function OnEnd() Push.OnEnd(bot, LANE_BOT) end
+
+GetDesire = Actions.GuardDesire(bot,BOT_MODE_PUSH_TOWER_BOT,GetDesire)
 
 -- 仅观察本模式自然返回值，不参与模式选择。
 GetDesire = CandidateDebug.Wrap('push_bot', GetDesire)

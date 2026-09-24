@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/bot_generic")
 
 local Scheduler = require(GetScriptDirectory() .. "/thd2_scheduler")
@@ -86,7 +87,7 @@ local function SuikaMinionThink(unit)
 	if target == nil then target = FindClosestTarget(unit, unit:GetNearbyCreeps(SUIKA_MINION_RANGE, true)) end
 
 	if target ~= nil then
-		if target ~= currentTarget then unit:Action_AttackUnit(target, true) end
+		Actions.Attack(unit, target, true)
 	elseif currentTarget ~= nil then
 		unit:Action_ClearActions(false)
 	end

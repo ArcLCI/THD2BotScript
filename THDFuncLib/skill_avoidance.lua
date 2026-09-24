@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/avoidance_config')
 local G = require(GetScriptDirectory()..'/THDFuncLib/avoidance_geometry')
 local Z = require(GetScriptDirectory()..'/THDFuncLib/skill_zones')
@@ -240,7 +241,9 @@ local function BridgeThink(bot,state,zones,ctx)
 	local _,risk=Threat.RouteCost(ctx,current,{target},state.intentGoal)
 	if risk>0.35 then Release(bot,state,'bridge_pursuer_risk',true,zones);return true end
 	if Now()>=state.nextAction then
-		state.nextAction=Now()+0.18;bot:Action_MoveToLocation(target)
+		state.nextAction=Now()+0.18
+		local accepted,issued=Actions.Move(bot,target,24,'move',false,'skill_'..tostring(state.generation))
+		if not accepted or not issued then return true end
 		state.order={mode=BOT_MODE_EVASIVE_MANEUVERS,at=Now(),target=Copy(target)}
 		Z.Log(bot,'bridge_move',string.format('generation=%d waypoint=%d x=%.1f y=%.1f target_x=%.1f target_y=%.1f pursuit_risk=%.3f',
 			state.generation,state.bridgeIndex,current.x,current.y,target.x,target.y,risk))
@@ -364,7 +367,8 @@ function Skill.Think(bot)
 	end
 	if now>=state.nextAction then
 		state.nextAction=now+0.18
-		bot:Action_MoveToLocation(state.target)
+		local accepted,issued=Actions.Move(bot,state.target,24,'move',false,'skill_'..tostring(state.generation))
+		if not accepted or not issued then return true end
 		state.order={mode=BOT_MODE_EVASIVE_MANEUVERS,at=now,target=Copy(state.target)}
 		Z.Log(bot,'escape_move',string.format('generation=%d x=%.1f y=%.1f target_x=%.1f target_y=%.1f',state.generation,current.x,current.y,state.target.x,state.target.y))
 	end

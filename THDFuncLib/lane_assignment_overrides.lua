@@ -18,4 +18,10 @@ return {
 			support = {mid=3, safe_core=2, off_core=2, soft_support=22, hard_support=18},
 		},
 	},
+	["npc_dota_hero_bristleback"] = {
+		-- 华扇单一前排先验；不强行覆盖团队最终分路。
+		profiles = {
+			frontline = {off_core=22, safe_core=8, soft_support=6, mid=3, hard_support=1},
+		},
+	},
 }

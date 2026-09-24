@@ -1,3 +1,5 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
+local Tasks = require(GetScriptDirectory()..'/THDFuncLib/mode_task')
 local SkillMovement = require(GetScriptDirectory()..'/THDFuncLib/skill_avoidance')
 local TowerSafety = require(GetScriptDirectory()..'/THDFuncLib/tower_safety')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
@@ -282,18 +284,6 @@ local function ComputeDesire()
 		return activeRuneDesire
 	end
 
-	local runeDesireInterval = RUNE_DESIRE_MID_INTERVAL
-	if DotaTime() < 0 then
-		runeDesireInterval = RUNE_DESIRE_EARLY_INTERVAL
-	elseif DotaTime() > 20 * 60 then
-		runeDesireInterval = RUNE_DESIRE_LATE_INTERVAL
-	end
-
-	if not Timer.ShouldRunBotTask(bot, 'rune_desire', runeDesireInterval, RUNE_DESIRE_STAGGER) then
-		CandidateDebug.Note('scan_throttled')
-		return BOT_MODE_DESIRE_NONE
-	end
-
 	local wrDesire = ConsiderWisdomRune()
 	if wrDesire > 0.1 then
 		CandidateDebug.Note('wisdom_candidate')
@@ -508,27 +498,84 @@ function ConsiderWisdomRune()
 	return 0
 end
 
+local function CaptureRuneState()
+	local idle=nil
+	if idleRuneTask~=nil then idle={};for k,v in pairs(idleRuneTask) do idle[k]=v end end
+	return {rune=ClosestRune,distance=ClosestDistance,status=nRuneStatus,
+		wisdom={wisdomRuneInfo[1],wisdomRuneInfo[2],wisdomRuneInfo[3]},idle=idle,
+		wisdomEnter=wisdomRuneEnterTime,minute=timeInMin}
+end
+local function RestoreRuneState(state)
+	if state==nil then return end
+	ClosestRune,ClosestDistance,nRuneStatus=state.rune,state.distance,state.status
+	wisdomRuneInfo={state.wisdom[1],state.wisdom[2],state.wisdom[3]}
+	idleRuneTask=state.idle
+	wisdomRuneEnterTime,timeInMin=state.wisdomEnter,state.minute
+end
+local function RuneTask(snapshot)
+	local kind,location,key='rune',nil,snapshot.rune
+	if snapshot.wisdom[3] then
+		kind,key='wisdom',snapshot.wisdom[2];location=wisdomRuneSpots[key]
+	elseif DotaTime()<0 then kind,key='pregame','pregame'
+	elseif bot:IsInvulnerable() and bot:DistanceFromFountain()<100 then kind,key='fountain','fountain'
+	elseif snapshot.rune~=nil and snapshot.rune~=-1 then location=GetRuneSpawnLocation(snapshot.rune) end
+	return {kind=kind,key=key,location=location,snapshot=snapshot,reason=kind,
+		arrivalRadius=kind=='wisdom' and WISDOM_RUNE_PICKUP_RADIUS or RUNE_PICKUP_DISTANCE,stallSeconds=6}
+end
+local function RuneMissionSafe()
+	return not J.Retreat.ShouldYield(bot,J.Retreat.HIGH)
+		and not J.Utils.IsTeamPushingSecondTierOrHighGround(bot)
+		and J.GetEnemiesAroundAncient(bot,3200)==0
+		and DotaTime()-J.Utils.GameStates.recentDefendTime>=2
+end
+local pendingRuneSnapshot=nil
 function GetDesire()
-	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
-		ClearActiveRuneTarget()
-		ClearWisdomRuneMode()
-		CandidateDebug.Note('high_retreat')
-		return BOT_MODE_DESIRE_NONE
+	local active=Tasks.Active(bot,'rune')
+	if not RuneMissionSafe() then
+		Tasks.Release(bot,'rune','high_retreat');ClearActiveRuneTarget();ClearWisdomRuneMode();return 0
 	end
-	return Utils.GetCachedModeDesire(bot, 'rune', ComputeDesire)
+	if active~=nil then
+		RestoreRuneState(active.snapshot)
+		if not Tasks.Check(bot,'rune',true) then
+			if active.kind=='rune' then X.MarkRuneAbandoned(active.key) end
+			ClearActiveRuneTarget();ClearWisdomRuneMode();return 0
+		end
+		if active.kind=='rune' or active.kind=='wisdom' then
+			-- 存活任务只复核当前符点、危险与进度，不在Think里重新寻找另一个符。
+			local score=GetActiveRuneDesire()
+			if score<=0 then Tasks.Release(bot,'rune','rune_invalid_or_unsafe');return 0 end
+			return Tasks.Offer(bot,'rune',score,RuneTask(CaptureRuneState()))
+		end
+	end
+	local saved=active and CaptureRuneState() or nil
+	local interval=DotaTime()<0 and RUNE_DESIRE_EARLY_INTERVAL
+		or DotaTime()>RUNE_LATE_GAME_TIME and RUNE_DESIRE_LATE_INTERVAL or RUNE_DESIRE_MID_INTERVAL
+	local score=Utils.GetCachedModeDesire(bot,'rune',function()
+		local value=ComputeDesire()
+		pendingRuneSnapshot=CaptureRuneState()
+		return value
+	end,interval)
+	if saved then RestoreRuneState(saved) end
+	if score<=0 or pendingRuneSnapshot==nil then Tasks.Release(bot,'rune','no_candidate');return 0 end
+	return Tasks.Offer(bot,'rune',score,RuneTask(pendingRuneSnapshot))
 end
 
 function OnStart()
-	Utils.NoteModeStart(bot, 'rune')
-	runeModeStartTime = DotaTime()
+	Utils.NoteModeStart(bot,'rune')
+	local task=Tasks.Start(bot,'rune')
+	if task then RestoreRuneState(task.snapshot) end
+	runeModeStartTime=DotaTime()
 end
 
 function OnEnd()
-	runeModeStartTime = -9999
-	idleRuneTask = nil
+	Tasks.Release(bot,'rune','mode_end')
+	runeModeStartTime=-9999
+	pendingRuneSnapshot=nil
+	ClearActiveRuneTarget();ClearWisdomRuneMode()
 end
 
-function Think()
+local function ExecuteRuneTask()
+	if J.CanNotUseAction(bot) then return end
     if not Timer.ShouldRunBotTask(bot, 'rune_think', 0.25, 0.04) then return end
     if bot:IsInvulnerable()
     and J.GetHP(bot) > 0.95
@@ -598,7 +645,8 @@ function Think()
 		if not ValidateIdleRuneTask() then ClearActiveRuneTarget(); return end
 		ClosestRune = idleRuneTask.rune
 	else
-		ClosestRune, ClosestDistance = X.GetBestRuneForThink()
+		-- 沿用OnStart/同模式交接的符点，执行时只刷新距离。
+		if ClosestRune~=nil and ClosestRune~=-1 then ClosestDistance=GetUnitToLocationDistance(bot,GetRuneSpawnLocation(ClosestRune)) end
 	end
 
 	if ClosestRune == nil or ClosestRune == -1 then
@@ -727,10 +775,10 @@ function PickWisdomRune()
 	local point, kind = SkillMovement.ResolveMove(bot, 'rune_wisdom_move', wisdomLoc + RandomVector(15))
 	if point == nil then return 1 end
 	if kind == 'detour' then
-		bot:Action_MoveToLocation(point)
+		Actions.Move(bot,point,24)
 		SkillMovement.NoteTaskMove(bot, 'rune_wisdom_move', point, kind)
 	else
-		bot:Action_MoveDirectly(point)
+		Actions.Move(bot,point,24,'direct')
 		SkillMovement.NoteTaskMove(bot, 'rune_wisdom_move', point, kind, BOT_ACTION_TYPE_MOVE_TO_DIRECTLY)
 	end
 	return 1
@@ -1241,6 +1289,16 @@ function X.GetWisdomRuneSpot()
 
 	return nil
 end
+
+function Think()
+	local task=Tasks.Commit(bot,'rune')
+	if not Tasks.Check(bot,'rune',RuneMissionSafe()) then return end
+	RestoreRuneState(task.snapshot)
+	ExecuteRuneTask()
+	task.snapshot=CaptureRuneState()
+end
+
+GetDesire = Actions.GuardDesire(bot,BOT_MODE_RUNE,GetDesire)
 
 -- 仅观察本模式自然返回值，不参与模式选择。
 GetDesire = CandidateDebug.Wrap('rune', GetDesire)

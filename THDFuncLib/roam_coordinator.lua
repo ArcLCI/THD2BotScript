@@ -2022,6 +2022,14 @@ local function GetMissionDesire(bot, state)
 	return APPROACH_DESIRE
 end
 
+-- 执行入口只复核已激活任务，不触发新候选搜索或发布pending任务。
+function Coordinator.RecheckMission(bot)
+	if not IsCurrentBotHandle(bot) or not IsValidUnit(bot) then return BOT_MODE_DESIRE_NONE end
+	local state=GetState(bot)
+	if state.mission==nil then return BOT_MODE_DESIRE_NONE end
+	return GetMissionDesire(bot,state)
+end
+
 function Coordinator.GetDesire(bot)
 	-- 原生 Bot 动作只能由当前脚本的 GetBot() 实体发出；旧英雄脚本直接失效关闭。
 	if not IsCurrentBotHandle(bot) then CandidateDebug.Note('not_current_bot'); return BOT_MODE_DESIRE_NONE end

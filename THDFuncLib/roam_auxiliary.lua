@@ -11,6 +11,9 @@ local NitoriPoke = require(GetScriptDirectory()..'/THDFuncLib/nitori_poke')
 local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
 
 local Auxiliary = {}
+local pendingTask,activeTask=nil,nil
+local pickupRetryAt=-90
+local itemScanInterval=1.0
 
 local ROAM_DESIRE_INTERVAL = 1.0
 local ROAM_DESIRE_LATE_INTERVAL = 5.0
@@ -272,11 +275,8 @@ local function ComputeDesire()
 	then
 		roamDesireInterval = 7.0
 	end
-	if not Timer.ShouldRunBotTask(bot, 'roam_desire', roamDesireInterval, ROAM_DESIRE_STAGGER) then
-		CandidateDebug.Note('scan_throttled')
-		return BOT_MODE_DESIRE_NONE
-	end
 
+	itemScanInterval=roamDesireInterval
 	ScanEdibleItem()
 	if edibleItem ~= nil and bot:HasModifier("modifier_fountain_aura_buff") then
 		cachedProvider = 'edible_swap'
@@ -289,7 +289,7 @@ local function ComputeDesire()
 	return desire
 end
 
-function Auxiliary.GetDesire()
+local function EvaluateDesire()
 	local specialRoaming = ConsiderHeroSpecificRoaming[bot:GetUnitName()]
 	if specialRoaming ~= nil then
 		local desire = specialRoaming()
@@ -297,6 +297,20 @@ function Auxiliary.GetDesire()
 			CandidateDebug.Note('hero_auxiliary')
 			return desire, HeroSpecificProvider[bot:GetUnitName()] or 'hero_specific'
 		end
+	end
+
+	if activeTask~=nil and activeTask.source=='kusanagi_pickup' then
+		-- 已取得所有权后复核同一掉落物，扫描节流不能被解释成任务失效。
+		activeTask.at=DotaTime()
+		pendingTask=nil
+		local held=Auxiliary.Recheck()
+		if held>0 then
+			pendingTask={};for k,v in pairs(activeTask) do pendingTask[k]=v end
+			pickedItem=activeTask.item
+			return held,activeTask.source
+		end
+		activeTask=nil
+		pickedItem=nil
 	end
 
 	if pickedItem ~= nil and HasKusanagiInInventory() then pickedItem = nil end
@@ -327,9 +341,50 @@ function Auxiliary.GetDesire()
 		CandidateDebug.Note('high_retreat')
 		return BOT_MODE_DESIRE_NONE
 	end
-	local desire = Utils.GetCachedModeDesire(bot, 'roam_auxiliary', ComputeDesire)
+	local desire = Utils.GetCachedModeDesire(bot, 'roam_auxiliary', ComputeDesire,itemScanInterval)
 	if desire == nil or desire <= BOT_MODE_DESIRE_NONE then return BOT_MODE_DESIRE_NONE, 'none' end
 	return desire, cachedProvider
+end
+
+function Auxiliary.GetDesire()
+	local score,source=EvaluateDesire()
+	if score~=nil and score>0 then
+		pendingTask={source=source,reason=source,score=score,at=DotaTime(),item=pickedItem,edible=edibleItem,slot=edibleItemSlot}
+	else pendingTask=nil end
+	if pendingTask~=nil and source~=HeroSpecificProvider[bot:GetUnitName()] then
+		local checked=Auxiliary.Recheck()
+		if checked<=0 then pendingTask=nil;return 0,'none' end
+	end
+	return score,source
+end
+
+function Auxiliary.Recheck()
+	local task=pendingTask or activeTask
+	if task==nil or DotaTime()-task.at>2 then return 0,'none' end
+	local source=task.source
+	local provider=ConsiderHeroSpecificRoaming[bot:GetUnitName()]
+	if provider~=nil and source==HeroSpecificProvider[bot:GetUnitName()] then
+		-- 英雄模块已有各自缓存、前摇/引导/超时检查，不重扫普通物品候选。
+		return provider(),source
+	end
+	if J.Retreat.ShouldYield(bot,J.Retreat.HIGH) then return 0,'none' end
+	if source=='kusanagi_recovery' then return displacedItem~=nil and task.score or 0,source end
+	if source=='edible_swap' then
+		return task.edible~=nil and bot:GetItemInSlot(task.slot)==task.edible
+			and bot:HasModifier('modifier_fountain_aura_buff') and task.score or 0,source
+	end
+	if source=='kusanagi_pickup' then
+		local drop=task.item~=nil and FindDroppedItemByHandle(task.item.item) or nil
+		if drop==nil or HasKusanagiInInventory() or DotaTime()<pickupRetryAt then return 0,source end
+		local distance=GetUnitToLocationDistance(bot,drop.location)
+		local progress=activeTask~=nil and activeTask.source==source and activeTask or task
+		if progress.bestDistance==nil or distance<progress.bestDistance-48 then
+			progress.bestDistance,progress.progressAt=distance,DotaTime()
+		end
+		if DotaTime()-(progress.progressAt or DotaTime())>6 then pickupRetryAt=DotaTime()+3;return 0,source end
+		return task.score,source
+	end
+	return 0,'none'
 end
 
 local function TryHandleDisplacedItem()
@@ -415,6 +470,9 @@ local function TryHandleDisplacedItem()
 end
 
 function Auxiliary.Think()
+	-- 华扇的施法和短库存换位窗口先于拾取/消耗品租约，防止覆盖已提交命令。
+	if J.IsKasenActionProtected(bot) or DotaTime() < (bot.THD_KasenInventoryUntil or -90) then return end
+	if activeTask~=nil and activeTask.source=='kusanagi_pickup' then pickedItem=activeTask.item end
 	-- 消耗品租约活跃时，草薙剑回收与食用物交换必须让行，避免双方争抢同一主背包格。
 	if Consumables.GetState(bot) ~= nil then
 		if Consumables.Think(bot) then return end
@@ -489,9 +547,24 @@ function Auxiliary.Think()
 	bot:Action_PickUpItem(pickedItem.item)
 end
 
-function Auxiliary.OnStart() end
+function Auxiliary.NeedsHandoff()
+	return pendingTask~=nil and (activeTask==nil or pendingTask.source~=activeTask.source
+		or (pendingTask.item and pendingTask.item.item)~=(activeTask.item and activeTask.item.item)
+		or pendingTask.edible~=activeTask.edible)
+end
+
+function Auxiliary.OnStart()
+	activeTask=nil
+	if pendingTask~=nil then activeTask={};for k,v in pairs(pendingTask) do activeTask[k]=v end end
+	if activeTask~=nil then
+		pickedItem,edibleItem,edibleItemSlot=activeTask.item,activeTask.edible,activeTask.slot
+		activeTask.progressAt=DotaTime()
+	end
+end
 
 function Auxiliary.OnEnd()
+	activeTask,pendingTask=nil,nil
+	if bot.THD_ModeDesireCache then bot.THD_ModeDesireCache.roam_auxiliary=nil end
 	pickedItem = nil
 	NitoriPoke.OnEnd(bot)
 end

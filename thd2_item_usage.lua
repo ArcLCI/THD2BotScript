@@ -1698,6 +1698,11 @@ end
 function ConsiderNeutralItems(tBlacklist)
 
 	local npcBot = GetBot()
+	-- 中立物品有独立入口，补齐华扇引导、自锁与接管窗口保护。
+	if npcBot:GetUnitName() == 'npc_dota_hero_bristleback' then
+		local actions = require(GetScriptDirectory() .. '/THDFuncLib/action_intent')
+		if actions.KasenProtected(npcBot) or (npcBot.THD_KasenAction ~= nil and DotaTime() <= npcBot.THD_KasenAction.expires) then return end
+	end
 	local DOTA_ITEM_NEUTRAL_SLOT = 16
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, 650 , true, BOT_MODE_NONE )
 

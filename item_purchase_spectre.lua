@@ -24,7 +24,7 @@ local damageItems = {
 	"item_recipe_trinity",
 }
 
--- 法术输出用格斗扫把补足前期机动，再完成七星剑与破魔净灵札；中期把扫把压成炽热彗星。
+-- 法系辅助用格斗扫把补足前期机动，再完成七星剑与破魔净灵札；中期把扫把压成炽热彗星。
 -- 七星剑本身可由最终配方原位升级三位一体，不再重复购买饕餮叉勺。
 local spellDamageItems = {
 	"item_horse_red",
@@ -44,7 +44,7 @@ local next_purchase = -1
 
 local function GetBuildProfile(bot)
 	local profile = BotProfile.GetProfile(bot)
-	if profile ~= BotProfile.DAMAGE and profile ~= BotProfile.DAMAGE_SPELL then
+	if profile ~= BotProfile.DAMAGE and profile ~= BotProfile.SUPPORT then
 		return BotProfile.DAMAGE
 	end
 	return profile
@@ -80,7 +80,7 @@ function ItemPurchaseThink()
 	if seed_id == nil then seed_id = RandomInt(1, 999999999) end
 
 	local profile = GetBuildProfile(GetBot())
-	local itemsToBuy = profile == BotProfile.DAMAGE_SPELL and spellDamageItems or damageItems
+	local itemsToBuy = profile == BotProfile.SUPPORT and spellDamageItems or damageItems
 	next_purchase = ConsiderItemPurchase(GetPurchaseListWithOptionalEdible(itemsToBuy), seed_id)
 end
 

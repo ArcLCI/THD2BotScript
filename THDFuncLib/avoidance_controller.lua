@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/avoidance_config')
 local Geometry = require(GetScriptDirectory()..'/THDFuncLib/avoidance_geometry')
@@ -580,8 +581,9 @@ local function MoveDirect(bot, state, location, reason, partialExit)
 	if not Geometry.ValidateLocalTerrainSegment(current, location, false) then return false end
 	state.lastDirectActionAt = now
 	state.lastDirectTarget = location
-	if useDirect then bot:Action_MoveDirectly(location)
-	else bot:Action_MoveToLocation(location) end
+	local accepted,issued=Actions.Move(bot,location,24,useDirect and 'direct' or 'move',false,'tower_'..tostring(bot.THD_TowerEscapeGeneration))
+	if not accepted then return false end
+	if not issued then return true end
 	bot.THD_AvoidanceOwnedMove = {target = location, generation = bot.THD_TowerEscapeGeneration or 0,
 		partialExit = partialExit == true, actionType = actionType, moveApi = moveApi}
 	state.actionCount = (state.actionCount or 0) + 1

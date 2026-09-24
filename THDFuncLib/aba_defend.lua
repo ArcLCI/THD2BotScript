@@ -1,3 +1,4 @@
+local Tasks = require(GetScriptDirectory()..'/THDFuncLib/mode_task')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
@@ -218,7 +219,7 @@ function Defend.ShouldYieldToRetreat(bot)
 	return false
 end
 
-function Defend.GetDefendDesire(bot, lane)
+local function ComputeModeDesire(bot, lane)
 	Defend.TryUseGlyph(bot)
 	GetBaseDefenseLocation(bot:GetTeam())
 	if Defend.ShouldYieldToRetreat(bot) then CandidateDebug.Note('high_retreat'); return BOT_MODE_DESIRE_NONE end
@@ -229,9 +230,26 @@ function Defend.GetDefendDesire(bot, lane)
 	end, DEFEND_DESIRE_STAGGER_INTERVAL)
 end
 
+local function TaskName(lane) return 'defend_'..tostring(lane) end
+function Defend.GetDefendDesire(bot,lane)
+	local name=TaskName(lane)
+	local active=Tasks.Active(bot,name)
+	if active~=nil and not Tasks.Check(bot,name,not Defend.ShouldYieldToRetreat(bot)) then return 0 end
+	local score=ComputeModeDesire(bot,lane)
+	if score<=0 then Tasks.Release(bot,name,'score_or_safety');return 0 end
+	local snapshot={}
+	for key,value in pairs(GetLaneState(bot,lane)) do snapshot[key]=value end
+	return Tasks.Offer(bot,name,score,{lane=lane,location=snapshot.defendLoc,
+		reason=snapshot.nEnemyUnitsAroundAncient and snapshot.nEnemyUnitsAroundAncient>0 and 'base_defense' or 'lane_defense',
+		snapshot=snapshot,arrivalRadius=1000,stallSeconds=8})
+end
+function Defend.OnStart(bot,lane)
+	local task=Tasks.Start(bot,TaskName(lane))
+	if task~=nil then bot.laneToDefend=lane end
+end
+
 function Defend.ComputeDefendDesire(bot, lane)
 	if bot:IsIllusion() then CandidateDebug.Note('illusion'); return BOT_MODE_DESIRE_NONE end
-	if bot.laneToDefend == nil then bot.laneToDefend = lane end
 	if bot.DefendLaneDesire == nil then bot.DefendLaneDesire = {0, 0, 0} end
 	local state = GetLaneState(bot, lane)
 
@@ -292,7 +310,6 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 		state.defendLoc = GetBaseDefenseLocation(team)
 		state.distanceToLane = GetUnitToLocationDistance(bot, state.defendLoc)
 		state.nEnemyUnitsAroundAncient = baseEnemyPressure
-		bot.laneToDefend = lane
 		-- 已到四塔中点后释放紧急权重，让攻击、撤退等模式正常接管。
 		if state.distanceToLane <= BASE_DEFENSE_SETTLED_RADIUS then
 			CandidateDebug.Note('base_defense_arrived')
@@ -397,7 +414,6 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 		return BOT_MODE_DESIRE_NONE
 	end
 
-	bot.laneToDefend = lane
 	local nUnitsAroundBuilding = J.GetEnemiesAroundLoc(furthestBuilding:GetLocation(), nSearchRange)
 	local lCloseEnemyHeroesAroundLoc = J.GetLastSeenEnemiesNearLoc(furthestBuilding:GetLocation(), 1200)
 	local urgentMultipler = RemapValClamped(nUnitsAroundBuilding * urgentNum, 1, 15, 0.6, 3)
@@ -439,6 +455,8 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 end
 
 function Defend.DefendThink(bot, lane)
+	local task=Tasks.Commit(bot,TaskName(lane))
+	if not Tasks.Check(bot,TaskName(lane),not Defend.ShouldYieldToRetreat(bot)) then return end
     if not Timer.ShouldRunBotTask(bot, 'defend_think_'..tostring(lane), 0.25, 0.03) then return end
     if J.CanNotUseAction(bot) then return end
 
@@ -458,7 +476,7 @@ function Defend.DefendThink(bot, lane)
 		return
 	end
 
-	local state = GetLaneState(bot, lane)
+	local state = task.snapshot
 	local nSearchRange = 1800
 
 	local attackRange = bot:GetAttackRange()
@@ -714,6 +732,6 @@ function Defend.IsValidBuildingTarget(unit)
 	return ok and result == true
 end
 
-function Defend.OnEnd() end
+function Defend.OnEnd(bot,lane) Tasks.Release(bot,TaskName(lane),'mode_end') end
 
 return Defend

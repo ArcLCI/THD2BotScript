@@ -1057,6 +1057,9 @@ end
 
 function ItemUsageThink()
 	if RefreshBotHandle() then return end
+	-- 华扇候选等待模式接管时也不让通用物品抢先下单。
+	if J.IsKasenActionProtected(bot) or (bot.THD_KasenAction ~= nil and DotaTime() <= bot.THD_KasenAction.expires) then return end
+	if DotaTime() < (bot.THD_KasenInventoryUntil or -90) then return end
 	if J.IsTeiActionProtected(bot) then return end
 	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end

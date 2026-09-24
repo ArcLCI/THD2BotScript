@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/thd2_item_usage")
 
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
@@ -501,7 +502,7 @@ local function TryRescueAlly(bot, ability)
 
 	-- 投掷只会抓取萃香身边最近单位；救援阶段持续贴近目标并锁住本帧动作。
 	if now >= state.nextMoveAt then
-		bot:Action_MoveToLocation(ally:GetLocation())
+		Actions.Move(bot, ally:GetLocation(),24)
 		state.nextMoveAt = now + RESCUE_MOVE_INTERVAL
 	end
 	return true
@@ -706,7 +707,7 @@ local function TryLaneTowerToss(bot, ability)
 
 	-- 对线拉回只追一小段；抓取对象尚未成为唯一最近载荷时绝不提前施法。
 	if now >= state.nextMoveAt then
-		bot:Action_MoveToLocation(target:GetLocation())
+		Actions.Move(bot, target:GetLocation(),24)
 		state.nextMoveAt = now + LANE_TOSS_MOVE_INTERVAL
 	end
 	return true
@@ -885,7 +886,7 @@ local function TryPreferredEnemyHeroToss(bot, ability, profile)
 
 	-- 短时贴近只为让敌方英雄成为唯一最近载荷；超时后立即回退普通小兵 Toss。
 	if now >= state.nextMoveAt then
-		bot:Action_MoveToLocation(target:GetLocation())
+		Actions.Move(bot, target:GetLocation(),24)
 		state.nextMoveAt = now + HERO_TOSS_MOVE_INTERVAL
 	end
 	return true

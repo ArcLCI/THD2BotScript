@@ -92,7 +92,7 @@ return {
 			},
 		},
 
-		-- Nitori：damage / damage_spell
+		-- Nitori：damage / support
 		["npc_dota_hero_spectre"] = {
 			damage = {
 				enabled = false, label = "Nitori 近身输出定位",
@@ -104,8 +104,8 @@ return {
 					solo_experience_conversion = nil, late_carry = nil,
 				},
 			},
-			damage_spell = {
-				enabled = false, label = "Nitori 法术输出定位",
+			support = {
+				enabled = false, label = "Nitori 法系辅助定位",
 				traits = {
 					gold_scaling = nil, level_scaling = nil, lane_independence = nil,
 					last_hit = nil, trading = nil, wave_control = nil,

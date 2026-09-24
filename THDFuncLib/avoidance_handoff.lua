@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/avoidance_config')
 local Geometry = require(GetScriptDirectory()..'/THDFuncLib/avoidance_geometry')
 local Handoff = {}
@@ -250,7 +251,9 @@ local function ExecuteModeHandoffFallback(bot, state)
 	end
 	if type(bot.Action_MoveToLocation) ~= 'function' then return false end
 	state.handoffFallbackLastActionAt = now
-	bot:Action_MoveToLocation(state.handoffFallbackTarget)
+	local accepted,issued=Actions.Move(bot,state.handoffFallbackTarget,80,'move',false,'handoff')
+	if not accepted then return false end
+	if not issued then return true end
 	state.handoffFallbackActionCount = (state.handoffFallbackActionCount or 0) + 1
 	Log(bot, state, 'mode-handoff', 'fallback_move', string.format(
 		'held_for=%.3f fallback_action_count=%d current_x=%.1f current_y=%.1f target_x=%.1f target_y=%.1f travel=%.1f',

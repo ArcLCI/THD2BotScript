@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local Config = require(GetScriptDirectory() .. '/THDFuncLib/roam_config')
 local GeneratedHeroes = require(GetScriptDirectory() .. '/THDFuncLib/lane_assignment_generated')
 
@@ -363,6 +364,7 @@ function Initiation.MarkIssued(bot, abilityName, target)
 	if state.mission == nil or state.info == nil then return false end
 	if state.mission.phase ~= 'engage' or not IsOwner(bot, state.mission) then return false end
 	if abilityName ~= state.info.abilityName or target ~= state.mission.target then return false end
+	Actions.Protect(bot,bot:GetAbilityByName(abilityName),CAST_START_GRACE)
 	state.status = 'issued'
 	state.issuedAbilityName = abilityName
 	state.issuedTime = GetNow()

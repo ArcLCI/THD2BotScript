@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/bot_generic")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/wasteland_strategy")
@@ -42,26 +43,11 @@ local function ThrottledAttack(unit, target)
 		local allowed = Wasteland.CanControlledUnitAttackBuilding(owner, target)
 		if not allowed then return false end
 	end
-	unit.patchouliMinionState = unit.patchouliMinionState or {}
-	local state = unit.patchouliMinionState
-	local key = GetEntityKey(target)
-	if state.action == "attack" and state.key == key
-	and DotaTime() - (state.time or -100) < ATTACK_INTERVAL
-	then return true end
-	unit:Action_AttackUnit(target, true)
-	state.action, state.key, state.time = "attack", key, DotaTime()
-	return true
+	return Actions.Attack(unit,target,true)
 end
 
 local function ThrottledMove(unit, location)
-	unit.patchouliMinionState = unit.patchouliMinionState or {}
-	local state = unit.patchouliMinionState
-	local key = tostring(math.floor(location.x / 120)) .. ":" .. tostring(math.floor(location.y / 120))
-	if state.action == "move" and state.key == key
-	and DotaTime() - (state.time or -100) < MOVE_INTERVAL
-	then return end
-	unit:Action_MoveToLocation(location)
-	state.action, state.key, state.time = "move", key, DotaTime()
+	return Actions.Move(unit,location,100)
 end
 
 local function IsTowerAttacking(unit)

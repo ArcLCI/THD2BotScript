@@ -19,7 +19,8 @@ function BotProfile.GetProfile(bot)
 	if marker == nil then return nil end
 	if marker:GetLevel() == 2 then
 		local unitName = bot.GetUnitName ~= nil and bot:GetUnitName() or nil
-		if unitName == "npc_dota_hero_spectre" then return BotProfile.DAMAGE_SPELL end
+		-- 兼容旧法系标记2；新局法系辅助统一使用support标记3。
+		if unitName == "npc_dota_hero_spectre" then return BotProfile.SUPPORT end
 	end
 	return profilesByLevel[marker:GetLevel()]
 end

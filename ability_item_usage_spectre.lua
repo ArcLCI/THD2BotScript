@@ -1,3 +1,4 @@
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
@@ -21,7 +22,7 @@ local NITORI02_HALF_WIDTH = 200
 local function GetProfile(bot)
 	-- 标记缺失或非法时固定回退输出，不从技能等级反推定位。
 	local profile = BotProfile.GetProfile(bot)
-	if profile ~= BotProfile.DAMAGE and profile ~= BotProfile.DAMAGE_SPELL then
+	if profile ~= BotProfile.DAMAGE and profile ~= BotProfile.SUPPORT then
 		return BotProfile.DAMAGE
 	end
 	return profile
@@ -119,7 +120,7 @@ local function UseNoTargetItem(bot, item)
 end
 
 local function TryUseYukkuri(bot, enemies, profile, interruptOnly)
-	if profile ~= BotProfile.DAMAGE_SPELL then return false end
+	if profile ~= BotProfile.SUPPORT then return false end
 	local item = IsItemAvailable("item_yukkuri_stick")
 	if item == nil or not item:IsFullyCastable() then return false end
 	local castRange = SafeCall(item, "GetCastRange", 600)
@@ -151,7 +152,7 @@ local function TryUseYukkuri(bot, enemies, profile, interruptOnly)
 end
 
 local function TryUsePomojinlingli(bot, enemies, profile, interruptOnly)
-	if profile ~= BotProfile.DAMAGE_SPELL then return false end
+	if profile ~= BotProfile.SUPPORT then return false end
 	local item = IsItemAvailable("item_pomojinlingli")
 	if item == nil or not item:IsFullyCastable() then return false end
 	local castRange = SafeCall(item, "GetCastRange", 750)
@@ -387,7 +388,7 @@ local function ConsiderNitori01(bot, ability, enemies)
 	if distance < 350 or distance > 1150 or not bot:IsFacingLocation(GetLocation(target), 25) then return false end
 	if not IsSafeNitori01Landing(bot, ability, GetLocation(target)) then return false end
 
-	local minimumHP = GetProfile(bot) == BotProfile.DAMAGE_SPELL and 0.65 or 0.6
+	local minimumHP = GetProfile(bot) == BotProfile.SUPPORT and 0.65 or 0.6
 	if HasScepterPower(bot) and not HasDragonProtection(bot) then
 		minimumHP = 0.8
 		if J.GetAllyCount(bot, 1000) < J.GetEnemyCount(bot, 1000) then return false end
@@ -463,7 +464,7 @@ local function GetLineCandidates(bot, profile)
 	AddUnits(GetVisibleEnemies(bot, NITORI02_LENGTH + 100, false), 5, "hero")
 	AddUnits(SafeCall(bot, "GetNearbyLaneCreeps", {}, NITORI02_LENGTH + 100, true), 1, "creep")
 	AddUnits(SafeCall(bot, "GetNearbyNeutralCreeps", {}, NITORI02_LENGTH + 100), 1, "creep")
-	local buildingMana = profile == BotProfile.DAMAGE_SPELL and 0.35 or 0.7
+	local buildingMana = profile == BotProfile.SUPPORT and 0.35 or 0.7
 	if GetMP(bot) >= buildingMana and #GetVisibleEnemies(bot, NITORI02_LENGTH, false) == 0 then
 		local enemyBuildings = UNIT_LIST_ENEMY_BUILDINGS ~= nil
 			and GetUnitList(UNIT_LIST_ENEMY_BUILDINGS)
@@ -504,7 +505,7 @@ end
 
 local function FindLaningNitori02Target(bot, candidates, profile)
 	if not IsLaningPressureWindow(bot)
-	or GetMP(bot) < (profile == BotProfile.DAMAGE_SPELL and 0.5 or 0.65)
+	or GetMP(bot) < (profile == BotProfile.SUPPORT and 0.5 or 0.65)
 	or GetHP(bot) < 0.6
 	or bot:WasRecentlyDamagedByAnyHero(2.5)
 	or J.GetEnemyCount(bot, 450) > 0
@@ -538,7 +539,7 @@ end
 local function ConsiderNitori02(bot, ability, profile)
 	if not IsCastable(ability) or bot:HasModifier(FLIGHT_MODIFIER) then return nil end
 	local candidates = GetLineCandidates(bot, profile)
-	if profile == BotProfile.DAMAGE_SPELL and J.IsPushing(bot)
+	if profile == BotProfile.SUPPORT and J.IsPushing(bot)
 	and GetMP(bot) >= 0.35 and #GetVisibleEnemies(bot, NITORI02_LENGTH, false) == 0
 	then
 		local buildingEndpoint, buildingScore = nil, -math.huge
@@ -580,7 +581,7 @@ local function ConsiderNitori02(bot, ability, profile)
 	end
 	local laningTarget = FindLaningNitori02Target(bot, candidates, profile)
 	if laningTarget ~= nil then return laningTarget end
-	if profile == BotProfile.DAMAGE_SPELL and GetMP(bot) >= 0.35
+	if profile == BotProfile.SUPPORT and GetMP(bot) >= 0.35
 	and (J.IsInTeamFight(bot, 1200) or J.IsGoingOnSomeone(bot))
 	then
 		for _, hit in ipairs(bestHits) do
@@ -590,8 +591,8 @@ local function ConsiderNitori02(bot, ability, profile)
 	if bestScore >= 8 and (J.IsInTeamFight(bot, 1200) or J.IsGoingOnSomeone(bot)) then return bestEndpoint end
 	local creepHits = 0
 	for _, hit in ipairs(bestHits) do if hit.candidate.kind == "creep" then creepHits = creepHits + 1 end end
-	local clearThreshold = profile == BotProfile.DAMAGE_SPELL and 3 or 4
-	local clearMana = profile == BotProfile.DAMAGE_SPELL and 0.4 or 0.55
+	local clearThreshold = profile == BotProfile.SUPPORT and 3 or 4
+	local clearMana = profile == BotProfile.SUPPORT and 0.4 or 0.55
 	if creepHits >= clearThreshold and GetMP(bot) >= clearMana then return bestEndpoint end
 	return nil
 end
@@ -658,7 +659,7 @@ end
 local function TryConsumeEmpoweredAttack(bot, inFlight)
 	local profile = GetProfile(bot)
 	local harvestState = bot.thdNitoriHarvestState
-	local harvestTarget = profile == BotProfile.DAMAGE_SPELL
+	local harvestTarget = profile == BotProfile.SUPPORT
 		and harvestState ~= nil and harvestState.launched
 		and GetHarvestTarget(bot) or nil
 	if profile ~= BotProfile.DAMAGE and harvestTarget == nil then return false end
@@ -668,8 +669,9 @@ local function TryConsumeEmpoweredAttack(bot, inFlight)
 	if not IsVisibleRealEnemy(bot, target, true) then return false end
 	local attackRange = SafeCall(bot, "GetAttackRange", 150) + 100
 	if GetUnitToUnitDistance(bot, target) > attackRange or IsEnemyTowerDanger(bot, GetLocation(target)) then return false end
-	bot:Action_AttackUnit(target, true)
-	bot.nitoriLastCombatActionTime = DotaTime()
+	local accepted,issued=Actions.Attack(bot, target, true)
+	if not accepted then return false end
+	if issued then bot.nitoriLastCombatActionTime = DotaTime() end
 	if harvestTarget ~= nil then bot.thdNitoriHarvestState.attackIssued = true end
 	return true
 end
@@ -741,7 +743,7 @@ function AbilityUsageThink()
 		UseAbility(bot, ability01)
 		return
 	end
-	if profile == BotProfile.DAMAGE_SPELL then
+	if profile == BotProfile.SUPPORT then
 		local harvestTarget = GetHarvestTarget(bot)
 		if harvestTarget ~= nil then
 			local state = bot.thdNitoriHarvestState

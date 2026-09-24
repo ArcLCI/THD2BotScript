@@ -1,7 +1,10 @@
+local Tasks = require(GetScriptDirectory()..'/THDFuncLib/mode_task')
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
+local LaneDiagnostics = require(GetScriptDirectory()..'/THDFuncLib/lane_assignment_diagnostics')
 
 local bot = GetBot()
 local botName = bot:GetUnitName()
@@ -96,12 +99,17 @@ local function ComputeDesire()
 end
 
 function GetDesire()
+	-- 在模式仲裁和缓存前采样，不要求对线模式获胜或通用物品回调被执行。
+	LaneDiagnostics.Observe(bot)
 	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then CandidateDebug.Note('high_retreat'); return BOT_MODE_DESIRE_NONE end
-	return Utils.GetCachedModeDesire(bot, 'laning', ComputeDesire)
+	if bot:GetActiveMode()~=BOT_MODE_LANING and Tasks.Active(bot,'laning')~=nil then Tasks.Release(bot,'laning','native_mode_ended') end
+	local score=Utils.GetCachedModeDesire(bot,'laning',ComputeDesire)
+	return Tasks.Offer(bot,'laning',score,{lane=botAssignedLane,reason='native_laning',nativeExecution=true})
 end
 
 function OnStart()
 	Utils.NoteModeStart(bot, 'laning')
+	Tasks.Start(bot,'laning')
 	skipLaningState.count = skipLaningState.count + 1
 end
 
@@ -195,6 +203,8 @@ if local_mode_laning_generic then
 		J.ActionMoveToLocation(bot, 'laning_move_front', J.GetStableFormationLocation(bot, 'laning_move_front', target_loc, 80, 10.0), 0.5, 180)
 	end
 end
+
+GetDesire = Actions.GuardDesire(bot,BOT_MODE_LANING,GetDesire)
 
 -- 仅观察本模式自然返回值，不参与模式选择。
 GetDesire = CandidateDebug.Wrap('laning', GetDesire)

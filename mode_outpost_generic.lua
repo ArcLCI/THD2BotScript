@@ -1,3 +1,5 @@
+local Tasks = require(GetScriptDirectory()..'/THDFuncLib/mode_task')
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local bot = GetBot()
 local botName = bot:GetUnitName()
@@ -50,16 +52,6 @@ local function ComputeDesire()
 
 	if not IsEnemyTier2Down then CandidateDebug.Note('tier2_not_unlocked'); return BOT_ACTION_DESIRE_NONE end
 
-	local outpostDesireInterval = OUTPOST_DESIRE_INTERVAL
-	if DotaTime() > OUTPOST_LATE_GAME_TIME then
-		outpostDesireInterval = OUTPOST_DESIRE_LATE_INTERVAL
-	end
-
-	if not Timer.ShouldRunBotTask(bot, 'outpost_desire', outpostDesireInterval, OUTPOST_DESIRE_STAGGER) then
-		CandidateDebug.Note('scan_throttled')
-		return BOT_MODE_DESIRE_NONE
-	end
-
 	if not DidWeGetOutpost
 	then
 		for _, unit in pairs(GetUnitList(UNIT_LIST_ALL))
@@ -107,49 +99,50 @@ local function ComputeDesire()
 	return BOT_ACTION_DESIRE_NONE
 end
 
+local function OutpostSafe(target)
+	return Actions.ValidTarget(target) and target:GetTeam() ~= bot:GetTeam()
+		and not target:IsInvulnerable() and IsSuitableToCaptureOutpost()
+		and not J.Retreat.ShouldYield(bot,J.Retreat.HIGH)
+		and not IsEnemyCloserToOutpostLoc(target:GetLocation(),GetUnitToUnitDistance(bot,target))
+		and #bot:GetNearbyHeroes(1600,true,BOT_MODE_NONE)==0
+end
+
 function GetDesire()
-	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
-		ClosestOutpost = nil
-		ClosestOutpostDist = 10000
-		CandidateDebug.Note('high_retreat')
-		return BOT_MODE_DESIRE_NONE
-	end
-	return Utils.GetCachedModeDesire(bot, 'outpost', ComputeDesire)
+	local active=Tasks.Active(bot,'outpost')
+	if active ~= nil and Actions.Protected(bot) then return active.score end
+	if active ~= nil and not Tasks.Check(bot,'outpost',OutpostSafe(active.target)) then return 0 end
+	local score=Utils.GetCachedModeDesire(bot,'outpost',ComputeDesire,
+		DotaTime()>OUTPOST_LATE_GAME_TIME and OUTPOST_DESIRE_LATE_INTERVAL or OUTPOST_DESIRE_INTERVAL)
+	if score<=0 or not OutpostSafe(ClosestOutpost) then Tasks.Release(bot,'outpost','unsafe_or_complete');return 0 end
+	return Tasks.Offer(bot,'outpost',score,{target=ClosestOutpost,reason='capture',stallSeconds=8})
 end
 
 function OnStart()
-	Utils.NoteModeStart(bot, 'outpost')
+	Utils.NoteModeStart(bot,'outpost')
+	Tasks.Start(bot,'outpost')
 end
 
 function OnEnd()
-	ClosestOutpost = nil
-	ClosestOutpostDist = 10000
-	ShouldWaitInBaseToHeal = false
+	Tasks.Release(bot,'outpost','mode_end')
+	ClosestOutpost=nil
+	ClosestOutpostDist=10000
 end
 
 function Think()
-	if not Timer.ShouldRunBotTask(bot, 'outpost_think', 0.50, 0.05) then return end
-	if J.CanNotUseAction(bot) then return end
-	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
-		ClosestOutpost = nil
-		ClosestOutpostDist = 10000
-		return
-	end
-
-	if ClosestOutpost ~= nil
-	then
-		if GetUnitToUnitDistance(bot, ClosestOutpost) > 300
-		then
-			J.ActionMoveToLocation(bot, 'outpost_move', ClosestOutpost:GetLocation(), 0.5, 180)
-			return
-		else
-			if hAbilityCapture then
-				bot:Action_UseAbilityOnEntity(hAbilityCapture, ClosestOutpost)
-			else
-				J.ActionAttackUnit(bot, 'outpost_attack', ClosestOutpost, false, 0.5)
-			end
-			return
-		end
+	Tasks.Commit(bot,'outpost')
+	-- 保护先于所有任务清理，模式丢失不撤销已经提交的占领引导。
+	if Actions.Protected(bot) or J.CanNotUseAction(bot) then return end
+	local task=Tasks.Active(bot,'outpost')
+	if not Tasks.Check(bot,'outpost',task~=nil and OutpostSafe(task.target)) then return end
+	if not Timer.ShouldRunBotTask(bot,'outpost_think',0.5,0.05) then return end
+	local target=task.target
+	if GetUnitToUnitDistance(bot,target)>300 then
+		J.ActionMoveToLocation(bot,'outpost_move',target:GetLocation(),0.5,100)
+	elseif hAbilityCapture~=nil and not hAbilityCapture:IsNull() and hAbilityCapture:IsFullyCastable() then
+		Actions.Protect(bot,hAbilityCapture,0.35)
+		bot:Action_UseAbilityOnEntity(hAbilityCapture,target)
+	elseif hAbilityCapture==nil then
+		J.ActionAttackUnit(bot,'outpost_attack',target,false,0.5)
 	end
 end
 
@@ -159,7 +152,7 @@ function GetClosestOutpost()
 
 	for i = 1, 2
 	do
-		if Outposts[i] ~= nil
+		if Actions.ValidTarget(Outposts[i])
 		and Outposts[i]:GetTeam() ~= GetTeam()
 		and GetUnitToUnitDistance(bot, Outposts[i]) < dist
 		and not Outposts[i]:IsNull()
@@ -212,6 +205,8 @@ function IsSuitableToCaptureOutpost()
 
 	return true
 end
+
+GetDesire = Actions.GuardDesire(bot,BOT_MODE_OUTPOST,GetDesire)
 
 -- 仅观察本模式自然返回值，不参与模式选择。
 GetDesire = CandidateDebug.Wrap('outpost', GetDesire)
