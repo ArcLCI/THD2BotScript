@@ -8,6 +8,7 @@ local AvoidancePath = require(GetScriptDirectory()..'/THDFuncLib/avoidance_path'
 local Pickoff = require(GetScriptDirectory()..'/THDFuncLib/roam_pickoff')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 local Retreat = require(GetScriptDirectory()..'/THDFuncLib/aba_retreat')
+local HighGroundExit = require(GetScriptDirectory()..'/THDFuncLib/high_ground_exit')
 
 local Controller = {}
 local Handoff
@@ -185,6 +186,9 @@ local function SetActive(bot, state, scan)
 end
 
 local function Clear(bot, state, reason)
+	-- 技能躲避优先时只暂停出口路线，保留原截止时间，避免交接重置预算。
+	if reason ~= 'skill_priority' then HighGroundExit.Reset(bot,reason) end
+	state.highGroundExit = nil
 	if not state.active then return end
 	local now = Now()
 	if reason == 'invalid_bot' or reason == 'feature_disabled' then state.failedRecovery = nil end
@@ -954,6 +958,53 @@ local function FindRecoveryAdmission(bot, state, scan, knownZones, authorization
 	return target
 end
 
+local function HighGroundExitPaused(bot)
+	return IsProtectedAction(bot) or Safe(-1,function() return bot:NumQueuedActions() end) ~= 0
+		or Safe(true,function() return bot:IsStunned() or bot:IsRooted() end)
+end
+
+local function UpdateHighGroundExit(bot,state,scan)
+	local route,reason = HighGroundExit.Update(bot,scan,state.active,HighGroundExitPaused(bot))
+	if route ~= nil then
+		scan.anchor = route.goal
+		if not state.active then SetActive(bot,state,scan) end
+		if state.highGroundExit ~= route then
+			AvoidancePath.Cancel(bot,'high_ground_exit_selected')
+			state.highGroundExit = route
+		end
+		state.lastAnchor = route.goal
+		return route
+	end
+	if state.highGroundExit ~= nil then
+		local intent = bot.THD_ActionIntent
+		if intent ~= nil and intent.owner == 'tower_'..tostring(bot.THD_TowerEscapeGeneration) then
+			StopOwnedMove(bot,state,'high_ground_exit_'..tostring(reason or 'disabled'))
+		end
+		Clear(bot,state,'high_ground_exit_'..tostring(reason or 'disabled'))
+		return nil,reason or 'disabled'
+	end
+	return nil,reason
+end
+
+local function ExecuteHighGroundExit(bot,state,route)
+	if HighGroundExitPaused(bot) then return true end
+	-- 仅撤离敌方高地的冻结出口路线允许穿塔，不把塔圈再次交给避塔寻路否决。
+	-- 使用普通MoveTo绕实体/地形；技能避让仍由外层Evasive路由优先接管。
+	local accepted,issued = Actions.Move(bot,route.goal,96,'move',false,'tower_'..tostring(bot.THD_TowerEscapeGeneration))
+	HighGroundExit.NoteAction(bot,accepted,issued)
+	if accepted then
+		bot.THD_AvoidanceOwnedMove = {target=SnapshotLocation(route.goal),generation=bot.THD_TowerEscapeGeneration,
+			actionType=BOT_ACTION_TYPE_MOVE_TO,moveApi='Action_MoveToLocation'}
+		state.lastDirectTarget = SnapshotLocation(route.goal)
+		if issued then
+			state.actionCount = (state.actionCount or 0)+1
+			Log(bot,state,'execute','high_ground_exit',string.format('lane=%s policy=%s phase=%s x=%.1f y=%.1f',
+				route.lane,route.policy,route.phase,route.goal.x,route.goal.y))
+		end
+	end
+	return true
+end
+
 function Controller.GetDesire(bot)
 	if not Controller.IsEnabled(bot) then
 		if bot ~= nil and bot.THD_AvoidanceControllerState ~= nil then
@@ -976,6 +1027,7 @@ function Controller.GetDesire(bot)
 
 	local state = GetState(bot)
 	Handoff.Observe(bot, state)
+	HighGroundExit.Observe(bot)
 	local highGroundAuthorization = GetHighGroundAssaultAuthorization(bot)
 	local highLevelTeamfight = GetHighLevelTeamfightPriority(bot)
 	local scan = TowerSafety.Scan(bot, {
@@ -987,6 +1039,9 @@ function Controller.GetDesire(bot)
 	LogTeamfightTowerPolicy(bot, state, scan, highLevelTeamfight)
 	-- 复用已做过的可见扫描；无租约时只更新数值记忆，不增加 desire。
 	local knownZones = RefreshKnownZones(bot, scan)
+	local exitRoute,exitReason = UpdateHighGroundExit(bot,state,scan)
+	if exitRoute ~= nil then CandidateDebug.Note('high_ground_exit'); return BOT_MODE_DESIRE_ABSOLUTE end
+	if exitReason ~= nil then CandidateDebug.Note('high_ground_exit_'..exitReason); return BOT_MODE_DESIRE_NONE end
 	if state.active and (scan.teamfightPriorityBypassCount or 0) > 0 then
 		Clear(bot, state, 'high_level_teamfight_authorized')
 		CandidateDebug.Note('teamfight_authorized')
@@ -1099,6 +1154,9 @@ function Controller.Think(bot)
 	state.lastScan = scan
 	state.lastScanAt = Now()
 	LogTeamfightTowerPolicy(bot, state, scan, highLevelTeamfight)
+	local exitRoute,exitReason = UpdateHighGroundExit(bot,state,scan)
+	if exitRoute ~= nil then return ExecuteHighGroundExit(bot,state,exitRoute) end
+	if exitReason ~= nil then return true end
 	if (scan.teamfightPriorityBypassCount or 0) > 0 then
 		Clear(bot, state, 'high_level_teamfight_authorized')
 		return false

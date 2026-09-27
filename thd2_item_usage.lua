@@ -376,7 +376,7 @@ local function FilterVisibleNearbyHeroes(units)
 	local visible = nil
 	for index, unit in ipairs(units) do
 		-- 缓存只保存候选句柄；视野和生命周期必须在本次返回时重新确认。
-		if unit == nil or unit:IsNull() or not SafeCanBeSeen(unit) then
+		if not SafeCanBeSeen(unit) then
 			if visible == nil then
 				visible = {}
 				for previous = 1, index - 1 do
@@ -447,7 +447,7 @@ function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 			for _,unit in pairs( tmp )
 			do
 				-- 全局单位列表不保证每个敌人当前可见，先过滤再读取距离。
-				if unit ~= nil and not unit:IsNull() and SafeCanBeSeen(unit)
+				if SafeCanBeSeen(unit)
 				and GetUnitToUnitDistanceSqr( bot, unit ) < RadiusSqr then
 					table.insert(LastGetNearbyHeroesResult[tag], unit)
 				end
@@ -881,7 +881,7 @@ function ConsiderItemSlow( item_slow )
 
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 	do
-		if npcEnemy:HasModifier("modifier_item_jiao_shou_play_debuff") or npcEnemy:HasModifier("modifier_item_zaiezhizhurenxing_play_debuff") then
+		if SafeHasModifier(npcEnemy,"modifier_item_jiao_shou_play_debuff") or SafeHasModifier(npcEnemy,"modifier_item_zaiezhizhurenxing_play_debuff") then
 			return BOT_ACTION_DESIRE_NONE,0
 		end
 		if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK and

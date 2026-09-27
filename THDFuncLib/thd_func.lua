@@ -380,21 +380,34 @@ function J.ActionAttackUnit(bot, actionName, target, once, interval)
 end
 
 local SkillMovement = nil
-function J.ActionMoveToLocation(bot, actionName, vLoc, interval, distance, validateStep)
-	if vLoc == nil then return false end
+function J.ActionMoveToLocation(bot, actionName, vLoc, interval, distance, validateStep, feedback)
+	-- 可选诊断接收表，不改变旧调用者的布尔返回值与动作策略。
+	if feedback then feedback.accepted,feedback.issued,feedback.reason = false,false,nil end
+	if vLoc == nil then
+		if feedback then feedback.reason = 'missing_location' end
+		return false
+	end
 	local routed, kind, force = false, 'original', false
 	-- 只接入明确上报目标的兵线/Rune移动，不推测Valve内部路径。
 	if type(actionName)=='string' and (string.sub(actionName,1,10)=='lane_work_' or string.sub(actionName,1,5)=='rune_' or actionName=='idle_available_rune') then
 		if SkillMovement == nil then SkillMovement=require(GetScriptDirectory()..'/THDFuncLib/skill_avoidance') end
 		vLoc,kind,force=SkillMovement.ResolveMove(bot,actionName,vLoc)
-		if vLoc==nil then return false end
+		if vLoc==nil then
+			if feedback then feedback.reason = 'skill_route_unavailable'; feedback.route = kind end
+			return false
+		end
 		routed=true
 		if kind=='detour' and type(validateStep)=='function' and not validateStep(vLoc) then
 			SkillMovement.RejectTaskMove(bot,actionName,'caller_safety')
+			if feedback then feedback.reason = 'detour_rejected_by_safety'; feedback.location = vLoc end
 			return false
 		end
 	end
 	local accepted, issued = ActionIntent.Move(bot, vLoc, kind=='detour' and 24 or distance, 'move', force)
+	if feedback then
+		feedback.accepted,feedback.issued,feedback.location,feedback.route = accepted,issued,vLoc,kind
+		feedback.reason = accepted and 'accepted' or 'action_submit_rejected'
+	end
 	if issued then IncrementActionPressure(bot, 'Action_MoveToLocation') end
 	if accepted and routed then SkillMovement.NoteTaskMove(bot,actionName,vLoc,kind) end
 	return accepted

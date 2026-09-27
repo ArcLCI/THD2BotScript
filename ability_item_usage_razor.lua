@@ -203,7 +203,8 @@ function ConsiderAbilityIku01()
 	end
 
 	for _,npcEnemy in pairs( tableNearbyEnemyHeroes ) do
-		if npcEnemy:HasModifier("modifier_ability_thdots_iku04") and not ability01:GetToggleState()then
+		-- 缓存敌人句柄可能已经销毁，复用受保护的modifier查询。
+		if SafeCanBeSeen(npcEnemy) and SafeHasModifier(npcEnemy,"modifier_ability_thdots_iku04") and not ability01:GetToggleState()then
 			return BOT_ACTION_DESIRE_HIGH
 		end
 		if (npcBot:GetActiveMode() == BOT_MODE_ATTACK and npcBot:GetMana() >= npcBot:GetMaxMana()* 0.6 and

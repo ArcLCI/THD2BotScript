@@ -15,10 +15,15 @@ local function IsAbilityReady(ability)
 end
 
 local function IsValidEnemyHero(target)
-	return target ~= nil
-		and target:IsHero()
-		and IsValidCastTarget(target, true, false)
-		and not IsPossibleIllusion(target)
+	if target == nil then return false end
+	-- GetTarget可能保留已经销毁的原生句柄；整段查询失败时按无效目标处理。
+	local ok, valid = pcall(function()
+		return (target.IsNull == nil or not target:IsNull())
+			and target:CanBeSeen() and target:IsAlive() and target:IsHero()
+			and IsValidCastTarget(target, true, false)
+			and not IsPossibleIllusion(target)
+	end)
+	return ok and valid == true
 end
 
 local function IsDisabledTarget(target)

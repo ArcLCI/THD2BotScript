@@ -6,6 +6,29 @@ local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 local LaneWork = require(GetScriptDirectory()..'/THDFuncLib/push_lane_work')
+local Escort = require(GetScriptDirectory()..'/THDFuncLib/push_escort')
+local PushMovement = require(GetScriptDirectory()..'/THDFuncLib/push_movement')
+local EscortConfig = require(GetScriptDirectory()..'/THDFuncLib/push_escort_config')
+local TowerSafety = require(GetScriptDirectory()..'/THDFuncLib/tower_safety')
+local Geometry = require(GetScriptDirectory()..'/THDFuncLib/avoidance_geometry')
+
+local function NoteDesire(bot, reason)
+	bot.THD_PushDesireReason = reason
+	CandidateDebug.Note(reason)
+end
+
+local function LogPushDecision(bot,lane,score,reason,detail)
+	if not EscortConfig.DEBUG or not EscortConfig.PUSH_ESCORT_ENABLED then return end
+	if reason == 'different_stable_lane' then return end
+	bot.THD_PushDecisionLogs = bot.THD_PushDecisionLogs or {}
+	local old = bot.THD_PushDecisionLogs[lane]
+	local key = tostring(reason)..':'..tostring(bot:GetActiveMode())
+	if old and DotaTime()-old.at < 0.5 then return end
+	if old and old.key == key and DotaTime()-old.at < 2 then return end
+	bot.THD_PushDecisionLogs[lane] = {key = key, at = DotaTime()}
+	print(string.format('[BOT][PushDecision] run=%s time=%.3f pid=%s lane=%s score=%.3f reason=%s active_mode=%s active_desire=%.3f %s',
+		EscortConfig.RUN_ID,DotaTime(),bot:GetPlayerID(),lane,score,tostring(reason),bot:GetActiveMode(),bot:GetActiveModeDesire(),detail or ''))
+end
 
 
 
@@ -221,7 +244,7 @@ local function ComputeModeDesire(bot, lane)
 	or J.CanNotUseAction(bot)
 	or J.IsRoshanCommitmentActive(bot)
 	then
-		CandidateDebug.Note('action_unavailable_or_retreat_or_roshan')
+		NoteDesire(bot, 'action_unavailable_or_retreat_or_roshan')
 		LaneWork.Release(bot, 'push_unavailable')
 		return BOT_MODE_DESIRE_NONE
 	end
@@ -231,7 +254,7 @@ local function ComputeModeDesire(bot, lane)
 	local objective = Push.GetLaneBuildingTarget(lane) or GetAncient(GetOpposingTeam())
 	if not Push.IsObjectiveValid(objective) then
 		LaneWork.Release(bot, 'invalid_objective', lane)
-		CandidateDebug.Note('invalid_objective')
+		NoteDesire(bot, 'invalid_objective')
 		return BOT_MODE_DESIRE_NONE
 	end
 	local currentWastelandState = Wasteland.IsEnabled() and Wasteland.GetState() or nil
@@ -241,7 +264,7 @@ local function ComputeModeDesire(bot, lane)
 	CandidateDebug.Detail('stable_lane', stablePushLane)
 	if stablePushLane ~= lane then
 		LaneWork.Leave(bot, 'different_stable_lane', lane)
-		CandidateDebug.Note('different_stable_lane')
+		NoteDesire(bot, 'different_stable_lane')
 		return BOT_MODE_DESIRE_NONE
 	end
 
@@ -274,6 +297,7 @@ local function ComputeModeDesire(bot, lane)
 		CandidateDebug.Detail('average_level', snapshot.highGroundContext and snapshot.highGroundContext.averageLevel)
 		if not allowed then
 			-- 拒绝围攻不等于禁止所有普通兵线工作；独立任务不能取得建筑攻击授权。
+			NoteDesire(bot,'lane_work_'..tostring(permissionReason))
 			return LaneWork.GetDesire(bot, lane, permissionReason)
 		end
 	end
@@ -282,12 +306,69 @@ local function ComputeModeDesire(bot, lane)
 	return Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 end
 
+local function LiveEnemy(bot,target)
+	local ok, valid = pcall(function()
+		return target ~= nil and not target:IsNull() and target:CanBeSeen() and target:IsAlive()
+			and target:IsHero() and target:GetTeam() ~= bot:GetTeam() and not J.IsSuspiciousIllusion(target)
+	end)
+	return ok and valid == true
+end
+
+local function CombatHandoff(bot,lane)
+	if not EscortConfig.PUSH_ESCORT_ENABLED then return false end
+	local goal = Wasteland.GetPushObjective()
+	if goal == nil or goal.lane ~= lane or not Wasteland.IsPushObjectiveParticipant(bot,goal) then
+		if bot.THD_PushFightIntent and bot.THD_PushFightIntent.lane == lane then bot.THD_PushFightIntent = nil end
+		return false
+	end
+	local ok,target = pcall(function() return bot:GetAttackTarget() end)
+	if not ok or not LiveEnemy(bot,target) then ok,target = pcall(function() return J.GetProperTarget(bot) end) end
+	if bot:GetActiveMode() == BOT_MODE_ATTACK and ok and LiveEnemy(bot,target)
+	and GetUnitToUnitDistance(target,goal.target) <= EscortConfig.LOCAL_RANGE then return true,'attack_active' end
+	local intent = bot.THD_PushFightIntent
+	if intent == nil or intent.lane ~= lane or intent.objectiveID ~= goal.id then return false end
+	if not LiveEnemy(bot,intent.target) or GetUnitToUnitDistance(intent.target,goal.target) > EscortConfig.LOCAL_RANGE then
+		bot.THD_PushFightIntent = nil
+		return false
+	end
+	if DotaTime() < intent.untilAt then return true,'handoff_pending' end
+	bot.THD_PushFightIntent = nil
+	bot.THD_PushFightRetryAt = DotaTime()+EscortConfig.RETRY_DELAY
+	LogPushDecision(bot,lane,0,'handoff_not_observed')
+	return false
+end
+
 local function TaskName(lane) return 'push_'..tostring(lane) end
 function Push.GetPushDesire(bot,lane)
+	PushMovement.Observe(bot)
+	if PushMovement.Yielding(bot) then
+		Tasks.Release(bot,TaskName(lane),'physical_stall')
+		LogPushDecision(bot,lane,0,'physical_stall_yield')
+		return 0
+	end
+	if EscortConfig.PUSH_ESCORT_ENABLED and EscortConfig.DEBUG and not bot.THD_PushEscortReady then
+		bot.THD_PushEscortReady = true
+		print('[BOT][PushEscort] run='..EscortConfig.RUN_ID..' event=ready pid='..tostring(bot:GetPlayerID()))
+	end
+	if EscortConfig.PUSH_ESCORT_ENABLED and DotaTime() < (bot.THD_PushEscortRetryAt or -90)
+	and bot.THD_PushEscortRetryLane == lane then LogPushDecision(bot,lane,0,'escort_retry'); return 0 end
 	local name=TaskName(lane)
 	local active=Tasks.Active(bot,name)
-	if active~=nil and not Tasks.Check(bot,name,Push.IsObjectiveValid(active.objective)) then return 0 end
+	if active~=nil and not Tasks.Check(bot,name,Push.IsObjectiveValid(active.objective)) then LogPushDecision(bot,lane,0,'task_invalid'); return 0 end
+	bot.THD_PushDesireReason,bot.THD_PushScoreSnapshot = 'evaluating',nil
 	local score=ComputeModeDesire(bot,lane)
+	local yieldCombat,combatReason = CombatHandoff(bot,lane)
+	if yieldCombat then score=math.min(score,EscortConfig.HANDOFF_PUSH_CAP) end
+	local info = bot.THD_PushScoreSnapshot or {}
+	local pressure = bot.THD_PushPressure
+	if pressure ~= nil and pressure.lane == lane and score <= BOT_MODE_DESIRE_EXTRA_LOW*1.1 then
+		pressure.ready,pressure.reason = false,'push_gate_'..tostring(bot.THD_PushDesireReason)
+	end
+	LogPushDecision(bot,lane,score,combatReason or bot.THD_PushDesireReason,
+		string.format('min_level=%s allies=%s enemies=%s enemy_tp=%s base=%s pressure=%s pressure_reason=%s base_reason=%s min_level_pid=%s ready_members=%s level_scope=%s excluded=%s',
+			tostring(info.minLevel),tostring(info.allies),tostring(info.enemies),tostring(info.tp),tostring(info.base),
+			tostring(pressure and pressure.ready),tostring(pressure and pressure.reason),tostring(bot.THD_PushDesireReason),
+			tostring(info.minPlayerID),tostring(info.readyMembers),tostring(info.levelScope),tostring(info.excluded)))
 	local objective=Push.GetLaneBuildingTarget(lane) or GetAncient(GetOpposingTeam())
 	if score<=0 or not Push.IsObjectiveValid(objective) then Tasks.Release(bot,name,'score_or_safety');return 0 end
 	local location=objective:CanBeSeen() and objective:GetLocation() or GetLaneFrontLocation(bot:GetTeam(),lane,0)
@@ -373,12 +454,18 @@ function Push.BuildPushSnapshot(bot, lane, objective, objectiveLocation, laneBui
 	local enemies = J.GetEnemiesNearLoc(objectiveLocation, PUSH_OBJECTIVE_SNAPSHOT_RANGE)
 	local allyPower = SumLocalCombatPower(allies)
 	local enemyPower = SumLocalCombatPower(enemies)
+	local readiness = nil
 	local teamMinLevel = math.huge
-	for i = 1, #GetTeamPlayers(GetTeam()) do
-		local member = GetTeamMember(i)
-		if member ~= nil then teamMinLevel = math.min(teamMinLevel, member:GetLevel()) end
+	if EscortConfig.PUSH_ESCORT_ENABLED then
+		readiness = Wasteland.GetPushLevelReadiness(objectiveLocation,lane)
+		teamMinLevel = readiness.minLevel
+	else
+		for i = 1, #GetTeamPlayers(GetTeam()) do
+			local member = GetTeamMember(i)
+			if member ~= nil then teamMinLevel = math.min(teamMinLevel,member:GetLevel()) end
+		end
+		if teamMinLevel == math.huge then teamMinLevel = 0 end
 	end
-	if teamMinLevel == math.huge then teamMinLevel = 0 end
 	wastelandState = wastelandState or (Wasteland.IsEnabled() and Wasteland.GetState() or nil)
 	local localPowerAdvantage = #enemies == 0
 		or (#allies >= #enemies and allyPower >= enemyPower)
@@ -423,6 +510,7 @@ function Push.BuildPushSnapshot(bot, lane, objective, objectiveLocation, laneBui
 		allyKills = J.GetNumOfTeamTotalKills(false) + 1,
 		enemyKills = J.GetNumOfTeamTotalKills(true) + 1,
 		teamMinLevel = teamMinLevel,
+		levelReadiness = readiness,
 		baseLaneDesire = GetPushLaneDesire(lane),
 		doesTeamHaveAegis = J.DoesTeamHaveAegis(),
 		ancientDefenseState = J.GetAncientDefenseState(4500),
@@ -434,6 +522,47 @@ function Push.BuildPushSnapshot(bot, lane, objective, objectiveLocation, laneBui
 	}
 end
 
+local function ComputePressure(snapshot)
+	if not EscortConfig.PUSH_ESCORT_ENABLED then return false,'disabled' end
+	if snapshot.wastelandState == nil or not Wasteland.IsTeamAhead(snapshot.wastelandState) then return false,'no_strategic_advantage' end
+	if snapshot.allyCount < EscortConfig.PRESSURE_MIN_ALLIES or not snapshot.localPowerAdvantage then return false,'insufficient_local_force' end
+	if snapshot.enemyCount > 0 and snapshot.allyPower < snapshot.enemyPower*EscortConfig.PRESSURE_POWER_RATIO then return false,'small_power_margin' end
+	if snapshot.enemyTpCount > 0 or snapshot.recentEnemyCount > snapshot.enemyCount or snapshot.missingEnemyCount > 2 then return false,'enemy_information_risk' end
+	if snapshot.baseThreat and (snapshot.baseThreat.hardEmergency or snapshot.baseThreat.coveredPressure) then return false,'base_pressure' end
+	if not J.IsValidBuilding(snapshot.objective) or Push.HasBackdoorProtect(snapshot.objective) then return false,'no_building_window' end
+	local readyCount,ultimates,readyUltimates,items,readyItems = 0,0,0,0,0
+	for _, member in ipairs(J.GetAlliesNearLoc(snapshot.objectiveLocation,1600)) do
+		local mana = member:GetMaxMana() > 0 and member:GetMana()/member:GetMaxMana() or 1
+		if J.GetHP(member) >= EscortConfig.PRESSURE_MIN_HP and mana >= EscortConfig.PRESSURE_MIN_MANA
+		and not J.IsRoshanCommitmentActive(member) then
+			readyCount = readyCount + 1
+			-- 只使用技能本身声明的类型/冷却，不按原版英雄槽位推断大招。
+			for slot=0,5 do
+				local ability = member:GetAbilityInSlot(slot)
+				if ability ~= nil and ability:IsTrained() and ability:IsUltimate() and not ability:IsPassive() then
+					ultimates = ultimates + 1
+					if ability:IsFullyCastable() then readyUltimates = readyUltimates + 1 end
+				end
+				local item = member:GetItemInSlot(slot)
+				if item ~= nil and not item:IsPassive() then
+					items = items + 1
+					if item:IsFullyCastable() then readyItems = readyItems + 1 end
+				end
+			end
+		end
+	end
+	if readyCount < EscortConfig.PRESSURE_MIN_ALLIES then return false,'health_or_mana_not_ready' end
+	if readyUltimates < math.ceil(ultimates/2) or readyItems < math.ceil(items/2) then return false,'cooldowns_not_ready' end
+	return true,'advantage_pressure'
+end
+
+function Push.AssessPressure(snapshot)
+	if DotaTime() < (snapshot.pressureRefreshAt or -90) then return snapshot.pressureReady,snapshot.pressureReason end
+	snapshot.pressureReady,snapshot.pressureReason = ComputePressure(snapshot)
+	snapshot.pressureRefreshAt = DotaTime()+EscortConfig.SAMPLE_INTERVAL
+	return snapshot.pressureReady,snapshot.pressureReason
+end
+
 function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	-- 与入口共用本帧安全审查，避免已授权的纯塔风险被第二道旧门槛否决。
 	local authorized = bot ~= nil and Wasteland.HasLiveHighGroundAssaultAuthorization(bot)
@@ -443,7 +572,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	or J.CanNotUseAction(bot)
 	or J.IsRoshanCommitmentActive(bot)
 	then
-		CandidateDebug.Note('action_unavailable_or_retreat_or_roshan')
+		NoteDesire(bot, 'action_unavailable_or_retreat_or_roshan')
 		return BOT_MODE_DESIRE_NONE
 	end
 	if snapshot == nil then
@@ -461,25 +590,32 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	local wastelandState = snapshot.wastelandState
 	local baseThreat = snapshot.baseThreat
 		or (wastelandState ~= nil and Wasteland.GetBaseThreatSnapshot(wastelandState, bot) or nil)
+	bot.THD_PushScoreSnapshot = {lane=lane,minLevel=snapshot.teamMinLevel,enemies=snapshot.enemyCount,
+		allies=snapshot.allyCount,tp=snapshot.enemyTpCount,base=snapshot.baseLaneDesire}
+	if snapshot.levelReadiness then
+		local info = bot.THD_PushScoreSnapshot
+		info.minPlayerID,info.readyMembers = snapshot.levelReadiness.minPlayerID,snapshot.levelReadiness.count
+		info.levelScope,info.excluded = snapshot.levelReadiness.scope,snapshot.levelReadiness.excluded
+	end
 	if Wasteland.IsEnabled() and baseThreat ~= nil and baseThreat.hardEmergency == true then
 		Wasteland.InvalidateObjectiveForBaseDefense(bot, baseThreat)
-		CandidateDebug.Note('hard_base_emergency')
+		NoteDesire(bot, 'hard_base_emergency')
 		return BOT_MODE_DESIRE_NONE
 	end
 	if Wasteland.ShouldYieldPushObjective(bot, lane) then
-		CandidateDebug.Note('objective_nonparticipant')
+		NoteDesire(bot, 'objective_nonparticipant')
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
 
 	if bot:GetAssignedLane() == LANE_MID and J.IsInLaningPhase() then
-		CandidateDebug.Note('mid_laning')
+		NoteDesire(bot, 'mid_laning')
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
-	if snapshot.teamMinLevel < 7 then CandidateDebug.Note('team_min_level_below_7'); return BOT_MODE_DESIRE_EXTRA_LOW end
-	if snapshot.enemyTpCount > 0 then CandidateDebug.Note('enemy_tp'); return BOT_MODE_DESIRE_EXTRA_LOW end
+	if snapshot.teamMinLevel < 7 then NoteDesire(bot, 'team_min_level_below_7'); return BOT_MODE_DESIRE_EXTRA_LOW end
+	if snapshot.enemyTpCount > 0 then NoteDesire(bot, 'enemy_tp'); return BOT_MODE_DESIRE_EXTRA_LOW end
 	-- 守军出现时只在目标点人数与本地可见属性战力均不劣时继续推进。
 	if snapshot.enemyCount > 0 and not snapshot.localPowerAdvantage then
-		CandidateDebug.Note('local_power_disadvantage')
+		NoteDesire(bot, 'local_power_disadvantage')
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
 
@@ -535,7 +671,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	if snapshot.shouldWaitForImportantItems
 	and eAliveCount > aAliveCount + PUSH_ALIVE_ENEMY_ADVANTAGE_TOLERANCE
 	then
-		CandidateDebug.Note('wait_important_items')
+		NoteDesire(bot, 'wait_important_items')
 		return BOT_MODE_DESIRE_VERYLOW
 	end
 
@@ -545,7 +681,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	and not string.find(botTarget:GetUnitName(), 'tower2')
 	and Push.HasBackdoorProtect(botTarget)
 	then
-		CandidateDebug.Note('attack_target_backdoor')
+		NoteDesire(bot, 'attack_target_backdoor')
 		return BOT_MODE_DESIRE_EXTRA_LOW
 	end
 
@@ -557,7 +693,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 	and J.GetHP(bot) > 0.5
 	and not Push.HasBackdoorProtect(enemyAncient)
 	then
-		CandidateDebug.Note('ancient_opportunity')
+		NoteDesire(bot, 'ancient_opportunity')
 		return Wasteland.AdjustPushDesire(
 			BOT_ACTION_DESIRE_ABSOLUTE * 0.98,
 			snapshot.laneBuildingTier,
@@ -581,7 +717,10 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 		CandidateDebug.Detail('safety_cap', nSafetyMaxDesire)
 		CandidateDebug.Detail('scored_lane_desire', nPushDesire)
 		local desire = RemapValClamped(nPushDesire, 0, 1, 0, nMaxDesire)
-		CandidateDebug.Note('push_score')
+		local pressureReady,pressureReason = Push.AssessPressure(snapshot)
+		bot.THD_PushPressure = {lane=lane,at=DotaTime(),ready=pressureReady,reason=pressureReason}
+		if pressureReady then desire = math.max(desire,EscortConfig.PRESSURE_DESIRE) end
+		NoteDesire(bot, 'push_score')
 		return Wasteland.AdjustPushDesire(
 			desire,
 			snapshot.laneBuildingTier,
@@ -592,7 +731,7 @@ function Push.ComputePushDesire(bot, lane, snapshot, immediateSafety)
 		)
 	end
 
-	CandidateDebug.Note('alive_disadvantage')
+	NoteDesire(bot, 'alive_disadvantage')
 	return lane == LANE_MID and BOT_MODE_DESIRE_VERYLOW or BOT_MODE_DESIRE_EXTRA_LOW
 end
 
@@ -932,9 +1071,472 @@ local fNextMovementTime = 0
 function Push.OnEnd(bot, lane)
 	Tasks.Release(bot,TaskName(lane),'mode_end')
 	LaneWork.Leave(bot, 'mode_ended', lane)
+	-- 普通攻击短暂接管时保留波次与不可重置的期限；公开上下文一秒后自然失效。
+	if not EscortConfig.PUSH_ESCORT_ENABLED then Escort.Release(bot, 'disabled') end
+end
+
+local function EscortVisible(unit)
+	return unit ~= nil and not unit:IsNull() and unit:CanBeSeen() and unit:IsAlive()
+end
+
+local function EscortLaneCreep(unit)
+	if not EscortVisible(unit) then return false end
+	local name = unit:GetUnitName()
+	-- 只接受游戏中的兵线/攻城兵名称，排除全局 creep 列表中的野怪和召唤物。
+	return string.match(name, '^npc_dota_creep_goodguys_') ~= nil
+		or string.match(name, '^npc_dota_creep_badguys_') ~= nil
+		or string.match(name, '^npc_dota_goodguys_siege') ~= nil
+		or string.match(name, '^npc_dota_badguys_siege') ~= nil
+		or string.match(name, '^npc_thd_goodguys_.*siege') ~= nil
+		or string.match(name, '^npc_thd_badguys_.*siege') ~= nil
+end
+
+local function EscortRecord(unit)
+	return {unit = unit, key = tostring(unit), location = unit:GetLocation(),
+		health = unit:GetHealth(), siege = string.find(unit:GetUnitName(), 'siege', 1, true) ~= nil,
+		attackTarget = unit:GetAttackTarget()}
+end
+
+function Push.SampleEscort(bot, lane, objective)
+	local cached = bot.THD_PushEscortSample
+	local now = DotaTime()
+	if cached ~= nil and cached.objective == objective and cached.lane == lane
+	and now - cached.at < EscortConfig.SAMPLE_INTERVAL then return cached end
+	local location = objective:GetLocation()
+	local botLocation = bot:GetLocation()
+	local botAmount = GetAmountAlongLane(lane, botLocation).amount
+	local goalAmount = GetAmountAlongLane(lane, location).amount
+	local direction = bot:GetTeam() == TEAM_RADIANT and 1 or -1
+	cached = {at = now, objective = objective, lane = lane, allied = {}, enemy = {}, creepDistance = math.huge}
+	local function InLane(unit, allied)
+		if not EscortLaneCreep(unit) then return false end
+		local point = unit:GetLocation()
+		if Geometry.Distance(point, location) > EscortConfig.LOCAL_RANGE
+		and Geometry.Distance(point, botLocation) > EscortConfig.LOCAL_RANGE then return false end
+		local along = GetAmountAlongLane(lane, point)
+		if along.distance > EscortConfig.LANE_WIDTH then return false end
+		for _, otherLane in ipairs({LANE_TOP, LANE_MID, LANE_BOT}) do
+			if otherLane ~= lane and GetAmountAlongLane(otherLane, point).distance + 50 < along.distance then return false end
+		end
+		if allied then
+			local old = bot.THD_PushEscort
+			local retained = old and old.wave and old.wave.members[unit] ~= nil
+			-- 已追踪的同一波可以继续保留；新波仅取本方向、未越过目标的单位。
+			if not retained and ((along.amount-botAmount)*direction < -0.08
+			or (goalAmount-along.amount)*direction < -0.02) then return false end
+		end
+		return true
+	end
+	-- 替代原 Think 中无节流的最近小兵全表扫描，快照只保留局部单位。
+	for _, creep in pairs(GetUnitList(UNIT_LIST_ALLIED_CREEPS)) do
+		if InLane(creep, true) then
+			table.insert(cached.allied, EscortRecord(creep))
+			cached.creepDistance = math.min(cached.creepDistance, GetUnitToUnitDistance(creep, objective))
+		end
+	end
+	for _, creep in ipairs(bot:GetNearbyLaneCreeps(1600, true)) do
+		if InLane(creep, false) and J.CanBeAttacked(creep) then table.insert(cached.enemy, EscortRecord(creep)) end
+	end
+	bot.THD_PushEscortSample = cached
+	return cached
+end
+
+local function EscortProtectionReason(target)
+	if not EscortVisible(target) then return 'unseen_building' end
+	if Push.HasDefenseGlyphBuff(target) then return 'glyph' end
+	if target:HasModifier('modifier_backdoor_protection') or target:HasModifier('modifier_backdoor_protection_in_base')
+	or target:HasModifier('modifier_backdoor_protection_active') then return 'native_backdoor' end
+	if Push.IsAntiBackdoorStopBuilding(target) and not target:HasModifier('modifier_thdots_anti_bd_stop') then return 'custom_backdoor' end
+	return 'open'
+end
+
+local function EscortMovementSafety(bot, objective, wave, authorized, protection)
+	local observation = TowerSafety.Observe(bot, 'push_escort')
+	local result = {available = observation.available, zones = {}}
+	local keys = {tostring(objective.id),tostring(protection),tostring(authorized == true)}
+	if not observation.available then result.key = table.concat(keys,'|'); return result end
+	local towers = {}
+	for _, tower in ipairs(observation.towers) do
+		local isTarget = Geometry.Distance(tower.center, objective.target:GetLocation()) < 64
+		local covered = false
+		if isTarget and EscortVisible(objective.target) and not tower.locked and wave ~= nil then
+			covered = wave.members[objective.target:GetAttackTarget()] ~= nil
+		end
+		-- 仅已有授权或实际兵线承伤的目标塔可例外；其他塔仍检查完整路径。
+		local exempt = isTarget and protection == 'open' and (authorized or covered)
+		table.insert(towers,tostring(tower.key)..':'..tostring(tower.radius)..':'..tostring(tower.locked)..':'..tostring(exempt == true))
+		if not exempt then
+			table.insert(result.zones, tower)
+		end
+	end
+	-- 只记录改变安全判定的离散状态，不因时间戳/兵量小幅变化刷新失败缓存。
+	table.sort(towers)
+	result.key = table.concat(keys,'|')..'|'..table.concat(towers,'|')
+	return result
+end
+
+local function EscortSafeLocation(bot, location, movementSafety, navigation, recoveryStep)
+	if location == nil then return false, 'missing_location' end
+	if Geometry.Distance(bot:GetLocation(), location) > 1400 then return false, 'beyond_local_range' end
+	if not movementSafety.available then return false, 'tower_snapshot_unavailable' end
+	local zones = movementSafety.zones
+	local origin = bot:GetLocation()
+	local valid, reason, zone
+	if recoveryStep then
+		-- 短恢复步可单调离开已有危险区，但不能穿入其他塔区。
+		valid,reason,zone = Geometry.ValidateRecoverySegment(origin,location,zones,96)
+	else valid,reason,zone = Geometry.ValidateMovementSegment(origin,location,zones,96) end
+	if not valid then return false, 'tower_'..tostring(reason), zone and zone.key end
+	if not IsLocationPassable(location) then return false,'impassable_goal' end
+	if not IsLocationVisible(location) then return false,'unseen_goal' end
+	local steps = math.max(1, math.ceil(Geometry.Distance(origin, location)/180))
+	for i = 1, steps do
+		local point = origin + (location-origin)*(i/steps)
+		-- 普通MoveTo由引擎绕过地形；短恢复步/战斗接近仍要求直线可行。
+		if not navigation and not IsLocationPassable(point) then return false, 'impassable_segment', tostring(i)..'/'..tostring(steps) end
+		if not IsLocationVisible(point) then return false, 'unseen_segment', tostring(i)..'/'..tostring(steps) end
+	end
+	return true
+end
+
+local function EscortApproachLocations(bot, lane, destination)
+	local origin = bot:GetLocation()
+	local along = GetAmountAlongLane(lane,origin)
+	local target = GetAmountAlongLane(lane,destination)
+	local direction = target.amount >= along.amount and 1 or -1
+	local function LanePoint(amount) return GetLocationAlongLane(lane,math.max(0,math.min(1,amount))) end
+	local amount = along.amount
+	if along.distance <= 300 then amount = amount + direction*math.min(0.015,math.abs(target.amount-amount)) end
+	local anchor = LanePoint(amount)
+	local candidates = {anchor, LanePoint(amount+direction*0.008), LanePoint(amount-direction*0.008)}
+	-- 先接入所在分路，再沿路前进；局部障碍只尝试有界扇形步，不切跨地图直线。
+	local delta = anchor-origin
+	local length = Geometry.Distance(origin,anchor)
+	if length > 180 then
+		for _, step in ipairs({EscortConfig.APPROACH_STEP, EscortConfig.APPROACH_STEP/2}) do
+			for _, degrees in ipairs({0,35,-35,70,-70}) do
+				local angle = math.rad(degrees)
+				local x,y = delta.x/length,delta.y/length
+				local point = Vector(origin.x+(x*math.cos(angle)-y*math.sin(angle))*math.min(step,length),
+					origin.y+(x*math.sin(angle)+y*math.cos(angle))*math.min(step,length),origin.z)
+				if Geometry.Distance(point,anchor) <= length-24 then table.insert(candidates,point) end
+			end
+		end
+	end
+	return candidates
+end
+
+local function EscortFormationLocations(state, lane, objective)
+	local candidates = {state.guardLocation}
+	for _, point in ipairs(state.fallbacks or {}) do table.insert(candidates,point) end
+	local center = state.guardLocation
+	if center == nil then return candidates end
+	local amount = GetAmountAlongLane(lane,center).amount
+	for _, offset in ipairs({0,0.008,-0.008}) do
+		table.insert(candidates,GetLocationAlongLane(lane,math.max(0,math.min(1,amount+offset))))
+	end
+	local delta = objective.target:GetLocation()-center
+	local length = math.max(1,Geometry.Distance(center,objective.target:GetLocation()))
+	for _, scale in ipairs({1,-1,2,-2}) do
+		table.insert(candidates,Vector(center.x-delta.y/length*EscortConfig.FORMATION_SIDE_STEP*scale,
+			center.y+delta.x/length*EscortConfig.FORMATION_SIDE_STEP*scale,center.z))
+	end
+	return candidates
+end
+
+local function SelectDefenderContact(bot,lane,objective,alliedRecords,enemies)
+	if J.GetHP(bot) < EscortConfig.MIN_PRESSURE_HP or DotaTime() < (bot.THD_PushFightRetryAt or -90) then return nil end
+	if GetUnitToUnitDistance(bot,objective.target) > EscortConfig.LOCAL_RANGE then return nil end
+	local pressure = bot.THD_PushPressure
+	local forceFight = pressure ~= nil and pressure.lane == lane and pressure.ready
+		and DotaTime()-pressure.at <= EscortConfig.CONTEXT_TTL
+	local members = {}
+	for _, creep in ipairs(alliedRecords) do members[creep.unit] = true end
+	local best, bestRank, bestDistance = nil,math.huge,math.huge
+	for _, enemy in ipairs(enemies) do
+		if LiveEnemy(bot,enemy) and GetUnitToUnitDistance(enemy,objective.target) <= EscortConfig.LOCAL_RANGE then
+			local victim = enemy:GetAttackTarget()
+			local attacksAlly = EscortVisible(victim) and victim:IsHero() and victim:GetTeam() == bot:GetTeam()
+			local distance = GetUnitToUnitDistance(bot,enemy)
+			local rank = attacksAlly and 0 or (members[victim] and 1
+				or (forceFight and GetUnitToUnitDistance(enemy,objective.target) <= EscortConfig.CONTACT_RADIUS and 2 or nil))
+			if rank ~= nil and distance <= EscortConfig.CONTACT_RADIUS
+			and (rank < bestRank or (rank == bestRank and distance < bestDistance)) then
+				best,bestRank,bestDistance = enemy,rank,distance
+			end
+		end
+	end
+	return best, bestRank == 0 and 'ally_under_attack' or (bestRank == 1 and 'wave_under_attack' or 'advantage_defender')
+end
+
+local function LogEscort(bot, state, reason)
+	if not EscortConfig.DEBUG then return end
+	local now = DotaTime()
+	local signature = tostring(state.objectiveID)..':'..tostring(state.phase)..':'..tostring(state.threat)..':'..tostring(reason)
+		..':'..tostring(state.result)..':'..tostring(state.operation)
+	local log = bot.THD_PushEscortLog or {}
+	if signature == log.signature and now-(log.at or -90) < EscortConfig.LOG_INTERVAL then return end
+	bot.THD_PushEscortLog = {signature = signature, at = now}
+	print(string.format('[BOT][PushEscort] run=%s pid=%s time=%.2f objective=%s lane=%s role=%s phase=%s reason=%s wave=%s count=%s hp=%s loss=%s threat=%s protection=%s mode=%s desire=%.3f deadline=%s tower_damage=%s intent=%s front_x=%s front_y=%s under_pressure=%s',
+		EscortConfig.RUN_ID, bot:GetPlayerID(), now, tostring(state.objectiveID), tostring(state.lane), tostring(state.role),
+		tostring(state.phase), tostring(reason), tostring(state.wave and state.wave.id), tostring(state.wave and state.wave.count),
+		tostring(state.wave and state.wave.health), tostring(state.waveLoss), tostring(state.threat), tostring(state.protectionReason),
+		tostring(bot:GetActiveMode()), bot:GetActiveModeDesire(), tostring(state.untilAt), tostring(state.towerDamage),
+		tostring(state.intent), tostring(state.wave and state.wave.front.x), tostring(state.wave and state.wave.front.y),
+		tostring(state.wave and state.wave.underPressure))
+		..string.format(' result=%s operation=%s action_target=%s bot_x=%.1f bot_y=%.1f goal_x=%s goal_y=%s rejects=%s continuation_reason=%s maintainer=%s continuation_until=%s continuation_safe_until=%s move_issued=%s route=%s strategic_count=%s local_count=%s threat_reason=%s pressure_reason=%s visible_enemies=%s near_enemies=%s wave_attackers=%s',
+			tostring(state.result),tostring(state.operation),tostring(state.actionTarget):gsub('%s','_'),
+			bot:GetLocation().x,bot:GetLocation().y,tostring(state.actionLocation and state.actionLocation.x),
+			tostring(state.actionLocation and state.actionLocation.y),table.concat(state.rejects or {},'|'),
+			tostring(state.continuationReason),tostring(state.maintainerID),tostring(state.continuationUntil),tostring(state.continuationSafeUntil),
+			tostring(state.moveIssued),tostring(state.moveRoute),tostring(state.strategicCount),tostring(state.localCount),
+			tostring(state.threatObservation and state.threatObservation.reason),tostring(state.pressureReason),
+			tostring(state.threatObservation and state.threatObservation.visible),tostring(state.threatObservation and state.threatObservation.near),
+			tostring(state.threatObservation and state.threatObservation.attackingWave))
+		..' path_policy='..tostring(state.pathPolicy))
+end
+
+function Push.TryEscort(bot, lane, objective, sample, allies, enemies, safety, authorized)
+	if not EscortConfig.PUSH_ESCORT_ENABLED or objective == nil
+	or not Wasteland.IsPushObjectiveParticipant(bot, objective) then return false end
+	-- 即使自定义撤退框架关闭，护线也必须使用真实的只读三秒塔伤预测。
+	local tower = J.Retreat.GetTowerThreat(bot, 3.0, nil, true)
+	local safe = #allies >= #enemies and (#enemies == 0 or SumLocalCombatPower(allies) >= SumLocalCombatPower(enemies))
+		and not tower.unseenIncoming and (tower.unavoidableDamage or 0) < bot:GetHealth()
+		and (tower.predictedDamage or 0)/math.max(1,bot:GetHealth()) < EscortConfig.MAX_TOWER_DAMAGE_RATIO
+		and (safety.severity < J.Retreat.HIGH or authorized)
+	if not safe then
+		if bot.THD_PushEscort ~= nil then
+			bot.THD_PushEscort.result,bot.THD_PushEscort.operation = 'released','none'
+			bot.THD_PushEscort.actionTarget,bot.THD_PushEscort.actionLocation = nil,nil
+			bot.THD_PushEscort.moveIssued,bot.THD_PushEscort.moveRoute = nil,nil
+			LogEscort(bot,bot.THD_PushEscort,'unsafe')
+		end
+		Escort.Release(bot, 'unsafe')
+		Wasteland.NoteEscortTactic(bot, objective, nil)
+		Tasks.Release(bot,TaskName(lane),'escort_unsafe',0.75)
+		return true
+	end
+	local now, old = DotaTime(), bot.THD_PushEscort
+	local records, alliedRecords, enemyRecords = {}, {}, {}
+	for _, enemy in ipairs(enemies) do if EscortVisible(enemy) then table.insert(records, EscortRecord(enemy)) end end
+	for _, creep in ipairs(sample.allied) do
+		if EscortVisible(creep.unit) then
+			local retained = old ~= nil and old.wave ~= nil and old.wave.members[creep.unit] ~= nil
+			local range = retained and EscortConfig.LOCAL_RETAIN_RANGE or EscortConfig.LOCAL_JOIN_RANGE
+			if GetUnitToUnitDistance(bot,creep.unit) <= range then table.insert(alliedRecords, EscortRecord(creep.unit)) end
+		end
+	end
+	for _, creep in ipairs(sample.enemy) do
+		if EscortVisible(creep.unit) and J.CanBeAttacked(creep.unit) then table.insert(enemyRecords, EscortRecord(creep.unit)) end
+	end
+	local loss = 'unobserved'
+	if old ~= nil and old.wave ~= nil then
+		loss = 'confirmed_dead'
+		for unit in pairs(old.wave.members) do
+			if unit ~= nil and not unit:IsNull() and (not unit:CanBeSeen() or unit:IsAlive()) then loss = 'out_of_view_or_area' end
+		end
+	end
+	local protection = EscortProtectionReason(objective.target)
+	local sharedContinuation, mustRegroup, continuationReason = Wasteland.GetEscortContinuation(objective)
+	local currentCreepSupport = false
+	for _, creep in ipairs(sample.allied) do
+		if EscortVisible(creep.unit) and GetUnitToUnitDistance(creep.unit,objective.target) <= 850
+		and not creep.unit:HasModifier('modifier_thdots_unit_anti_bd') then currentCreepSupport = true; break end
+	end
+	local localObjective = GetUnitToUnitDistance(bot,objective.target) <= EscortConfig.LOCAL_JOIN_RANGE
+	local continuation = sharedContinuation and localObjective
+	local movementAuthorization = authorized or continuation
+	local approachLocation = GetLaneFrontLocation(GetTeam(),lane,-600)
+	local approach = #alliedRecords == 0 and not continuation
+		and GetUnitToUnitDistance(bot,objective.target) > EscortConfig.LOCAL_JOIN_RANGE
+		and Geometry.Distance(bot:GetLocation(),approachLocation) > 180
+	local state, decision = Escort.Evaluate({now = now, sampledAt = sample.at, objectiveID = objective.id, lane = lane,
+		approach = approach, approachLocation = approachLocation,
+		role = Wasteland.GetPushObjectiveRole(bot, objective), playerID = bot:GetPlayerID(), botLocation = bot:GetLocation(),
+		objectiveLocation = objective.target:GetLocation(), attackRange = bot:GetAttackRange(),
+		alliedCreeps = alliedRecords, enemyCreeps = enemyRecords, enemies = records, waveLoss = loss,
+		blockerDead = old ~= nil and old.blocker ~= nil and not old.blocker:IsNull() and old.blocker:CanBeSeen() and not old.blocker:IsAlive(),
+		pressureSafe = J.GetHP(bot) >= EscortConfig.MIN_PRESSURE_HP,
+		supplementSafe = #enemies == 0,
+		canSiege = localObjective and protection == 'open' and J.CanBeAttacked(objective.target)
+			and Wasteland.CanAttackPushObjective(bot,lane,objective.target,objective)
+			and (currentCreepSupport or continuation),
+		creepSupport = currentCreepSupport,
+		continuation = continuation, mustRegroup = mustRegroup,
+		continuationUntil = objective.escortBreakAt and objective.escortBreakAt + EscortConfig.CONTINUATION_DURATION,
+		regroupLocation = GetLaneFrontLocation(GetTeam(), lane, -600)}, old)
+	state.protectionReason = protection
+	state.strategicCount,state.localCount = #sample.allied,#alliedRecords
+	state.towerDamage, state.intent = tower.predictedDamage, decision.kind
+	local recovery = PushMovement.NeedsRecovery(bot)
+	local contact,contactReason = SelectDefenderContact(bot,lane,objective,alliedRecords,enemies)
+	if contact ~= nil and state.role == 'building_damage' and decision.kind == 'building'
+	and contactReason ~= 'ally_under_attack' then
+		-- 有可执行的前排/掩护响应者时，主要输出位继续制造建筑压力，避免全队追一个守军。
+		for _, assigned in ipairs(objective.participants or {}) do
+			local member = assigned.unit
+			if member ~= bot and (assigned.role == 'frontline' or assigned.role == 'cover')
+			and EscortVisible(member) and J.GetHP(member) >= EscortConfig.MIN_PRESSURE_HP
+			and not J.Retreat.ShouldYield(member,J.Retreat.HIGH)
+			and GetUnitToUnitDistance(member,contact) <= EscortConfig.CONTACT_RADIUS then contact = nil; break end
+		end
+	end
+	if contact ~= nil then
+		local previous = bot.THD_PushFightIntent
+		local deadline = previous and previous.objectiveID == objective.id and previous.untilAt or now+EscortConfig.HANDOFF_DURATION
+		state.phase,state.reason,state.untilAt = 'CONTACT','defender_contact',deadline
+		state.threat,state.pressureReason = contact,contactReason
+		decision = {kind='attack',target=contact,location=contact:GetLocation(),reason='defender_contact',untilAt=deadline}
+		state.intent = 'attack'
+	end
+	state.result,state.operation,state.actionTarget,state.actionLocation,state.rejects = 'pending','none',nil,nil,{}
+	state.pathPolicy = 'none'
+	state.moveIssued,state.moveRoute = nil,nil
+	state.continuationReason = continuationReason
+	state.maintainerID = objective.escortLastMaintainerID
+	state.continuationUntil = objective.escortBreakAt and objective.escortBreakAt + EscortConfig.CONTINUATION_DURATION
+	state.continuationSafeUntil = objective.escortContinuationSafeUntil
+	local participant = objective.participantByID[bot:GetPlayerID()]
+	if state.role == 'frontline' and not participant.frontlineProfile then
+		-- 位置分工不等于坦克能力：没有明确前排 profile 时必须有真实兵线承伤。
+		movementAuthorization = continuation
+	end
+	local movementSafety = EscortMovementSafety(bot,objective,state.wave,movementAuthorization,protection)
+	bot.THD_PushEscort = state
+	Wasteland.NoteEscortTactic(bot, objective, state)
+	local function Release(reason)
+		state.result,state.operation = 'released','none'
+		LogEscort(bot, state, reason)
+		if reason == 'no_safe_action' then
+			PushMovement.NoPath(bot)
+			-- 路径暂不可用只释放动作任务，保留波次和已消费的压制期限，避免重试重置。
+			state.expiresAt = now
+		else Escort.Release(bot, reason) end
+		Wasteland.NoteEscortTactic(bot, objective, nil)
+		Tasks.Release(bot,TaskName(lane),reason,EscortConfig.RETRY_DELAY)
+		bot.THD_PushEscortRetryAt, bot.THD_PushEscortRetryLane = now+EscortConfig.RETRY_DELAY, lane
+		if reason == 'regroup_timeout' or reason == 'continuation_closed' then Wasteland.ReleasePushObjective(reason, bot) end
+		return true
+	end
+	local function Reject(stage,reason,point,detail)
+		if #state.rejects >= 8 then return end
+		local where = point and string.format('%.0f,%.0f',point.x,point.y) or 'nil'
+		local rejection = (stage..':'..tostring(reason)..':'..tostring(detail or '-')..'@'..where):gsub('%s','_')
+		table.insert(state.rejects,rejection)
+	end
+	local function Check(point,stage)
+		local navigation = not recovery and not string.find(stage,'detour',1,true)
+			and (string.find(stage,'^approach_') or string.find(stage,'^formation_'))
+			and point ~= nil and Geometry.Distance(bot:GetLocation(),point) > EscortConfig.NAVIGATION_MIN_DISTANCE
+		state.pathPolicy = navigation and 'native_navigation' or 'direct_segment'
+		local blocked,failedReason = false,nil
+		if point ~= nil then blocked,failedReason = PushMovement.Blocked(bot,point,navigation,movementSafety.key) end
+		if blocked then Reject(stage,'recent_failed_goal',point,failedReason); return false end
+		local recoveryStep = string.find(stage,'^recovery_') ~= nil
+		local allowed,reason,detail = EscortSafeLocation(bot,point,movementSafety,navigation,recoveryStep)
+		if not allowed then
+			Reject(stage,reason,point,detail)
+			-- 超出局部范围不是坏路点，不把战略目标永久当作地形障碍。
+			if reason ~= 'beyond_local_range' and reason ~= 'tower_snapshot_unavailable' then PushMovement.Reject(bot,point,reason,movementSafety.key) end
+		end
+		return allowed
+	end
+	local function Accepted(operation,target,point,purpose)
+		-- accepted可包含复用现有动作，不表示本帧新发单、命中或造成伤害。
+		if decision.reason == 'defender_contact' and (operation == 'attack_unit' or (operation == 'move' and purpose == 'attack')) then
+			local previous = bot.THD_PushFightIntent
+			if previous == nil or previous.objectiveID ~= objective.id then
+				bot.THD_PushFightIntent = {objectiveID=objective.id,lane=lane,target=decision.target,untilAt=state.untilAt}
+			else previous.target = decision.target end
+			J.SetTargetIfChanged(bot,decision.target,0.2)
+		end
+		state.result,state.operation,state.actionTarget,state.actionLocation = 'accepted',operation,target,point
+		LogEscort(bot,state,decision.reason)
+		return true
+	end
+	local function Move(point,tolerance,stage)
+		if PushMovement.Hold(bot,point,tolerance,objective.id) then
+			state.moveIssued,state.moveRoute = false,'already_in_position'
+			return Accepted('hold',nil,point,stage)
+		end
+		local feedback = {}
+		local accepted = J.ActionMoveToLocation(bot,'lane_work_push_escort',point,0.25,tolerance,
+			function(goal) return Check(goal,stage..'_detour') end,feedback)
+		state.moveIssued,state.moveRoute = feedback.issued,feedback.route
+		if accepted then
+			PushMovement.Accept(bot,feedback.location or point,feedback.route == 'detour' and 24 or tolerance,objective.id)
+			return Accepted('move',nil,feedback.location or point,stage)
+		end
+		Reject(stage,J.CanNotUseAction(bot) and 'action_protected' or feedback.reason or 'move_submit_rejected',feedback.location or point,feedback.route)
+		return false
+	end
+	if decision.kind == 'release' then return Release(decision.reason) end
+	local immediateAttack = decision.kind == 'building' and GetUnitToUnitDistance(bot,objective.target) <= bot:GetAttackRange()+25
+		or decision.kind == 'attack' and EscortVisible(decision.target) and GetUnitToUnitDistance(bot,decision.target) <= bot:GetAttackRange()+25
+	if recovery and not immediateAttack then
+		-- 实际无位移时先尝试短恢复步；不让同一建筑的编队点覆盖恢复预算。
+		for index,point in ipairs(PushMovement.Candidates(bot)) do
+			if Check(point,'recovery_'..index) and Move(point,48,'recovery_'..index) then return true end
+		end
+		return Release('no_safe_action')
+	end
+	if decision.kind == 'building' then
+		local center, current = objective.target:GetLocation(), bot:GetLocation()
+		local goal = center + (current-center):Normalized()*math.max(100,bot:GetAttackRange()-75)
+		local inRange = GetUnitToUnitDistance(bot,objective.target) <= bot:GetAttackRange()+25
+		-- 已有合法输出不需要重新进入塔圈；本帧即时塔伤/权限门仍然必须成立。
+		local holding = inRange and bot:GetCurrentActionType() == BOT_ACTION_TYPE_ATTACK
+			and bot:GetAttackTarget() == objective.target and not Push.HasBackdoorProtect(objective.target)
+			and Push.CanAttackManagedBuilding(bot,lane,objective.target,objective)
+		if holding or Check(inRange and current or goal,'building') then
+			if inRange then
+				if Push.TryAttackObjectiveBuilding(bot,lane,objective,objective.target,bot:GetAttackRange(),'push_escort_building') then return Accepted('attack_building',objective.target,current) end
+				Reject('building',J.CanNotUseAction(bot) and 'action_protected' or 'building_permission_or_submit_rejected',current)
+			elseif Move(goal,80,'building') then return true end
+		end
+	end
+	if decision.kind == 'attack' and EscortVisible(decision.target) and J.CanBeAttacked(decision.target) then
+		local targetLocation = decision.target:GetLocation()
+		local distance = Geometry.Distance(bot:GetLocation(), targetLocation)
+		local goal = targetLocation + (bot:GetLocation()-targetLocation):Normalized()*math.max(100,bot:GetAttackRange()-50)
+		local inRange = distance <= bot:GetAttackRange()+25
+		-- 已在射程内不检查虚构的更远站位；距离外只能通过已验证的移动接近。
+		if Check(inRange and bot:GetLocation() or goal,'attack') then
+			if inRange then
+				J.SetTargetIfChanged(bot, decision.target, 0.2)
+				if J.ActionAttackUnit(bot,'push_escort_'..decision.reason,decision.target,true,0.25) then return Accepted('attack_unit',decision.target,bot:GetLocation()) end
+				Reject('attack',J.CanNotUseAction(bot) and 'action_protected' or 'attack_submit_rejected',bot:GetLocation())
+			elseif Move(goal,80,'attack') then return true end
+		end
+	end
+	if decision.kind == 'attack' and not EscortVisible(decision.target) then Reject('attack','target_lost',nil) end
+	local locations = state.phase == 'APPROACH' and EscortApproachLocations(bot,lane,approachLocation)
+		or EscortFormationLocations(state,lane,objective)
+	local tried = {}
+	for index, point in ipairs(locations) do
+		local stage = (state.phase == 'APPROACH' and 'approach_' or 'formation_')..index
+		-- 远处编队点先化为局部接近步，每步仍检查视野、地形和所有未豁免塔区。
+		local origin = bot:GetLocation()
+		local distance = Geometry.Distance(origin,point)
+		if distance > 1400 then
+			point = origin+(point-origin):Normalized()*EscortConfig.APPROACH_STEP
+			stage = stage..'_local_step'
+		end
+		local key = string.format('%.0f:%.0f',point.x/32,point.y/32)
+		if not tried[key] and (state.phase ~= 'APPROACH' or Geometry.Distance(bot:GetLocation(),point) > 120) then
+			tried[key] = true
+			if Check(point,stage) then
+				if Move(point,120,stage) then return true end
+			end
+		end
+	end
+	return Release('no_safe_action')
 end
 
 function Push.PushThink(bot, lane)
+	PushMovement.Observe(bot)
+	if PushMovement.Yielding(bot) then Tasks.Release(bot,TaskName(lane),'physical_stall'); return end
 	local task=Tasks.Commit(bot,TaskName(lane))
 	if not Tasks.Check(bot,TaskName(lane),task~=nil and Push.IsObjectiveValid(task.objective)) then return end
     if not Timer.ShouldRunBotTask(bot, 'push_think_'..tostring(lane), 0.25, 0.03) then return end
@@ -1082,13 +1684,20 @@ function Push.PushThink(bot, lane)
 	local observedTarget = pushObjective ~= nil and pushObjective.target or (hLaneBuildingTarget or hEnemyAncient)
 	local observedTargetHealth, observedTargetMaxHealth = nil, nil
 	local objectiveCreepDistance = math.huge
+	local escortSample = nil
 	if pushObjective ~= nil and pushObjective.lane == lane and Push.IsObjectiveValid(observedTarget) then
 		local objectiveLocation = Push.GetObjectiveLocation(lane, observedTarget)
 		observedTargetHealth, observedTargetMaxHealth = J.Utils.GetVisibleHealth(observedTarget)
 		local botDistance = GetUnitToUnitDistance(bot, observedTarget)
 		local attackableDistance = math.min(1600, botAttackRange + 400)
-		objectiveCreepDistance = GetClosestVisibleCreepDistance(
-			UNIT_LIST_ALLIED_CREEPS, objectiveLocation, 5000) or math.huge
+		if EscortConfig.PUSH_ESCORT_ENABLED then
+			escortSample = Push.SampleEscort(bot,lane,observedTarget)
+			objectiveCreepDistance = escortSample.creepDistance
+			Wasteland.ObserveEscortSupport(bot,pushObjective,escortSample)
+		else
+			objectiveCreepDistance = GetClosestVisibleCreepDistance(
+				UNIT_LIST_ALLIED_CREEPS, objectiveLocation, 5000) or math.huge
+		end
 		pushObjective = Wasteland.ObservePushObjective(bot, lane, observedTarget, {
 			baseThreat = baseThreat,
 			hardEmergency = baseThreat ~= nil and baseThreat.hardEmergency == true,
@@ -1126,6 +1735,7 @@ function Push.PushThink(bot, lane)
     if J.IsValidBuilding(hLaneBuildingTarget)
     and Push.HasDefenseGlyphBuff(hLaneBuildingTarget)
     and #J.GetEnemiesNearLoc(hLaneBuildingTarget:GetLocation(), 1600) == 0
+    and escortSample == nil
     then
 		bot.THD_HighGroundAssaultAuthorization = nil
         local vRetreatLocation = GetLaneFrontLocation(GetTeam(), lane, -1800)
@@ -1145,6 +1755,10 @@ function Push.PushThink(bot, lane)
 		J.ActionMoveToLocation(bot, 'push_flee_tower', vLocation, 0.35, 260)
 		return
 	end
+
+	-- 安全门之后、旧英雄追击/保护等待之前执行分工，防止输出位随全队追人。
+	if escortSample ~= nil and Push.TryEscort(bot,lane,pushObjective,escortSample,
+		nearbyAllies,nearbyEnemies,highGroundSafetyState,highGroundAssaultAllowed) then return end
 
 	local forceHighGroundObjective = Push.ShouldForceHighGroundObjective({
 		authorized = highGroundAssaultAllowed,

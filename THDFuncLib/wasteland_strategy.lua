@@ -10,6 +10,14 @@ local laneAssignmentOK, LaneAssignment = pcall(
 
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
 local Strategy = {}
+local EscortConfig = require(GetScriptDirectory()..'/THDFuncLib/push_escort_config')
+local BotProfile = require(GetScriptDirectory()..'/THDFuncLib/bot_profile')
+
+local function PushPlanLog(event, objective, detail)
+	if not EscortConfig.PUSH_ESCORT_ENABLED or not EscortConfig.DEBUG then return end
+	print(string.format('[BOT][PushObjective] run=%s time=%.3f event=%s objective=%s lane=%s phase=%s %s',
+		EscortConfig.RUN_ID,DotaTime(),event,tostring(objective.id),tostring(objective.lane),tostring(objective.phase),detail or ''))
+end
 
 -- Wasteland 部署保持开启；Nostalgia 部署必须把本开关设为 false，关闭后完全沿用旧逻辑。
 Strategy.ENABLED = true
@@ -582,6 +590,7 @@ local function ClearObjective(team, reason, bot)
 		retryEntry = RecordObjectiveRetry(team, objective.targetKey, objective.releaseReason, now)
 	end
 	objective.retryAfter = retryEntry ~= nil and retryEntry.retryAfter or nil
+	PushPlanLog('released',objective,'reason='..tostring(objective.releaseReason))
 	lastObjectiveReleases[team] = objective
 	local lastHealthDropAge = objective.lastHealthDropAt ~= nil
 		and string.format('%.2f', math.max(0, now - objective.lastHealthDropAt)) or 'na'
@@ -777,6 +786,37 @@ local function GetEligibleCandidates(targetLocation)
 	return candidates
 end
 
+function Strategy.GetPushLevelReadiness(targetLocation, lane)
+	-- 等级门与实际推进阵容一致；附近参战人类仍计入，远端占位槽不拖低整队。
+	local goal = objectives[GetTeamKey()]
+	if goal ~= nil and goal.lane ~= lane then goal = nil end
+	local eligible = {}
+	if goal ~= nil then
+		for _, participant in ipairs(goal.participants or {}) do eligible[participant.playerID] = true end
+	else
+		for _, candidate in ipairs(GetEligibleCandidates(targetLocation)) do eligible[candidate.playerID] = true end
+	end
+	local result = {minLevel = math.huge, count = 0, minPlayerID = -1,
+		scope = goal ~= nil and 'objective_members' or 'eligible_roster', excluded = {}}
+	for index,playerID in ipairs(GetTeamPlayers(GetTeam())) do
+		local member = GetTeamMember(index)
+		local valid = IsAlive(member) and Safe(false,function() return member:IsHero() and not member:IsIllusion() end)
+		local humanPresent = valid and not IsPlayerBot(playerID)
+			and GetDistanceToLocation(member,targetLocation) <= Strategy.HIGH_GROUND_LOCAL_RADIUS
+			and not Safe(true,function() return member:IsInvulnerable() end)
+		if valid and (eligible[playerID] or humanPresent) and GetParticipantBlockReason(member,false) == nil then
+			local level = Safe(nil,function() return member:GetLevel() end)
+			if type(level) == 'number' then
+				result.count = result.count + 1
+				if level < result.minLevel then result.minLevel,result.minPlayerID = level,playerID end
+			end
+		else table.insert(result.excluded,tostring(playerID)) end
+	end
+	if result.count == 0 then result.minLevel = 0 end
+	result.excluded = table.concat(result.excluded,',')
+	return result
+end
+
 local function GetClosestAlliedCreepDistance(targetLocation)
 	if targetLocation == nil or UNIT_LIST_ALLIED_CREEPS == nil then return nil end
 	local closest = nil
@@ -897,7 +937,10 @@ local function AddFirstMatching(selected, selectedIDs, candidates, predicate)
 end
 
 local function AssignParticipantRoles(participants)
-	for _, participant in ipairs(participants) do participant.role = Strategy.ROLE_COVER end
+	for _, participant in ipairs(participants) do
+		participant.role = Strategy.ROLE_COVER
+		participant.frontlineProfile = EscortConfig.PUSH_ESCORT_ENABLED and BotProfile.IsFrontline(participant.unit)
+	end
 	local used = {}
 	local function AssignFirst(role, predicate)
 		for index, participant in ipairs(participants) do
@@ -909,15 +952,23 @@ local function AssignParticipantRoles(participants)
 		end
 		return false
 	end
+	-- 显式前排 profile 先取得前排职责，关闭护线开关时保留原分配顺序。
+	local explicitFrontline = EscortConfig.PUSH_ESCORT_ENABLED and AssignFirst(Strategy.ROLE_FRONTLINE, function(candidate)
+		return candidate.frontlineProfile
+	end)
 	if not AssignFirst(Strategy.ROLE_BUILDING_DAMAGE, function(candidate)
 		return CORE_POSITIONS[candidate.position] == true
 	end) and #participants > 0 then
-		participants[1].role = Strategy.ROLE_BUILDING_DAMAGE
-		used[1] = true
+		if not explicitFrontline or not AssignFirst(Strategy.ROLE_BUILDING_DAMAGE, function() return true end) then
+			participants[1].role = Strategy.ROLE_BUILDING_DAMAGE
+			used[1] = true
+		end
 	end
-	AssignFirst(Strategy.ROLE_FRONTLINE, function(candidate)
-		return candidate.position == 'off_core' or candidate.position == 'soft_support'
-	end)
+	if not explicitFrontline then
+		AssignFirst(Strategy.ROLE_FRONTLINE, function(candidate)
+			return candidate.position == 'off_core' or candidate.position == 'soft_support'
+		end)
+	end
 	AssignFirst(Strategy.ROLE_WAVE_CLEAR, function(candidate)
 		return candidate.position == 'mid' or candidate.position == 'safe_core'
 	end)
@@ -1075,7 +1126,8 @@ local function CanContinueLocalSiege(objective, retained, now)
 	if (tonumber(objective.tier) or 0) < 3 or objective.phase ~= Strategy.PHASE_SIEGE
 	or objective.defaultHighGroundUnlocked ~= true or #retained < 3
 	or now - (objective.lastAttackableObservationAt or -9999) > 1.5
-	or now - (objective.lastCreepSupportAt or -9999) > 1.5
+	or (now - (objective.lastCreepSupportAt or -9999) > 1.5
+		and not Strategy.GetEscortContinuation(objective))
 	or objective.lastBackdoorProtected ~= false
 	or not J.IsValidBuilding(objective.target) or not J.CanBeAttacked(objective.target) then return false end
 	local center = GetUnitLocation(objective.target)
@@ -1264,6 +1316,13 @@ local function RefreshVisibleObjectiveHealth(objective, now, bot, visibleHealth)
 	if healthDropped then
 		objective.lastHealthDropAt = now
 		objective.siegeAttackableSince = now
+		if objective.pushCombat == nil or not objective.pushCombat.active then
+			objective.pushCombat,objective.pushCombatSpent = nil,false
+		end
+		if now-(objective.pushHealthLogAt or -90) >= 2 then
+			objective.pushHealthLogAt = now
+			PushPlanLog('building_health_drop',objective,'hp='..tostring(visibleHealth)..' previous='..tostring(objective.lastVisibleTargetHealth))
+		end
 		RenewObjective(objective, now, 'building_health_drop', bot)
 	end
 	objective.lastVisibleTargetHealth = visibleHealth
@@ -1290,6 +1349,224 @@ local function TransitionPhase(objective, phase, bot, reason)
 	Debug(bot, string.format('action=objective_phase id=%s from=%s to=%s reason=%s',
 		tostring(objective.id), tostring(previous), tostring(phase), tostring(reason or 'state_change')))
 	return true
+end
+
+-- 英雄只能续接兵线已经打开的窗口；首次没有兵时不能创建无兵攻城授权。
+local function LogEscortWindow(objective, reason, member)
+	if not EscortConfig.DEBUG then return end
+	local now = GetNow()
+	local id = member and GetPlayerID(member) or objective.escortLastMaintainerID
+	local signature = reason..':'..tostring(id)
+	if signature == objective.escortWindowLogKey and now-(objective.escortWindowLogAt or -90) < EscortConfig.LOG_INTERVAL then return end
+	objective.escortWindowLogKey,objective.escortWindowLogAt = signature,now
+	local deadline = objective.escortBreakAt and objective.escortBreakAt + EscortConfig.CONTINUATION_DURATION
+	print(string.format('[BOT][PushEscortWindow] run=%s time=%.3f objective=%s reason=%s maintainer=%s checked_member=%s until_at=%s remaining=%s safe_until=%s closed=%s',
+		EscortConfig.RUN_ID,now,tostring(objective.id),reason,tostring(objective.escortLastMaintainerID),tostring(id),
+		tostring(deadline),tostring(deadline and deadline-now),tostring(objective.escortContinuationSafeUntil),tostring(objective.escortContinuationClosed)))
+end
+
+local function CloseEscortWindow(objective, reason, member)
+	-- 保存首次关闭原因；后续查询不能把原始原因覆盖成笼统的closed。
+	if not objective.escortContinuationClosed then objective.escortContinuationReason = reason end
+	objective.escortContinuationClosed = true
+	LogEscortWindow(objective,objective.escortContinuationReason or reason,member)
+	return false,true,objective.escortContinuationReason or reason
+end
+
+function Strategy.GetEscortContinuation(objective)
+	if not EscortConfig.PUSH_ESCORT_ENABLED or objective == nil then return false, false, 'disabled_or_no_objective' end
+	local now = GetNow()
+	local broken = objective.escortBreakAt
+	if broken == nil then return false, false, 'no_broken_wave' end
+	if objective.escortContinuationClosed then return false,true,objective.escortContinuationReason or 'closed' end
+	if now >= broken + EscortConfig.CONTINUATION_DURATION then return CloseEscortWindow(objective,'deadline') end
+	if now >= (objective.escortContinuationSafeUntil or -90) then return CloseEscortWindow(objective,'safety_snapshot_expired') end
+	if not CanInspectUnit(objective.target) then return CloseEscortWindow(objective,'target_unseen_or_invalid') end
+	if HasManagedBackdoorProtection(objective.target) then return CloseEscortWindow(objective,'building_protected') end
+	if not J.CanBeAttacked(objective.target) then return CloseEscortWindow(objective,'building_unattackable') end
+	local maintainer = objective.escortMaintainer
+	local radius = objective.escortMaintainRadius or EscortConfig.MAINTAIN_RADIUS
+	if maintainer == nil or not IsAlive(maintainer) then return CloseEscortWindow(objective,'maintainer_missing') end
+	if (objective.participantByID or {})[GetPlayerID(maintainer)] == nil then return CloseEscortWindow(objective,'maintainer_not_participant',maintainer) end
+	local blocked = GetParticipantBlockReason(maintainer,false)
+	if blocked ~= nil then return CloseEscortWindow(objective,'maintainer_'..blocked,maintainer) end
+	if GetDistanceToLocation(maintainer,GetUnitLocation(objective.target)) > radius then return CloseEscortWindow(objective,'maintainer_outside_radius',maintainer) end
+	if (GetVisibleHealthFraction(maintainer) or 0) <= EscortConfig.MIN_CONTINUE_HP then return CloseEscortWindow(objective,'maintainer_low_hp',maintainer) end
+	LogEscortWindow(objective,'active',maintainer)
+	return true,false,'active'
+end
+
+function Strategy.ObserveEscortSupport(bot, objective, sample)
+	if not EscortConfig.PUSH_ESCORT_ENABLED or objective == nil or sample == nil then return end
+	local now = GetNow()
+	if now < (objective.escortNextSupportAt or -90) then return end
+	objective.escortNextSupportAt = now + EscortConfig.SAMPLE_INTERVAL
+	local supported, overlap = {}, false
+	for _, creep in ipairs(sample.allied) do
+		if IsAlive(creep.unit) and CanInspectUnit(creep.unit)
+		and GetDistanceToLocation(creep.unit, GetUnitLocation(objective.target)) <= 850 then
+			supported[creep.unit] = true
+			overlap = overlap or (objective.escortSupportMembers or {})[creep.unit] == true
+		end
+	end
+	local hasSupport = next(supported) ~= nil
+	if hasSupport then
+		local renewedWave = objective.escortSupportMembers == nil or (objective.escortBreakAt ~= nil and not overlap)
+		if renewedWave then
+			objective.escortCycle = (objective.escortCycle or 0) + 1
+			objective.escortBreakAt, objective.escortDeferralUntil = nil, nil
+			objective.escortContinuationClosed = nil
+			objective.escortContinuationReason = nil
+			objective.escortLastMaintainerID = nil
+			objective.escortSupportMembers = {}
+		end
+		for unit in pairs(supported) do objective.escortSupportMembers[unit] = true end
+		objective.escortLastSupportAt = math.max(objective.escortLastSupportAt or -90,sample.at)
+	elseif objective.escortLastSupportAt ~= nil and objective.escortBreakAt == nil then
+		-- 从最后一次真实兵线观察计时，而不是从恢复 Think 的时刻重新起算。
+		objective.escortBreakAt = objective.escortLastSupportAt
+	end
+	objective.escortContinuationSafeUntil, objective.escortMaintainer = nil, nil
+	if objective.escortBreakAt == nil then return end
+	if objective.escortContinuationClosed then return end
+	if now >= objective.escortBreakAt + EscortConfig.CONTINUATION_DURATION then CloseEscortWindow(objective,'deadline'); return end
+	-- 任一维持条件丢失就终止本次窗口；同一波不能重新开启。
+	local center = GetUnitLocation(objective.target)
+	if center == nil or not CanInspectUnit(objective.target) then CloseEscortWindow(objective,'target_unseen_or_invalid'); return end
+	if HasManagedBackdoorProtection(objective.target) then CloseEscortWindow(objective,'building_protected'); return end
+	if not J.CanBeAttacked(objective.target) then CloseEscortWindow(objective,'building_unattackable'); return end
+	local allies = J.GetAlliesNearLoc(center, Strategy.HIGH_GROUND_LOCAL_RADIUS)
+	local enemies = J.GetEnemiesNearLoc(center, Strategy.HIGH_GROUND_LOCAL_RADIUS)
+	if #allies < #enemies then CloseEscortWindow(objective,'local_numbers'); return end
+	if #enemies > 0 and SumCombatPower(allies) < SumCombatPower(enemies) then CloseEscortWindow(objective,'local_power'); return end
+	local radius = objective.target == GetAncient(GetOpposingTeam())
+		and EscortConfig.ANCIENT_MAINTAIN_RADIUS or EscortConfig.MAINTAIN_RADIUS
+	local maintainer = nil
+	for _, participant in ipairs(objective.participants or {}) do
+		local member = participant.unit
+		local blocked = GetParticipantBlockReason(member,false)
+		if blocked ~= nil then CloseEscortWindow(objective,'participant_'..blocked,member); return end
+		local hp = Safe(0, function() return member:GetHealth() end)
+		if (GetVisibleHealthFraction(member) or 0) <= EscortConfig.MIN_CONTINUE_HP then CloseEscortWindow(objective,'participant_low_hp',member); return end
+		local threat = J.Retreat.GetTowerThreat(member, 3.0, nil, true)
+		if threat.unseenIncoming then CloseEscortWindow(objective,'unseen_incoming',member); return end
+		if (threat.unavoidableDamage or 0) >= hp then CloseEscortWindow(objective,'lethal_tower_damage',member); return end
+		if (threat.predictedDamage or 0)/math.max(1,hp) >= EscortConfig.MAX_TOWER_DAMAGE_RATIO then CloseEscortWindow(objective,'tower_damage_ratio',member); return end
+		if GetDistanceToLocation(member,center) <= radius then maintainer = member end
+	end
+	if maintainer ~= nil then
+		objective.escortContinuationClosed = false
+		objective.escortMaintainer, objective.escortMaintainRadius = maintainer, radius
+		objective.escortLastMaintainerID = GetPlayerID(maintainer)
+		objective.escortContinuationReason = 'active'
+		objective.escortContinuationSafeUntil = math.min(now + EscortConfig.CONTEXT_TTL,
+			objective.escortBreakAt + EscortConfig.CONTINUATION_DURATION)
+		LogEscortWindow(objective,'active',maintainer)
+	else CloseEscortWindow(objective,'no_maintainer_in_radius') end
+end
+
+local function EscortDefersStall(objective, now)
+	if not EscortConfig.PUSH_ESCORT_ENABLED or now >= (objective.escortDeferralUntil or -90) then return false end
+	for _, tactic in pairs(objective.escortTactics or {}) do
+		if now < tactic.expiresAt and now < tactic.untilAt then return true end
+	end
+	return false
+end
+
+local function CombatDefersStall(objective, now)
+	local combat = objective.pushCombat
+	return EscortConfig.PUSH_ESCORT_ENABLED and combat ~= nil
+		and ((combat.active and now < combat.deadline and now-combat.progressAt < EscortConfig.COMBAT_PROGRESS_GRACE)
+			or (not combat.active and now < (combat.resumeUntil or -90)))
+end
+
+local function ObservePushCombat(objective, now)
+	if not EscortConfig.PUSH_ESCORT_ENABLED or now < (objective.nextCombatObservation or -90) then return end
+	objective.nextCombatObservation = now + 0.25
+	local center = GetUnitLocation(objective.target)
+	if center == nil then return end
+	local combat = objective.pushCombat
+	local actors, victims = {}, {}
+	for _, participant in ipairs(objective.participants or {}) do
+		local unit = participant.unit
+		if IsAlive(unit) and GetDistanceToLocation(unit,center) <= Strategy.HIGH_GROUND_LOCAL_RADIUS
+		and GetParticipantBlockReason(unit,false) == nil
+		and Safe(BOT_MODE_NONE,function() return unit:GetActiveMode() end) == BOT_MODE_ATTACK then
+			local target = Safe(nil,function() return unit:GetAttackTarget() end)
+			if not CanInspectUnit(target) then target = Safe(nil,function() return unit:GetTarget() end) end
+			if CanInspectUnit(target) and Safe(false,function() return target:IsHero() and target:GetTeam() ~= unit:GetTeam() end)
+			and GetDistanceToLocation(target,center) <= Strategy.HIGH_GROUND_LOCAL_RADIUS
+			and not Safe(true,function() return J.IsSuspiciousIllusion(target) end) then
+				actors[participant.playerID] = {health = unit:GetHealth(), target = target,
+					distance = GetDistanceToLocation(unit,target:GetLocation()),
+					recentDamage = Safe(false,function() return unit:WasRecentlyDamagedByAnyHero(1) end)}
+				victims[target] = target:GetHealth()
+			end
+		end
+	end
+	local fighting = next(actors) ~= nil
+	if fighting and combat == nil and not objective.pushCombatSpent
+	and now < (objective.overallDeadline or -90) and now < (objective.expiresAt or -90) then
+		combat = {active = true, startedAt = now, deadline = now+EscortConfig.COMBAT_MAX_DURATION,
+			progressAt = now, actors = {}, victims = {}}
+		objective.pushCombat,objective.pushCombatSpent = combat,true
+		PushPlanLog('combat_confirmed',objective,'until_at='..tostring(combat.deadline))
+	end
+	if combat == nil or not combat.active then return end
+	local progress = false
+	for target,health in pairs(victims) do
+		if combat.victims[target] ~= nil and health < combat.victims[target] then progress = true end
+	end
+	-- 只认可实际受击、敌人掉血或短暂的有效接近，不用仅设置GetTarget长期续租。
+	for id, current in pairs(actors) do
+		local old = combat.actors[id]
+		if old ~= nil and ((current.recentDamage and current.health < old.health)
+		or (now-combat.startedAt <= 2 and current.target == old.target and old.distance-current.distance >= 48)) then progress = true end
+	end
+	combat.actors,combat.victims = actors,victims
+	if progress then combat.progressAt = now end
+	if not fighting or now >= combat.deadline or now-combat.progressAt >= EscortConfig.COMBAT_PROGRESS_GRACE then
+		combat.active,combat.resumeUntil = false,now+EscortConfig.COMBAT_RESUME_DURATION
+		objective.siegeAttackableSince = now
+		PushPlanLog('combat_end',objective,'reason='..(not fighting and 'contact_lost' or (now>=combat.deadline and 'deadline' or 'no_progress'))
+			..' resume_until='..tostring(combat.resumeUntil))
+	end
+	local lease = combat.active and math.min(combat.deadline,combat.progressAt+EscortConfig.COMBAT_PROGRESS_GRACE)
+		or combat.resumeUntil
+	if combat.active then
+		for _, participant in ipairs(objective.participants or {}) do
+			if actors[participant.playerID] ~= nil then
+				-- 有效局部战斗也属于任务进展，但不伪造arrived或接近建筑距离。
+				participant.noProgressDeadline = math.max(participant.noProgressDeadline or now,lease)
+			end
+		end
+	end
+	objective.overallDeadline = math.min(objective.absoluteDeadline or lease,math.max(objective.overallDeadline or now,lease))
+	objective.expiresAt = math.min(objective.overallDeadline,math.max(objective.expiresAt or now,lease))
+	objective.expireAt = objective.expiresAt
+end
+
+function Strategy.NoteEscortTactic(bot, objective, state)
+	if not EscortConfig.PUSH_ESCORT_ENABLED or objective == nil then return end
+	local now, playerID = GetNow(), GetPlayerID(bot)
+	objective.escortTactics = objective.escortTactics or {}
+	if state == nil then objective.escortTactics[playerID] = nil; return end
+	if (state.phase == 'PRESSURE' or state.phase == 'CONTACT' or state.phase == 'REGROUP') and state.untilAt ~= nil then
+		-- 每个兵线周期只有一次最多六秒的宽限，不通过成员轮换或切状态续命。
+		objective.escortDeferralUntil = objective.escortDeferralUntil or now + EscortConfig.REGROUP_DURATION
+		objective.escortTactics[playerID] = {expiresAt = state.expiresAt,
+			untilAt = math.min(state.untilAt, objective.escortDeferralUntil)}
+	else objective.escortTactics[playerID] = nil end
+	if state.progressReason ~= nil then
+		objective.escortProgressKeys = objective.escortProgressKeys or {}
+		local key = tostring(playerID)..':'..tostring(state.wave and state.wave.id)..':'..state.progressReason
+		local value = state.wave and state.wave.bestDistance or math.huge
+		if state.progressReason == 'escort_threat_displaced' then key = key..':'..tostring(state.pressureSerial) end
+		if objective.escortProgressKeys[key] == nil or value < objective.escortProgressKeys[key] then
+			objective.escortProgressKeys[key] = value
+			RenewObjective(objective,now,state.progressReason,bot)
+		end
+	end
 end
 
 function Strategy.IsEnabled()
@@ -1374,6 +1651,7 @@ function Strategy.GetPushObjective(deferVisibleHealthRefresh)
 		ClearObjective(team, 'target_destroyed', nil)
 		return nil
 	end
+	ObservePushCombat(objective,now)
 	if now >= (objective.overallDeadline or -9999) then
 		ClearObjective(team, 'maximum_duration', nil)
 		return nil
@@ -1390,6 +1668,8 @@ function Strategy.GetPushObjective(deferVisibleHealthRefresh)
 		if objective.phase == Strategy.PHASE_SIEGE
 		and objective.siegeAttackableSince ~= nil
 		and now - objective.siegeAttackableSince >= Strategy.OBJECTIVE_SIEGE_NO_DAMAGE_TIMEOUT
+		and not EscortDefersStall(objective, now)
+		and not CombatDefersStall(objective, now)
 		then
 			ClearObjective(team, 'siege_no_health_drop', nil)
 			return nil
@@ -1986,6 +2266,8 @@ function Strategy.ObservePushObjective(bot, lane, target, observation)
 		end
 		if objective.phase == Strategy.PHASE_SIEGE
 		and now - (objective.siegeAttackableSince or now) >= Strategy.OBJECTIVE_SIEGE_NO_DAMAGE_TIMEOUT
+		and not EscortDefersStall(objective, now)
+		and not CombatDefersStall(objective, now)
 		then
 			ClearObjective(team, 'siege_no_health_drop', bot)
 			return nil

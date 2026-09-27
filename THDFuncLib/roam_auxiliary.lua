@@ -21,6 +21,7 @@ local ROAM_DESIRE_STAGGER = 0.09
 local ROAM_LATE_GAME_TIME = 25 * 60
 
 local KUSANAGI_ITEM_NAME = "item_kusanagi"
+local PICKUP_ITEM_NAMES = { item_kusanagi = true, item_gem = true }
 local KUSANAGI_DROP_RETRY_INTERVAL = 1.0
 local KUSANAGI_DROP_TIMEOUT = 3.0
 local KUSANAGI_RETRY_COOLDOWN = 10.0
@@ -65,8 +66,9 @@ local function IsItemInBotInventory(item)
 	return false
 end
 
-local function HasKusanagiInInventory()
-	return bot:FindItemSlot(KUSANAGI_ITEM_NAME) >= 0
+local function HasPendingPickupConversion()
+	-- 两种掉落物都会由游戏侧兑换，等待腾出的格子后再回收原装备。
+	return bot:FindItemSlot(KUSANAGI_ITEM_NAME) >= 0 or bot:FindItemSlot("item_gem") >= 0
 end
 
 local function FindDroppedItemByHandle(item)
@@ -84,7 +86,7 @@ local function ClearDisplacedItem()
 end
 
 local function GetLeastValuableRecoverableItemSlot()
-	local minPrice = 10000
+	local minPrice = math.huge
 	local minSlot = -1
 	for slot = 0, 8 do
 		local item = bot:GetItemInSlot(slot)
@@ -102,9 +104,9 @@ local function GetLeastValuableRecoverableItemSlot()
 	return minSlot
 end
 
-local function GetKusanagiMainSlot(unit)
+local function GetPickupMainSlot(unit)
 	unit = unit or bot
-	local minPrice = 10000
+	local minPrice = math.huge
 	local minSlot = -1
 	for slot = 0, 5 do
 		local item = unit:GetItemInSlot(slot)
@@ -122,8 +124,18 @@ local function GetKusanagiMainSlot(unit)
 	return minSlot
 end
 
-local function CanMakeKusanagiMainSlot(unit)
-	return GetKusanagiMainSlot(unit) ~= -1
+local function CanMakePickupMainSlot(unit)
+	return unit:FindItemSlot(KUSANAGI_ITEM_NAME) < 0
+		and unit:FindItemSlot("item_gem") < 0
+		and GetPickupMainSlot(unit) ~= -1
+end
+
+local function GetPickupDesire()
+	-- 安全拾取需要高于普通攻击欲望；有可见敌人时不强抢战斗控制权。
+	if #bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE) == 0 then
+		return BOT_MODE_DESIRE_ABSOLUTE * 0.98
+	end
+	return BOT_MODE_DESIRE_VERYHIGH
 end
 
 local function GetPlayerID(unit)
@@ -132,7 +144,7 @@ local function GetPlayerID(unit)
 	return ok and playerID or -1
 end
 
-local function GetKusanagiClaimant(location)
+local function GetPickupClaimant(location)
 	local candidates = {}
 	local seen = {}
 	local teamPlayers = nil
@@ -162,7 +174,7 @@ local function GetKusanagiClaimant(location)
 			local alive = member.IsAlive == nil or member:IsAlive()
 			local isBot = member.IsBot == nil or member:IsBot()
 			local distance = GetUnitToLocationDistance(member, location)
-			if alive and isBot and distance <= 900 and CanMakeKusanagiMainSlot(member)
+			if alive and isBot and distance <= 900 and CanMakePickupMainSlot(member)
 				and (distance < claimantDistance
 					or (distance == claimantDistance and memberID < claimantID))
 			then
@@ -229,7 +241,7 @@ local function ScanEdibleItem()
 	edibleCheck = DotaTime()
 end
 
-local function ScanKusanagi()
+local function ScanDroppedPickupItems()
 	if DotaTime() < droppedCheck + 2.0 then return BOT_MODE_DESIRE_NONE end
 	if blockedKusanagiItem ~= nil and DotaTime() >= blockedKusanagiUntil then
 		blockedKusanagiItem = nil
@@ -239,11 +251,11 @@ local function ScanKusanagi()
 	for _, drop in pairs(GetDroppedItemList()) do
 		if drop.item ~= nil
 			and drop.item ~= blockedKusanagiItem
-			and drop.item:GetName() == KUSANAGI_ITEM_NAME
-			and GetKusanagiClaimant(drop.location) == bot
+			and PICKUP_ITEM_NAMES[drop.item:GetName()]
+			and GetPickupClaimant(drop.location) == bot
 		then
 			pickedItem = drop
-			return BOT_MODE_DESIRE_VERYHIGH
+			return GetPickupDesire()
 		end
 	end
 	droppedCheck = DotaTime()
@@ -283,7 +295,7 @@ local function ComputeDesire()
 		CandidateDebug.Note('edible_swap')
 		return BOT_MODE_DESIRE_VERYHIGH + 0.1
 	end
-	local desire = ScanKusanagi()
+	local desire = ScanDroppedPickupItems()
 	if desire > BOT_MODE_DESIRE_NONE then cachedProvider = 'kusanagi_pickup' end
 	CandidateDebug.Note('no_item_task_or_kusanagi')
 	return desire
@@ -313,12 +325,12 @@ local function EvaluateDesire()
 		pickedItem=nil
 	end
 
-	if pickedItem ~= nil and HasKusanagiInInventory() then pickedItem = nil end
+	if pickedItem ~= nil and HasPendingPickupConversion() then pickedItem = nil end
 	local shouldYieldToRetreat = J.Retreat.ShouldYield(bot, J.Retreat.HIGH)
 	if displacedItem ~= nil and pickedItem == nil then
 		if IsItemInBotInventory(displacedItem) then
 			if DotaTime() >= displacedItemStartTime + KUSANAGI_DROP_TIMEOUT then ClearDisplacedItem() end
-		elseif not HasKusanagiInInventory() then
+		elseif not HasPendingPickupConversion() then
 			local droppedItem = FindDroppedItemByHandle(displacedItem)
 			if droppedItem ~= nil
 				and GetUnitToLocationDistance(bot, droppedItem.location) <= KUSANAGI_RECOVERY_PICKUP_RADIUS
@@ -354,6 +366,9 @@ function Auxiliary.GetDesire()
 	if pendingTask~=nil and source~=HeroSpecificProvider[bot:GetUnitName()] then
 		local checked=Auxiliary.Recheck()
 		if checked<=0 then pendingTask=nil;return 0,'none' end
+		-- 使用即时复核的欲望，避免缓存的安全状态继续压过新出现的战斗。
+		score=checked
+		pendingTask.score=checked
 	end
 	return score,source
 end
@@ -375,21 +390,23 @@ function Auxiliary.Recheck()
 	end
 	if source=='kusanagi_pickup' then
 		local drop=task.item~=nil and FindDroppedItemByHandle(task.item.item) or nil
-		if drop==nil or HasKusanagiInInventory() or DotaTime()<pickupRetryAt then return 0,source end
+		if drop==nil or HasPendingPickupConversion() or DotaTime()<pickupRetryAt then return 0,source end
+		if not CanMakePickupMainSlot(bot) then return 0,source end
 		local distance=GetUnitToLocationDistance(bot,drop.location)
+		if distance>1100 then return 0,source end
 		local progress=activeTask~=nil and activeTask.source==source and activeTask or task
 		if progress.bestDistance==nil or distance<progress.bestDistance-48 then
 			progress.bestDistance,progress.progressAt=distance,DotaTime()
 		end
 		if DotaTime()-(progress.progressAt or DotaTime())>6 then pickupRetryAt=DotaTime()+3;return 0,source end
-		return task.score,source
+		return GetPickupDesire(),source
 	end
 	return 0,'none'
 end
 
 local function TryHandleDisplacedItem()
 	if displacedItem == nil then return false end
-	if HasKusanagiInInventory() then
+	if HasPendingPickupConversion() then
 		pickedItem = nil
 		return false
 	end
@@ -423,7 +440,7 @@ local function TryHandleDisplacedItem()
 			end
 
 			local emptyBackpackSlot = GetEmptyBackpackSlot(bot)
-			local lessValItem = GetKusanagiMainSlot()
+			local lessValItem = GetPickupMainSlot()
 			if lessValItem == -1 then
 				pickedItem = nil
 				return true
@@ -512,7 +529,7 @@ function Auxiliary.Think()
 	end
 	if GetUnitToLocationDistance(bot, pickedItem.location) <= 150 then
 		local emptyBackpackSlot = GetEmptyBackpackSlot(bot)
-		local lessValItem = GetKusanagiMainSlot()
+		local lessValItem = GetPickupMainSlot()
 		if lessValItem == -1 then
 			pickedItem = nil
 			return

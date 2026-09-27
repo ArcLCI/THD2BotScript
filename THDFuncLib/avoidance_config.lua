@@ -5,6 +5,16 @@ local Avoidance = {}
 -- 所有原生避让能力必须逐阶段实机通过后才允许启用。
 Avoidance.ENABLED = true
 Avoidance.TOWER_ESCAPE_ENABLED = true
+-- 仅已触发的敌方高地撤离使用出口策略，不改变正常围攻许可。
+Avoidance.HIGH_GROUND_EXIT_ENABLED = true
+Avoidance.HIGH_GROUND_EXIT_DEBUG = true
+Avoidance.HIGH_GROUND_EXIT_VERSION = 'HG-EXIT-20260927-R3'
+Avoidance.HIGH_GROUND_EXIT_SCAN_INTERVAL = 0.5
+Avoidance.HIGH_GROUND_EXIT_REACH = 220
+Avoidance.HIGH_GROUND_EXIT_MARGIN = 200
+Avoidance.HIGH_GROUND_EXIT_STALL = 3.0
+Avoidance.HIGH_GROUND_EXIT_MAX_TIME = 18.0
+Avoidance.HIGH_GROUND_EXIT_RETRY = 3.0
 Avoidance.PROBE_MODE_LOAD = Research.PROBE_MODE_LOAD
 Avoidance.PROBE_PHASE = Research.PROBE_PHASE
 Avoidance.PROBE_TARGET_TEAM = Research.PROBE_TARGET_TEAM
