@@ -1,17 +1,17 @@
-local Tasks = require(GetScriptDirectory()..'/THDFuncLib/mode_task')
-local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
+local Tasks = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_task')
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
-local TeiBackstep = require(GetScriptDirectory()..'/THDFuncLib/tei_backstep')
-local Kasen = require(GetScriptDirectory()..'/THDFuncLib/kasen_state')
-local Config = require(GetScriptDirectory()..'/THDFuncLib/avoidance_config')
-local Controller = require(GetScriptDirectory()..'/THDFuncLib/avoidance_controller')
-local Skill = require(GetScriptDirectory()..'/THDFuncLib/skill_avoidance')
+local TeiBackstep = require(GetScriptDirectory()..'/THDFuncLib/heroes/tei/tei_backstep')
+local Kasen = require(GetScriptDirectory()..'/THDFuncLib/heroes/kasen/kasen_state')
+local Config = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_config')
+local Controller = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_controller')
+local Skill = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/skill_avoidance')
 local Probe
 if Config.IsAnyProbeEnabled() then
-	Probe = require(GetScriptDirectory()..'/THDFuncLib/avoidance_native_probe')
+	Probe = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_native_probe')
 end
 
-local SourceObserver = Config.SOURCE_OBSERVATION_ENABLED and require(GetScriptDirectory()..'/THDFuncLib/skill_circle_observer') or nil
+local SourceObserver = Config.SOURCE_OBSERVATION_ENABLED and require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/skill_circle_observer') or nil
 local bot = GetBot()
 if bot ~= nil then
 	print(string.format('[BOT][SkillAvoidance] run=%s team=%s player=%s event=loaded enabled=%d', tostring(Config.RUN_ID), tostring(bot:GetTeam()), tostring(bot:GetPlayerID()), Config.ENABLED and Config.SKILL_AVOIDANCE_ENABLED and 1 or 0))
@@ -94,14 +94,14 @@ function Think()
 	-- 即使任务候选已失效，也不能让规避移动覆盖正在引导或自锁的技能。
 	if Kasen.IsProtected(bot) then Kasen.Update(bot); return end
 	local task=Tasks.Commit(bot,'evasive_maneuvers')
-	if task==nil then return end
+	if task==nil then Controller.FlushPendingStop(bot);return end
 	if task.kind=='kasen' then Kasen.Think(bot);return end
 	if TeiBackstep.Think(bot) then return end
 	if J.IsTeiActionProtected(bot) then return end
 	if not avoidanceEnabled then return end
 	-- 技能规避分支也必须保护探女已提交动作的前摇与确认。
 	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then
-		local util = require(GetScriptDirectory()..'/THDFuncLib/sagume_util')
+		local util = require(GetScriptDirectory()..'/THDFuncLib/heroes/sagume/sagume_util')
 		if util.Update(bot) then return end
 	end
 	if task.kind=='probe' and Probe~=nil then Probe.Think(bot);return end

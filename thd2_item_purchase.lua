@@ -1,6 +1,6 @@
 require(GetScriptDirectory() ..  "/thd2_item_recipe_list")
-local LaneAssignment = require(GetScriptDirectory()..'/THDFuncLib/lane_assignment')
-local RoamConfig = require(GetScriptDirectory()..'/THDFuncLib/roam_config')
+local LaneAssignment = require(GetScriptDirectory()..'/THDFuncLib/modes/laning/lane_assignment')
+local RoamConfig = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_config')
 
 function FindItem(item_name)
     local npcBot = GetBot()

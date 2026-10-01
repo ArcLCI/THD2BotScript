@@ -2,7 +2,7 @@ local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local X = {}
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
-local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/wasteland_strategy')
+local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/wasteland_strategy')
 local ownerBot
 
 -- Minion 入口可独立加载，不依赖物品模块先注册同名全局函数。

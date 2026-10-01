@@ -2,8 +2,8 @@ local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
-local SunnyUltimate = require(GetScriptDirectory() .. "/THDFuncLib/sunny_ultimate")
-local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
+local SunnyUltimate = require(GetScriptDirectory() .. "/THDFuncLib/heroes/sunny/sunny_ultimate")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/modes/roam/roam_initiation")
 
 local SUNNY01 = "ability_thdots_sunny01"
 local SUNNY02 = "ability_thdots_sunny02"

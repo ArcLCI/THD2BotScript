@@ -1,7 +1,7 @@
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/bot_generic")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
-local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/wasteland_strategy")
+local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/modes/shared/wasteland_strategy")
 
 local owner = GetBot()
 local FIRE_UNIT = "npc_thdots_unit_patchouli_fire_fire"

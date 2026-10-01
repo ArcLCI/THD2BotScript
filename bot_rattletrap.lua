@@ -1,6 +1,6 @@
 
 require(GetScriptDirectory() ..  "/bot_generic")
-local SunnyIllusion = require(GetScriptDirectory() .. "/THDFuncLib/sunny_illusion")
+local SunnyIllusion = require(GetScriptDirectory() .. "/THDFuncLib/heroes/sunny/sunny_illusion")
 
 ----------------------------------------------------------------------------------------------------
 

@@ -1,11 +1,11 @@
-local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
-local configLoaded, Config = pcall(require, GetScriptDirectory()..'/THDFuncLib/roam_config')
+local configLoaded, Config = pcall(require, GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_config')
 if not configLoaded or type(Config) ~= 'table' then Config = {} end
-local Auxiliary = require(GetScriptDirectory()..'/THDFuncLib/roam_auxiliary')
-local ModeDesireDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_desire_debug')
-local RoamDebug = require(GetScriptDirectory()..'/THDFuncLib/roam_debug')
+local Auxiliary = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_auxiliary')
+local ModeDesireDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_desire_debug')
+local RoamDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_debug')
 
 local bot = GetBot()
 local activeProvider = nil
@@ -39,7 +39,7 @@ local function IsGankEnabled()
 end
 
 local function GetGankProvider()
-	if Gank == nil then Gank = require(GetScriptDirectory()..'/THDFuncLib/roam_gank') end
+	if Gank == nil then Gank = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_gank') end
 	return Gank
 end
 
@@ -209,6 +209,29 @@ function IsItemAvailable(itemName)
 		if item ~= nil and item:GetName() == itemName then return item end
 	end
 	return nil
+end
+
+local ExecutionConfig=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/execution_config')
+local Execution=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_execution')
+local LegacyGetDesire,LegacyOnStart,LegacyOnEnd,LegacyThink=GetDesire,OnStart,OnEnd,Think
+function GetDesire()
+	if not ExecutionConfig.RoamEnabled() then return LegacyGetDesire() end
+	local current=RefreshBot()
+	if not current then return BOT_MODE_DESIRE_NONE end
+	ModeDesireDebug.Think(current)
+	return Execution.GetDesire(current)
+end
+function OnStart()
+	if not ExecutionConfig.RoamEnabled() then return LegacyOnStart() end
+	local current=RefreshBot();if current then Utils.NoteModeStart(current,'roam');Execution.OnStart(current) end
+end
+function OnEnd()
+	if not ExecutionConfig.RoamEnabled() then return LegacyOnEnd() end
+	local current=RefreshBot();if current then Execution.OnEnd(current) end
+end
+function Think()
+	if not ExecutionConfig.RoamEnabled() then return LegacyThink() end
+	local current=RefreshBot();if current then Execution.Think(current) end
 end
 
 -- 仅观察本模式自然返回值，不参与模式选择。

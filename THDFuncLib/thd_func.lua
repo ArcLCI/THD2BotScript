@@ -6,13 +6,13 @@ local DireFountain = Vector( 6928, 6372, 392 )
 
 J.Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 J.Site = require( GetScriptDirectory()..'/THDFuncLib/aba_site')
-J.Retreat = require( GetScriptDirectory()..'/THDFuncLib/aba_retreat')
+J.Retreat = require( GetScriptDirectory()..'/THDFuncLib/modes/retreat/aba_retreat')
 local CombatPower = require( GetScriptDirectory()..'/THDFuncLib/combat_power')
 local AvoidanceController = nil
 
 local function GetAvoidanceController()
 	if AvoidanceController ~= nil then return AvoidanceController end
-	local ok, module = pcall(require, GetScriptDirectory()..'/THDFuncLib/avoidance_controller')
+	local ok, module = pcall(require, GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_controller')
 	if ok and type(module) == 'table' then AvoidanceController = module end
 	return AvoidanceController
 end
@@ -390,7 +390,7 @@ function J.ActionMoveToLocation(bot, actionName, vLoc, interval, distance, valid
 	local routed, kind, force = false, 'original', false
 	-- 只接入明确上报目标的兵线/Rune移动，不推测Valve内部路径。
 	if type(actionName)=='string' and (string.sub(actionName,1,10)=='lane_work_' or string.sub(actionName,1,5)=='rune_' or actionName=='idle_available_rune') then
-		if SkillMovement == nil then SkillMovement=require(GetScriptDirectory()..'/THDFuncLib/skill_avoidance') end
+		if SkillMovement == nil then SkillMovement=require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/skill_avoidance') end
 		vLoc,kind,force=SkillMovement.ResolveMove(bot,actionName,vLoc)
 		if vLoc==nil then
 			if feedback then feedback.reason = 'skill_route_unavailable'; feedback.route = kind end
@@ -1850,7 +1850,8 @@ function J.GetEnemyList( bot, nRadius )
 
 	for _, enemy in pairs( nCandidate )
 	do
-		if enemy ~= nil and type(enemy) == "table" and enemy:IsAlive()
+		-- 附近列表可能残留已移除的单位句柄；先验证，再读取存活和敌方可见信息。
+		if enemy ~= nil and type(enemy) == "table" and not enemy:IsNull() and enemy:CanBeSeen() and enemy:IsAlive()
 			and not J.IsSuspiciousIllusion( enemy )
 		then
 			table.insert( nRealEnemyList, enemy )

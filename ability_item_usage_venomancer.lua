@@ -2,9 +2,9 @@ local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
-local YuukaUnits = require(GetScriptDirectory() .. "/THDFuncLib/yuuka_units")
-local YuukaCombo = require(GetScriptDirectory() .. "/THDFuncLib/yuuka_combo")
-local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
+local YuukaUnits = require(GetScriptDirectory() .. "/THDFuncLib/heroes/yuuka/yuuka_units")
+local YuukaCombo = require(GetScriptDirectory() .. "/THDFuncLib/heroes/yuuka/yuuka_combo")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/modes/roam/roam_initiation")
 
 local YUUKA01 = "ability_thdots_yuuka01"
 local YUUKA02 = "ability_thdots_yuuka02"

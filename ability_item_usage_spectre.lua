@@ -2,7 +2,7 @@ local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
 local BotProfile = require(GetScriptDirectory() .. "/THDFuncLib/bot_profile")
-local NitoriCombat = require(GetScriptDirectory() .. "/THDFuncLib/nitori_combat")
+local NitoriCombat = require(GetScriptDirectory() .. "/THDFuncLib/heroes/nitori/nitori_combat")
 
 local NITORI01 = "ability_thdots_nitori01"
 local NITORI02 = "ability_thdots_nitori02"

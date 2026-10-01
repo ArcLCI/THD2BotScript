@@ -1,6 +1,6 @@
 local loadOK, LaneAssignment = pcall(
 	require,
-	GetScriptDirectory() .. "/THDFuncLib/lane_assignment"
+	GetScriptDirectory() .. "/THDFuncLib/modes/laning/lane_assignment"
 )
 local printedLoadError = false
 local printedRuntimeError = false

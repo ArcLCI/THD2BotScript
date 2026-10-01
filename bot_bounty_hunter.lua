@@ -1,7 +1,7 @@
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/bot_generic")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
-local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/wasteland_strategy")
+local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/modes/shared/wasteland_strategy")
 local CombatPower = require(GetScriptDirectory() .. "/THDFuncLib/combat_power")
 
 local bot = GetBot()

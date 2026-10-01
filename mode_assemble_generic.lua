@@ -1,4 +1,4 @@
-local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 local Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 

@@ -1,5 +1,5 @@
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
-local YuukaUnits = require(GetScriptDirectory() .. "/THDFuncLib/yuuka_units")
+local YuukaUnits = require(GetScriptDirectory() .. "/THDFuncLib/heroes/yuuka/yuuka_units")
 
 require(GetScriptDirectory() .. "/bot_generic")
 

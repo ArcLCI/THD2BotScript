@@ -1,6 +1,6 @@
 require(GetScriptDirectory() .. '/thd2_item_usage')
 local J = require(GetScriptDirectory() .. '/THDFuncLib/thd_func')
-local Kasen = require(GetScriptDirectory() .. '/THDFuncLib/kasen_state')
+local Kasen = require(GetScriptDirectory() .. '/THDFuncLib/heroes/kasen/kasen_state')
 
 function AbilityUsageThink()
 	local bot = GetBot()

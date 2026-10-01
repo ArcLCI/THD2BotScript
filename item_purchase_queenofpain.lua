@@ -1,5 +1,5 @@
 require(GetScriptDirectory()..'/thd2_item_purchase')
-local U = require(GetScriptDirectory()..'/THDFuncLib/sagume_util')
+local U = require(GetScriptDirectory()..'/THDFuncLib/heroes/sagume/sagume_util')
 local Profile = require(GetScriptDirectory()..'/THDFuncLib/bot_profile')
 
 local routes = {

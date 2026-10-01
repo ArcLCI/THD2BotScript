@@ -1,6 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
-local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/roam_initiation")
+local RoamInitiation = require(GetScriptDirectory() .. "/THDFuncLib/modes/roam/roam_initiation")
 
 ----------------------------------------------------------------------------------------------------
 

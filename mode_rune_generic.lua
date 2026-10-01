@@ -1,8 +1,9 @@
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
-local Tasks = require(GetScriptDirectory()..'/THDFuncLib/mode_task')
-local SkillMovement = require(GetScriptDirectory()..'/THDFuncLib/skill_avoidance')
-local TowerSafety = require(GetScriptDirectory()..'/THDFuncLib/tower_safety')
-local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
+local Tasks = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_task')
+local ExecutionConfig=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/execution_config')
+local SkillMovement = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/skill_avoidance')
+local TowerSafety = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/tower_safety')
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 local bot = GetBot()
 local botName = bot:GetUnitName();
 if bot == nil or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
@@ -10,7 +11,7 @@ local X = {}
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Utils = require(GetScriptDirectory()..'/THDFuncLib/utils')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
-local Geometry = require(GetScriptDirectory()..'/THDFuncLib/avoidance_geometry')
+local Geometry = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_geometry')
 
 local RUNE_DESIRE_EARLY_INTERVAL = 0.35
 local RUNE_DESIRE_MID_INTERVAL = 0.9
@@ -167,10 +168,13 @@ local function ClearActiveRuneTarget()
 	nRuneStatus = -1
 end
 
+local activeRuneReason='none'
 local function GetActiveRuneDesire()
+	activeRuneReason='active'
 	if idleRuneTask ~= nil then
 		if ValidateIdleRuneTask() then return 0.28 end
 		ClearActiveRuneTarget()
+		activeRuneReason='idle_rune_invalid'
 		return BOT_MODE_DESIRE_NONE
 	end
 	if wisdomRuneInfo[3] then
@@ -180,12 +184,14 @@ local function GetActiveRuneDesire()
 		or bot.wisdom[timeInMin][wisdomRuneInfo[2]] == true
 		then
 			ClearWisdomRuneMode()
+			activeRuneReason='wisdom_completed_or_missing'
 			return BOT_MODE_DESIRE_NONE
 		end
 
 		local wisdomLoc = wisdomRuneSpots[wisdomRuneInfo[2]]
 		if wisdomLoc ~= nil and X.ShouldAbortWisdomRune(wisdomLoc) then
 			MarkWisdomRuneAbandoned()
+			activeRuneReason='wisdom_unsafe'
 			return BOT_MODE_DESIRE_NONE
 		end
 
@@ -198,33 +204,39 @@ local function GetActiveRuneDesire()
 		return RUNE_ACTIVE_STICKY_NEAR_DESIRE
 	end
 
-	if bot:GetActiveMode() ~= BOT_MODE_RUNE then return BOT_MODE_DESIRE_NONE end
+	if bot:GetActiveMode() ~= BOT_MODE_RUNE then activeRuneReason='not_active_mode';return BOT_MODE_DESIRE_NONE end
 
 	if ClosestRune == nil or ClosestRune == -1 then
+		activeRuneReason='missing_rune_target'
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	if not X.IsSuitableToPickRune() then
+		activeRuneReason='unsuitable_to_pick'
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	local runeLoc = GetRuneSpawnLocation(ClosestRune)
 	if runeLoc == nil then
+		activeRuneReason='missing_rune_location'
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	ClosestDistance = GetUnitToLocationDistance(bot, runeLoc)
 	if ClosestDistance > 6000 then
+		activeRuneReason='rune_too_far'
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	if X.ShouldAbortRune(ClosestRune, runeLoc, ClosestDistance) then
+		activeRuneReason='rune_unsafe'
 		X.MarkRuneAbandoned(ClosestRune)
 		ClearActiveRuneTarget()
 		return BOT_MODE_DESIRE_NONE
 	end
 
 	nRuneStatus = GetRuneStatus(ClosestRune)
+	activeRuneReason='status_'..tostring(nRuneStatus)
 	if nRuneStatus == RUNE_STATUS_AVAILABLE then
 		if ClosestDistance < 700 then
 			return RUNE_ACTIVE_STICKY_NEAR_DESIRE
@@ -523,27 +535,65 @@ local function RuneTask(snapshot)
 		arrivalRadius=kind=='wisdom' and WISDOM_RUNE_PICKUP_RADIUS or RUNE_PICKUP_DISTANCE,stallSeconds=6}
 end
 local function RuneMissionSafe()
-	return not J.Retreat.ShouldYield(bot,J.Retreat.HIGH)
-		and not J.Utils.IsTeamPushingSecondTierOrHighGround(bot)
-		and J.GetEnemiesAroundAncient(bot,3200)==0
-		and DotaTime()-J.Utils.GameStates.recentDefendTime>=2
+	if J.Retreat.ShouldYield(bot,J.Retreat.HIGH) then return false,'high_retreat' end
+	if J.GetEnemiesAroundAncient(bot,3200)>0 then return false,'base_emergency' end
+	local strategicChange=J.Utils.IsTeamPushingSecondTierOrHighGround(bot)
+		or DotaTime()-J.Utils.GameStates.recentDefendTime<2
+	if not strategicChange then return true end
+	-- 普通战略变化计入机会成本，但已接近的可用符可有界收尾；未知/消失符不保留。
+	local task=Tasks.Active(bot,'rune')
+	if not task or task.kind~='rune' or bot:GetActiveMode()~=BOT_MODE_RUNE
+		or GetRuneStatus(task.key)~=RUNE_STATUS_AVAILABLE or not task.location then return false,'strategic_commitment' end
+	local distance=GetUnitToLocationDistance(bot,task.location)
+	return distance<=RUNE_PICKUP_DISTANCE or (distance<=700 and Tasks.ProgressScore(bot,'rune',0.5,true)>0.5),'strategic_commitment'
 end
 local pendingRuneSnapshot=nil
+local runeContinuation=nil
+local runeSession=0
+local runeRejected={}
+local runeLogAt=-90
+local function RuneIdentity(task)
+	return tostring(task.kind)..':'..tostring(task.key)..(task.kind=='wisdom' and ':'..tostring(task.snapshot.minute) or '')
+end
+local function ObservedRuneStatus(task)
+	return task and task.kind=='rune' and task.key and task.key~=-1 and GetRuneStatus(task.key) or -1
+end
+local function LogRune(event,task,reason,score)
+	if not ExecutionConfig.DEBUG or not task then return end
+	local now=DotaTime()
+	if (event=='active' or event=='admission_rejected') and now-runeLogAt<2 then return end
+	runeLogAt=now
+	print(string.format('[BOT][RuneTask] run=%s time=%.3f pid=%s event=%s session=%s target=%s rune_status=%s distance=%.1f score=%s reason=%s progress_at=%s started_at=%s retry_at=%s',
+		ExecutionConfig.RUN_ID,now,bot:GetPlayerID(),event,tostring(task.runeSession),RuneIdentity(task),ObservedRuneStatus(task),
+		task.location and GetUnitToLocationDistance(bot,task.location) or -1,tostring(score),tostring(reason),tostring(task.progressAt),tostring(task.startedAt),tostring(task.retryAt)))
+end
+local function RejectRune(task,reason)
+	if not task then return end
+	runeRejected[RuneIdentity(task)]={untilAt=DotaTime()+ExecutionConfig.RUNE_RESUME_SECONDS,status=ObservedRuneStatus(task),reason=reason}
+	runeContinuation=nil
+	LogRune('released',task,reason,0)
+end
 function GetDesire()
 	local active=Tasks.Active(bot,'rune')
-	if not RuneMissionSafe() then
-		Tasks.Release(bot,'rune','high_retreat');ClearActiveRuneTarget();ClearWisdomRuneMode();return 0
+	local safe,safetyReason=RuneMissionSafe()
+	if not safe then
+		RejectRune(active,safetyReason)
+		Tasks.Release(bot,'rune',safetyReason);ClearActiveRuneTarget();ClearWisdomRuneMode();return 0
 	end
 	if active~=nil then
 		RestoreRuneState(active.snapshot)
 		if not Tasks.Check(bot,'rune',true) then
+			RejectRune(active,'task_invalid_or_no_progress')
 			if active.kind=='rune' then X.MarkRuneAbandoned(active.key) end
 			ClearActiveRuneTarget();ClearWisdomRuneMode();return 0
 		end
 		if active.kind=='rune' or active.kind=='wisdom' then
 			-- 存活任务只复核当前符点、危险与进度，不在Think里重新寻找另一个符。
 			local score=GetActiveRuneDesire()
-			if score<=0 then Tasks.Release(bot,'rune','rune_invalid_or_unsafe');return 0 end
+			if score<=0 then RejectRune(active,activeRuneReason);Tasks.Release(bot,'rune',activeRuneReason);return 0 end
+			Tasks.ObserveValue(bot,'rune',active)
+			score=Tasks.ProgressScore(bot,'rune',score)
+			LogRune('active',active,activeRuneReason,score)
 			return Tasks.Offer(bot,'rune',score,RuneTask(CaptureRuneState()))
 		end
 	end
@@ -557,17 +607,41 @@ function GetDesire()
 	end,interval)
 	if saved then RestoreRuneState(saved) end
 	if score<=0 or pendingRuneSnapshot==nil then Tasks.Release(bot,'rune','no_candidate');return 0 end
-	return Tasks.Offer(bot,'rune',score,RuneTask(pendingRuneSnapshot))
+	local candidate=RuneTask(pendingRuneSnapshot)
+	local rejected=runeRejected[RuneIdentity(candidate)]
+	if rejected and DotaTime()<rejected.untilAt and ObservedRuneStatus(candidate)==rejected.status then
+		candidate.retryAt=rejected.untilAt;LogRune('admission_rejected',candidate,rejected.reason,0)
+		Tasks.Offer(bot,'rune',0,nil);return 0
+	end
+	if runeContinuation and DotaTime()<runeContinuation.expiresAt and RuneIdentity(candidate)==RuneIdentity(runeContinuation.task)
+	and ObservedRuneStatus(candidate)==RUNE_STATUS_AVAILABLE then candidate.resume=runeContinuation end
+	return Tasks.Offer(bot,'rune',Tasks.OpportunityScore(bot,score),candidate)
 end
 
 function OnStart()
 	Utils.NoteModeStart(bot,'rune')
 	local task=Tasks.Start(bot,'rune')
 	if task then RestoreRuneState(task.snapshot) end
-	runeModeStartTime=DotaTime()
+	local resume=task and task.resume
+	if resume and DotaTime()<resume.expiresAt and ObservedRuneStatus(task)==RUNE_STATUS_AVAILABLE then
+		-- 短暂让出模式后延续同一符点的进度与起始时间，不重置未知等待/停滞预算。
+		for _,field in ipairs({'startedAt','progressAt','bestDistance','health','runeSession'}) do task[field]=resume.task[field] end
+		runeModeStartTime=resume.modeStart
+		LogRune('resumed',task,'same_available_rune',task.score)
+	else
+		runeModeStartTime=DotaTime();runeSession=runeSession+1
+		if task then task.runeSession=runeSession;LogRune('acquired',task,'new_candidate',task.score) end
+	end
+	runeContinuation=nil
 end
 
 function OnEnd()
+	local task=Tasks.Active(bot,'rune')
+	if task and task.kind=='rune' and bot:IsAlive() and ObservedRuneStatus(task)==RUNE_STATUS_AVAILABLE
+	and not J.Retreat.ShouldYield(bot,J.Retreat.HIGH) then
+		runeContinuation={task=task,modeStart=runeModeStartTime,expiresAt=DotaTime()+ExecutionConfig.RUNE_RESUME_SECONDS}
+		LogRune('suspended',task,'mode_end',task.score)
+	elseif task then RejectRune(task,'mode_end_unavailable') end
 	Tasks.Release(bot,'rune','mode_end')
 	runeModeStartTime=-9999
 	pendingRuneSnapshot=nil

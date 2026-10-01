@@ -1,6 +1,6 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
-local Retreat = require(GetScriptDirectory()..'/THDFuncLib/aba_retreat')
+local Retreat = require(GetScriptDirectory()..'/THDFuncLib/modes/retreat/aba_retreat')
 
 ----------------------------------------------------------------------------------------------------
 

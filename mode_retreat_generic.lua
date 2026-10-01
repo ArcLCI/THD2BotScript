@@ -1,4 +1,4 @@
-local Retreat = require(GetScriptDirectory()..'/THDFuncLib/aba_retreat')
+local Retreat = require(GetScriptDirectory()..'/THDFuncLib/modes/retreat/aba_retreat')
 
 if not Retreat.IsEnabled() then
 	-- 不注册同名回调，完整保留引擎内置的 Valve 撤退模式；nil 返回值并不代表回退。

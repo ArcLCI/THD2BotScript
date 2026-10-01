@@ -1,7 +1,7 @@
 require(GetScriptDirectory() .. "/thd2_item_usage")
 
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
-local YumemiFlight = require(GetScriptDirectory() .. "/THDFuncLib/yumemi_gank_flight")
+local YumemiFlight = require(GetScriptDirectory() .. "/THDFuncLib/heroes/yumemi/yumemi_gank_flight")
 
 local YUMEMI_Q = "ability_thdots_yumemi01"
 local YUMEMI_W = "ability_thdots_yumemi02"

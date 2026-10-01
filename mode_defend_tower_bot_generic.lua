@@ -1,8 +1,8 @@
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
-local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 local Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
-local Defend = require( GetScriptDirectory()..'/THDFuncLib/aba_defend')
+local Defend = require( GetScriptDirectory()..'/THDFuncLib/modes/defend/aba_defend')
 
 local bot = GetBot()
 local botName = bot:GetUnitName()

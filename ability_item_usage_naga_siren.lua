@@ -1,6 +1,6 @@
 require(GetScriptDirectory() .. "/thd2_item_usage")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
-local FlandreUltimate = require(GetScriptDirectory() .. "/THDFuncLib/flandre_ultimate")
+local FlandreUltimate = require(GetScriptDirectory() .. "/THDFuncLib/heroes/flandre/flandre_ultimate")
 
 local MIRROR_ABILITY = "naga_siren_mirror_image"
 local ULTIMATE_ABILITY = "ability_thdots_flandre04"

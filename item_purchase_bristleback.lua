@@ -1,9 +1,9 @@
 require(GetScriptDirectory() .. '/thd2_item_purchase')
-local Kasen = require(GetScriptDirectory() .. '/THDFuncLib/kasen_state')
+local Kasen = require(GetScriptDirectory() .. '/THDFuncLib/heroes/kasen/kasen_state')
 local Actions = require(GetScriptDirectory() .. '/THDFuncLib/action_intent')
 local Consumables = require(GetScriptDirectory() .. '/THDFuncLib/consumable_inventory')
-local Towers = require(GetScriptDirectory() .. '/THDFuncLib/tower_safety')
-local Geometry = require(GetScriptDirectory() .. '/THDFuncLib/avoidance_geometry')
+local Towers = require(GetScriptDirectory() .. '/THDFuncLib/modes/shared/tower_safety')
+local Geometry = require(GetScriptDirectory() .. '/THDFuncLib/modes/evasive/avoidance_geometry')
 
 -- 累积前缀始终保留已买组件的位置；确认门槛只暂停下一阶段，不重置通用购买序号。
 local stages = {

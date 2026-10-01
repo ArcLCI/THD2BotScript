@@ -1,5 +1,14 @@
 -- 普通移动/普攻的意图复用；施法队列和模式任务不归此模块所有。
 local A = {}
+local ExecutionConfig=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/execution_config')
+
+-- 仅记录确实提交的命令；不改变旧接口的动作、欲望或保护规则。
+function A.NoteIssued(unit, kind, target, location)
+	if not ExecutionConfig.ENABLED then return end
+	unit.THD_ActionSequence = (unit.THD_ActionSequence or 0)+1
+	unit.THD_LastIssuedAction = {sequence=unit.THD_ActionSequence, kind=kind,
+		target=target, location=location, at=DotaTime()}
+end
 
 function A.Protect(unit, ability, startMargin)
 	unit.THD_ActionProtection = {ability=ability, untilTime=DotaTime()+(startMargin or 0.35)}
@@ -70,6 +79,7 @@ function A.Attack(unit, target, once)
 		return true, false
 	end
 	unit:Action_AttackUnit(target, once == true)
+	A.NoteIssued(unit,'attack',target)
 	unit.THD_ActionIntent = nil
 	return true, true
 end
@@ -94,6 +104,7 @@ function A.Move(unit, location, tolerance, kind, force, owner)
 	if kind == 'direct' then unit:Action_MoveDirectly(location)
 	elseif kind == 'attack_move' then unit:Action_AttackMove(location)
 	else unit:Action_MoveToLocation(location) end
+	A.NoteIssued(unit,kind,nil,location)
 	unit.THD_ActionIntent = {kind=kind, mode=mode, owner=owner, location=Vector(location.x,location.y,location.z),
 		bestDistance=Distance(current,location), progressAt=now}
 	return true, true

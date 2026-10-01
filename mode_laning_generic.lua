@@ -1,10 +1,11 @@
-local Tasks = require(GetScriptDirectory()..'/THDFuncLib/mode_task')
+local Tasks = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_task')
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
-local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 local Utils = require( GetScriptDirectory()..'/THDFuncLib/utils')
 local J = require( GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
-local LaneDiagnostics = require(GetScriptDirectory()..'/THDFuncLib/lane_assignment_diagnostics')
+local LaneDiagnostics = require(GetScriptDirectory()..'/THDFuncLib/modes/laning/lane_assignment_diagnostics')
+local StrategyShadow = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/strategy_phase')
 
 local bot = GetBot()
 local botName = bot:GetUnitName()
@@ -35,6 +36,7 @@ local function ComputeDesire()
 	nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
 	nEnemyCreeps = bot:GetNearbyLaneCreeps(800, true)
 	nInRangeEnemy = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
+	StrategyShadow.ObserveStrategy(bot,nInRangeEnemy)
 	nFurthestEnemyAttackRange = GetFurthestEnemyAttackRange(nInRangeEnemy)
 	if local_mode_laning_generic then
 		botAssignedLane = local_mode_laning_generic.GetBotTargetLane()
@@ -104,6 +106,7 @@ function GetDesire()
 	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then CandidateDebug.Note('high_retreat'); return BOT_MODE_DESIRE_NONE end
 	if bot:GetActiveMode()~=BOT_MODE_LANING and Tasks.Active(bot,'laning')~=nil then Tasks.Release(bot,'laning','native_mode_ended') end
 	local score=Utils.GetCachedModeDesire(bot,'laning',ComputeDesire)
+	StrategyShadow.NoteCandidate(bot,'lane',score,nil,'native_laning')
 	return Tasks.Offer(bot,'laning',score,{lane=botAssignedLane,reason='native_laning',nativeExecution=true})
 end
 

@@ -1,5 +1,5 @@
 require(GetScriptDirectory()..'/thd2_item_usage')
-local Sagume = require(GetScriptDirectory()..'/THDFuncLib/sagume_combat')
+local Sagume = require(GetScriptDirectory()..'/THDFuncLib/heroes/sagume/sagume_combat')
 
 -- 技能、专属装备与中立装备共用一个动作入口，避免同轮互相覆盖。
 function AbilityUsageThink()

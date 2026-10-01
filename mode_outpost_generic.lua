@@ -1,6 +1,6 @@
-local Tasks = require(GetScriptDirectory()..'/THDFuncLib/mode_task')
+local Tasks = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_task')
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
-local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 local bot = GetBot()
 local botName = bot:GetUnitName()
 if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end

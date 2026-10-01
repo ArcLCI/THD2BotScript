@@ -1,10 +1,10 @@
 require(GetScriptDirectory() .. '/thd2_item_usage')
 local J = require(GetScriptDirectory() .. '/THDFuncLib/thd_func')
-local Geometry = require(GetScriptDirectory() .. '/THDFuncLib/avoidance_geometry')
-local TowerSafety = require(GetScriptDirectory() .. '/THDFuncLib/tower_safety')
+local Geometry = require(GetScriptDirectory() .. '/THDFuncLib/modes/evasive/avoidance_geometry')
+local TowerSafety = require(GetScriptDirectory() .. '/THDFuncLib/modes/shared/tower_safety')
 local Consumables = require(GetScriptDirectory() .. '/THDFuncLib/consumable_inventory')
 local CombatPower = require(GetScriptDirectory() .. '/THDFuncLib/combat_power')
-local Backstep = require(GetScriptDirectory() .. '/THDFuncLib/tei_backstep')
+local Backstep = require(GetScriptDirectory() .. '/THDFuncLib/heroes/tei/tei_backstep')
 
 local E_BUFF = 'modifier_ability_thdots_tei03'
 local R_BUFF = 'modifier_ability_thdots_tei04'

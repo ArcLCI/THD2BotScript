@@ -1,5 +1,5 @@
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
-local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/mode_candidate_debug')
+local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 --[[ Generated with https://github.com/TypeScriptToLua/TypeScriptToLua ]]
 -- Lua Library inline imports
 local function __TS__ObjectEntries(obj)
