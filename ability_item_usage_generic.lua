@@ -1,7 +1,9 @@
 require(GetScriptDirectory() ..  "/thd2_item_usage")
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local Scheduler = require(GetScriptDirectory()..'/thd2_scheduler')
 local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
+local LotusItems = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/map_resource_items')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 
@@ -631,6 +633,7 @@ local function ItemUsageComplement()
 	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then return BOT_ACTION_DESIRE_NONE end
 
 	X.SetStashItemTimeUpdate()
+	if LotusItems.Think(bot) then return BOT_ACTION_DESIRE_ABSOLUTE end
 	-- 副包消耗品租约优先持有物品生命周期，避免通用道具动作覆盖交换与恢复。
 	local ownsInventoryLifecycle = Consumables.Think(bot)
 	if ownsInventoryLifecycle == true then return BOT_ACTION_DESIRE_ABSOLUTE end
@@ -1055,27 +1058,36 @@ function X.CanJuke()
 	return true
 end
 
+local function NoteItemUsageSkip(unit,reason)
+	LotusItems.Observe(unit,reason,'entry')
+end
+
 function ItemUsageThink()
 	if RefreshBotHandle() then return end
+	if Actions.RunePickupProtected(bot) then NoteItemUsageSkip(bot,'rune_pickup_protected');return end
 	-- 华扇候选等待模式接管时也不让通用物品抢先下单。
-	if J.IsKasenActionProtected(bot) or (bot.THD_KasenAction ~= nil and DotaTime() <= bot.THD_KasenAction.expires) then return end
-	if DotaTime() < (bot.THD_KasenInventoryUntil or -90) then return end
-	if J.IsTeiActionProtected(bot) then return end
-	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then return end
-	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
-	if J.IsTowerEscapeActive(bot) then return end
+	if J.IsKasenActionProtected(bot) or (bot.THD_KasenAction ~= nil and DotaTime() <= bot.THD_KasenAction.expires) then NoteItemUsageSkip(bot,'kasen_action');return end
+	if DotaTime() < (bot.THD_KasenInventoryUntil or -90) then NoteItemUsageSkip(bot,'kasen_inventory');return end
+	if J.IsTeiActionProtected(bot) then NoteItemUsageSkip(bot,'tei_action');return end
+	if bot.THD_SagumeActionUntil ~= nil and DotaTime() < bot.THD_SagumeActionUntil then NoteItemUsageSkip(bot,'sagume_action');return end
+	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then NoteItemUsageSkip(bot,'unit_unavailable');return end
+	if J.IsTowerEscapeActive(bot) then NoteItemUsageSkip(bot,'tower_escape');return end
 	if bot.lastItemFrameProcessTime == nil then bot.lastItemFrameProcessTime = DotaTime() end
 
 	local itemThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, bot.frameProcessTime, 1.25, 'item_usage_generic')
-	if DotaTime() > 30 and (DotaTime() - bot.lastItemFrameProcessTime < itemThinkInterval) then return end
+	if DotaTime() > 30 and (DotaTime() - bot.lastItemFrameProcessTime < itemThinkInterval) then NoteItemUsageSkip(bot,'scheduler_throttled');return end
 
 	bot.lastItemFrameProcessTime = DotaTime()
 	Scheduler.ObserveTaskRun(bot, 'item_usage_generic', itemThinkInterval)
-	if not J.IsNoItemIllution(bot) then ItemUsageComplement() end
+	if not J.IsNoItemIllution(bot) then
+		LotusItems.Observe(bot,'item_complement_entered','dispatch')
+		ItemUsageComplement()
+	else NoteItemUsageSkip(bot,'no_item_illusion') end
 end
 
 function AbilityUsageThink()
 	if RefreshBotHandle() then return end
+	if Actions.RunePickupProtected(bot) then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 	if J.IsTowerEscapeActive(bot) then return end
 	-- 烟/粉发单后必须等到物品消耗或冷却得到确认，英雄技能不得覆盖这段短生命周期。

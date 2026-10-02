@@ -1,4 +1,5 @@
 local M = {}
+local BackpackGuard = require(GetScriptDirectory() .. '/THDFuncLib/backpack_guard')
 
 -- deadline 使用绝对 DotaTime；Think 首返回值表示该 Bot 的背包生命周期仍由本模块持有。
 -- 调用方取得 GetReadyItem 后发单，再用 MarkCastIssued 等待实际消耗/冷却确认，确认后才 Release。
@@ -26,6 +27,9 @@ local REGISTRY = {
 	item_ward_sentry = {kind = 'location', keepPriority = 20},
 	item_ward_dispenser = {kind = 'location', keepPriority = 20},
 	item_cheese = {kind = 'none', keepPriority = 40},
+	item_famango = {kind = 'none', keepPriority = 20},
+	item_great_famango = {kind = 'none', keepPriority = 25},
+	item_greater_famango = {kind = 'none', keepPriority = 30},
 	item_jinkela = {kind = 'none', keepPriority = 40},
 	item_magic_mushroom = {kind = 'none', keepPriority = 10},
 	item_card_good_man = {kind = 'entity', keepPriority = 10},
@@ -290,6 +294,7 @@ end
 
 local function PromotePending(bot, state)
 	local pending = state and state.pendingRequest or nil
+	BackpackGuard.Release(bot, state)
 	STATES[bot] = nil
 	if pending ~= nil and pending.deadline > Now() then return ActivateRequest(bot, pending) end
 	return nil
@@ -434,7 +439,7 @@ function M.MarkCastIssued(bot, requester)
 	state.castIssuedCooldown = GetCooldown(item)
 	state.castConfirmed = false
 	state.ready = false
-	return true, 'cast_pending'
+	return true, 'cast_pending', math.min(state.deadline,state.castIssuedTime+CAST_CONFIRM_TIMEOUT)
 end
 
 function M.IsCastConfirmationPending(bot, requester)
@@ -471,6 +476,13 @@ local function GetCastConfirmationStatus(bot, state)
 	state.castConfirmed = false
 	state.readyDeadline = math.min(state.deadline, Now() + READY_TIMEOUT)
 	return 'cast_unconfirmed'
+end
+
+-- 只轮询已发单结果，不交换槽位、不恢复物品；允许调用者在自己的保护锁内确认。
+function M.PollCastConfirmation(bot,requester)
+	local state=STATES[bot]
+	if not state or state.requester~=requester or state.restorePending then return nil end
+	return GetCastConfirmationStatus(bot,state)
 end
 
 local function DidBridgeSucceed(bot, state)
@@ -533,6 +545,7 @@ function M.GetReadyItem(bot, itemName, requester)
 	if state == nil or state.restorePending == true then return nil end
 	if state.castIssuedTime ~= nil or state.castConfirmed == true then return nil end
 	if state.itemName ~= itemName or state.requester ~= requester then return nil end
+	BackpackGuard.Touch(bot, state)
 	local item, slot = FindLeasedItem(bot, state)
 	if item == nil or slot < MAIN_SLOT_MIN or slot > MAIN_SLOT_MAX then return nil end
 	local castable, ok = CallMethod(item, 'IsFullyCastable', false)
@@ -544,8 +557,10 @@ end
 
 function M.Think(bot)
 	local state = STATES[bot]
-	if state == nil then return false, 'idle' end
+	if state == nil then BackpackGuard.Release(bot); return false, 'idle' end
 	local now = Now()
+	-- 换入前续租，覆盖冷却、消耗确认及恢复；死亡由桥接释放，停止Think也会原生过期。
+	BackpackGuard.Touch(bot, state)
 
 	if state.restorePending == true then return TryRestore(bot, state) end
 	if now >= state.deadline then

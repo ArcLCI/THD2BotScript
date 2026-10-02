@@ -18,6 +18,7 @@ local PushProgress = require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_
 local PersonalTower = require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_tower_policy')
 local BuildingAccess = require(GetScriptDirectory()..'/THDFuncLib/modes/push/building_access')
 local LocalLane = require(GetScriptDirectory()..'/THDFuncLib/modes/laning/local_lane_fallback')
+local PushJourney = require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_journey')
 local StrategyShadow = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/strategy_phase')
 local function ExecutionEnabled()
 	return ExecutionConfig.PushEnabled() and EscortConfig.PUSH_ESCORT_ENABLED and Wasteland.IsEnabled()
@@ -350,6 +351,11 @@ local function CombatHandoff(bot,lane)
 end
 
 local function TaskName(lane) return 'push_'..tostring(lane) end
+local function PrepareBasicFallback(bot,lane,building)
+	local route=PushJourney.Current(bot,lane,building)
+	if route then return LocalLane.PreparePushJourney(bot,lane,route) end
+	return LocalLane.Prepare(bot,lane)
+end
 function Push.GetPushDesire(bot,lane)
 	Tasks.NoteExecutionReady(bot)
 	if ExecutionEnabled() and LocalLane.FinishRecoveryStep(bot) then
@@ -389,7 +395,7 @@ function Push.GetPushDesire(bot,lane)
 	local objective=Push.GetLaneBuildingTarget(lane) or GetAncient(GetOpposingTeam())
 	if score<=0 or not Push.IsObjectiveValid(objective) then
 		if ExecutionEnabled() and ExecutionConfig.BasicLaneEnabled() then
-			local basic,why=LocalLane.Prepare(bot,lane)
+			local basic,why=PrepareBasicFallback(bot,lane,objective)
 			if basic then
 				local offered=Tasks.OfferExecutable(bot,name,ExecutionConfig.BASIC_LANE_DESIRE,basic)
 				LogPushDecision(bot,lane,offered,'basic_lane_'..basic.reason,decisionDetails)
@@ -405,7 +411,7 @@ function Push.GetPushDesire(bot,lane)
 		local plan,reason=Push.PrepareExecutable(bot,lane,objective)
 		if plan==nil then
 			if ExecutionConfig.BasicLaneEnabled() then
-				local basic=LocalLane.Prepare(bot,lane)
+				local basic=PrepareBasicFallback(bot,lane,objective)
 				if basic then
 					local offered=Tasks.OfferExecutable(bot,name,ExecutionConfig.BASIC_LANE_DESIRE,basic)
 					LogPushDecision(bot,lane,offered,'basic_lane_'..basic.reason,decisionDetails)
@@ -1070,31 +1076,30 @@ function Push.ShouldForceHighGroundObjective(context)
 		or (tonumber(context.allyBuildingAttackers) or 0) >= PUSH_HIGH_GROUND_FORCE_MIN_ATTACKERS
 end
 
+function Push.BuildingAttackAdmission(bot,lane,objective,target)
+	if not objective then return false,'building_objective_missing' end
+	if not Push.IsObjectiveValid(target) or not J.IsValidBuilding(target) then return false,'building_target_invalid' end
+	if not target:CanBeSeen() then return false,'building_target_unseen' end
+	if not J.CanBeAttacked(target) then return false,'building_not_attackable' end
+	if Push.HasBackdoorProtect(target) then return false,'building_backdoor' end
+	-- 共享策略决定阶段和成员权限；简化推线不再被旧SIEGE条件二次否决。
+	local allowed,reason=Push.CanAttackManagedBuilding(bot,lane,target,objective)
+	if not allowed then return false,'building_permission_'..tostring(reason) end
+	if not BuildingAccess.AttackApproach(bot,target) then return false,'building_outside_attack_approach' end
+	return true
+end
 function Push.TryAttackObjectiveBuilding(bot, lane, pushObjective, observedTarget, botAttackRange, actionName)
-	if pushObjective == nil
-	or pushObjective.phase ~= Wasteland.PHASE_SIEGE
-	or Push.IsObjectiveValid(observedTarget) ~= true
-	or J.IsValidBuilding(observedTarget) ~= true
-	or J.CanBeAttacked(observedTarget) ~= true
-	or Push.HasBackdoorProtect(observedTarget)
-	or Push.CanAttackManagedBuilding(bot, lane, observedTarget, pushObjective) ~= true
-	or GetUnitToUnitDistance(bot, observedTarget) > math.min(1600, botAttackRange + 400)
-	then
-		return false
-	end
+	local allowed,reason=Push.BuildingAttackAdmission(bot,lane,pushObjective,observedTarget)
+	if not allowed then return false,reason end
+	if Actions.Protected(bot) then return false,'building_action_protected' end
 	actionName = actionName or 'push_objective_building_damage'
-	local buildingTarget = J.GetStickyTarget(
-		bot, actionName, observedTarget, 1.8, botAttackRange + 500)
-	if buildingTarget ~= nil
-	and Push.CanAttackManagedBuilding(bot, lane, buildingTarget, pushObjective)
-	then
-		J.SetTargetIfChanged(bot, buildingTarget, 0.6)
-		if J.ActionAttackUnit(bot, actionName, buildingTarget, false, 0.45) then
-			Push.NoteManagedBuildingAttack(bot, lane, buildingTarget, pushObjective)
-			return true
-		end
+	-- 建筑任务已固定目标，不再用粘性缓存把实际下单换成另一个句柄。
+	J.SetTargetIfChanged(bot, observedTarget, 0.6)
+	if J.ActionAttackUnit(bot, actionName, observedTarget, false, 0.45) then
+		Push.NoteManagedBuildingAttack(bot, lane, observedTarget, pushObjective)
+		return true
 	end
-	return false
+	return false,'building_action_rejected'
 end
 
 -- 围绕共享建筑接近；普通兵线前沿不再承担高地目标的最后一段移动。
@@ -1434,6 +1439,7 @@ function Push.TryEscort(bot, lane, objective, sample, allies, enemies, safety, a
 		and not creep.unit:HasModifier('modifier_thdots_unit_anti_bd') then currentCreepSupport = true; break end
 	end
 	local localObjective = GetUnitToUnitDistance(bot,objective.target) <= EscortConfig.LOCAL_JOIN_RANGE
+	if planning and localObjective then PushJourney.Complete(bot,lane,objective.target) end
 	local continuation = sharedContinuation and localObjective
 	local movementAuthorization = simplePush and personalSafe or (not simplePush and (authorized or continuation))
 	local approachLocation = simplePush and protection=='open' and objective.target:GetLocation()
@@ -1536,7 +1542,17 @@ function Push.TryEscort(bot, lane, objective, sample, allies, enemies, safety, a
 		local rejection = (stage..':'..tostring(reason)..':'..tostring(detail or '-')..'@'..where):gsub('%s','_')
 		table.insert(state.rejects,rejection)
 	end
+	local journey
+	if planning and state.phase=='APPROACH' then
+		local why
+		journey,why=PushJourney.Prepare(bot,lane,objective.target,objective.target:GetLocation())
+		if not journey then return Release(why) end
+	end
 	local function Check(point,stage)
+		if journey then
+			local allowed,why=PushJourney.PointAllowed(bot,journey,point)
+			if not allowed then Reject(stage,why,point);return false end
+		end
 		local navigation = not recovery and not string.find(stage,'detour',1,true)
 			and (string.find(stage,'^approach_') or string.find(stage,'^formation_'))
 			and point ~= nil and Geometry.Distance(bot:GetLocation(),point) > EscortConfig.NAVIGATION_MIN_DISTANCE
@@ -1575,6 +1591,7 @@ function Push.TryEscort(bot, lane, objective, sample, allies, enemies, safety, a
 				deadline=deadline,safetyKey=movementSafety.key,escortState=state,decision=decision,
 				progressPolicy=(decision.reason=='blocker' or decision.reason=='clear_path' or decision.reason=='local_clear') and 'clear_wave' or 'shared_push',
 				externalProgress=decision.reason~='blocker' and decision.reason~='clear_path' and decision.reason~='local_clear',stallSeconds=6,tolerance=operation=='move' and ((purpose=='building' or purpose=='attack') and 24) or 120}
+			if journey and operation=='move' then PushJourney.Attach(planning.plan,journey) end
 			return true
 		end
 		-- accepted可包含复用现有动作，不表示本帧新发单、命中或造成伤害。
@@ -1628,15 +1645,22 @@ function Push.TryEscort(bot, lane, objective, sample, allies, enemies, safety, a
 			and bot:GetAttackTarget() == objective.target and not Push.HasBackdoorProtect(objective.target)
 			and Push.CanAttackManagedBuilding(bot,lane,objective.target,objective)
 		if inRange and (holding or Check(current,'building')) then
-				if planning and Push.CanAttackManagedBuilding(bot,lane,objective.target,objective) then return Accepted('attack_building',objective.target,current) end
-				if planning then return Release('building_permission') end
+				if planning then
+					local allowed,why=Push.BuildingAttackAdmission(bot,lane,objective,objective.target)
+					if allowed then return Accepted('attack_building',objective.target,current) end
+					return Release(why)
+				end
 				if Push.TryAttackObjectiveBuilding(bot,lane,objective,objective.target,reach,'push_escort_building') then return Accepted('attack_building',objective.target,current) end
 				Reject('building',J.CanNotUseAction(bot) and 'action_protected' or 'building_permission_or_submit_rejected',current)
 		end
 		if not inRange then
 			local approach=BuildingAccess.AttackApproach(bot,objective.target)
 			if approach and Check(approach,'building_attack_path') and Push.CanAttackManagedBuilding(bot,lane,objective.target,objective) then
-				if planning then return Accepted('attack_building',objective.target,current) end
+				if planning then
+					local allowed,why=Push.BuildingAttackAdmission(bot,lane,objective,objective.target)
+					if allowed then return Accepted('attack_building',objective.target,current) end
+					return Release(why)
+				end
 				if Push.TryAttackObjectiveBuilding(bot,lane,objective,objective.target,reach,'push_escort_building') then return Accepted('attack_building',objective.target,current) end
 			end
 			for _,point in ipairs(BuildingAccess.Candidates(bot,objective.target)) do
@@ -1664,6 +1688,11 @@ function Push.TryEscort(bot, lane, objective, sample, allies, enemies, safety, a
 	end
 	if decision.kind == 'attack' and not EscortVisible(decision.target) then Reject('attack','target_lost',nil) end
 	if decision.reason=='local_clear' then return Release('local_clear_access_blocked') end
+	if journey then
+		local point,why=PushJourney.Select(bot,journey,function(p) return Check(p,'approach_journey') end)
+		if point and Move(point,48,'approach_journey') then return true end
+		return Release(why or 'push_journey_no_safe_step')
+	end
 	local locations = state.phase == 'APPROACH' and EscortApproachLocations(bot,lane,approachLocation)
 		or EscortFormationLocations(state,lane,objective)
 	local tried,alternateGoal = {},nil
@@ -1871,6 +1900,11 @@ end
 local function ExecutePushPlan(bot,lane,plan)
 	if plan.provider=='basic_lane' then return LocalLane.Execute(bot,plan) end
 	if plan.provider=='lane_work' then return LaneWork.ExecutePlan(bot,plan) end
+	if plan.pushJourney then
+		if Actions.Protected(bot) then return {status='PROTECTED',reason='protected_lifecycle'} end
+		local valid,why=PushJourney.Check(bot,plan.pushJourney)
+		if not valid then return {status='INVALID',reason=why} end
+	end
 	local context,reason=ExecutionContext(bot,lane,plan.objective)
 	if not context then
 		local roster=reason=='not_objective_participant:assignment_stable_window'
@@ -1901,7 +1935,7 @@ local function ExecutePushPlan(bot,lane,plan)
 			hardEmergency=false,botDistance=GetUnitToUnitDistance(bot,objective.target),allyCreepDistance=sample.creepDistance,
 			targetHealth=health,targetMaxHealth=maxHealth,backdoorProtected=Push.HasBackdoorProtect(objective.target),
 			attackable=EscortVisible(objective.target) and J.CanBeAttacked(objective.target)
-				and GetUnitToUnitDistance(bot,objective.target)<=math.min(1600,bot:GetAttackRange()+400)})
+				and BuildingAccess.AttackApproach(bot,objective.target)~=nil})
 		if retained~=objective then return {status='INVALID',reason='shared_objective_released'} end
 		if not EscortConfig.SIMPLE_PUSH_ENABLED and state.role~=Wasteland.GetPushObjectiveRole(bot,objective) then return {status='INVALID',reason='role_changed',replan=true} end
 	end
@@ -1919,6 +1953,10 @@ local function ExecutePushPlan(bot,lane,plan)
 	local goal=objective or {id=plan.key,target=plan.objective}
 	local movementSafety=EscortMovementSafety(bot,goal,state and state.wave,permission,EscortProtectionReason(plan.objective))
 	local function Check(point)
+		if plan.pushJourney then
+			local allowed,why=PushJourney.PointAllowed(bot,plan.pushJourney,point)
+			if not allowed then Tasks.NoteRejection(bot,TaskName(lane),why,point,'execute_journey');return false end
+		end
 		local blocked,failedReason=PushMovement.Blocked(bot,point,plan.intent=='move',movementSafety.key)
 		if blocked then Tasks.NoteRejection(bot,TaskName(lane),failedReason,point,'execute_cached');return false end
 		local valid,why=EscortSafeLocation(bot,point,movementSafety,plan.intent=='move',PushMovement.NeedsRecovery(bot))
@@ -1932,9 +1970,8 @@ local function ExecutePushPlan(bot,lane,plan)
 		if EscortConfig.SIMPLE_PUSH_ENABLED and not context.personalTowerSafe then return {status='INVALID',reason='personal_tower_budget',replan=true} end
 		local continuation=objective and Wasteland.GetEscortContinuation(objective)
 		if not currentSupport and not continuation and not context.personalTowerSafe then return {status='INVALID',reason='creep_or_continuation_lost',replan=true} end
-		if not EscortVisible(plan.target) or Push.HasBackdoorProtect(plan.target)
-			or not Push.CanAttackManagedBuilding(bot,lane,plan.target,objective)
-			or not BuildingAccess.AttackApproach(bot,plan.target) then return {status='INVALID',reason='building_window_changed',replan=true} end
+		local allowed,why=Push.BuildingAttackAdmission(bot,lane,objective,plan.target)
+		if not allowed then return {status='INVALID',reason=why,replan=true,transient=true} end
 		local approach=BuildingAccess.AttackApproach(bot,plan.target)
 		if GetUnitToUnitDistance(bot,plan.target)>BuildingAccess.Reach(bot,plan.target) and not Check(approach) then
 			return {status='BLOCKED',reason='building_attack_path_changed',replan=true}
@@ -1968,9 +2005,14 @@ local function ExecutePushPlan(bot,lane,plan)
 		local feedback={}
 		local accepted=J.ActionMoveToLocation(bot,'lane_work_push_escort',point,0.25,plan.tolerance,Check,feedback)
 		if accepted then PushMovement.Accept(bot,feedback.location or point,feedback.route=='detour' and 24 or plan.tolerance,plan.key) end
+		if accepted and plan.pushJourney then PushJourney.NoteStep(bot,plan.pushJourney,feedback.location or point) end
 		result=Tasks.ResultAfter(bot,plan,before)
 	elseif plan.intent=='attack_building' then
-		Push.TryAttackObjectiveBuilding(bot,lane,objective,plan.target,BuildingAccess.Reach(bot,plan.target),'push_escort_building')
+		local accepted,why=Push.TryAttackObjectiveBuilding(bot,lane,objective,plan.target,BuildingAccess.Reach(bot,plan.target),'push_escort_building')
+		if not accepted then
+			if why=='building_action_protected' then return {status='PROTECTED',reason=why} end
+			return {status='BLOCKED',reason=why or 'building_action_rejected',transient=true}
+		end
 		result=Tasks.ResultAfter(bot,plan,before)
 	elseif plan.intent=='attack_unit' then
 		J.SetTargetIfChanged(bot,plan.target,0.2)
@@ -2024,7 +2066,7 @@ function Push.PushThink(bot,lane)
 	if not result or result.replan then
 		local building=task and task.objective or Push.GetLaneBuildingTarget(lane) or GetAncient(GetOpposingTeam())
 		local plan,reason
-		if task and task.provider=='basic_lane' then plan,reason=LocalLane.Prepare(bot,lane)
+		if task and task.provider=='basic_lane' then plan,reason=PrepareBasicFallback(bot,lane,building)
 		else plan,reason=Push.PrepareExecutable(bot,lane,building,true) end
 		if not rosterHandoff and not plan and (reason=='not_objective_participant:assignment_stable_window'
 			or reason=='not_objective_participant:not_assigned_to_roster') then
@@ -2032,7 +2074,7 @@ function Push.PushThink(bot,lane)
 			Tasks.ReleaseExecution(bot,name,reason,DotaTime())
 			bot.THD_BasicLaneChoice=nil
 		end
-		if not plan and ExecutionConfig.BasicLaneEnabled() then plan,reason=LocalLane.Prepare(bot,lane) end
+		if not plan and ExecutionConfig.BasicLaneEnabled() then plan,reason=PrepareBasicFallback(bot,lane,building) end
 		local score=plan and plan.provider=='basic_lane' and ExecutionConfig.BASIC_LANE_DESIRE
 			or task.score
 		if plan and Tasks.OfferExecutable(bot,name,score,plan)>0 then
@@ -2049,7 +2091,7 @@ function Push.PushThink(bot,lane)
 		-- 一个成员的局部接兵超时只释放其动作；共享目标仍由成员、安全和进展租约决定。
 		if not EscortConfig.PUSH_CONTINUITY_ENABLED and (result.reason=='regroup_timeout' or result.reason=='continuation_closed') then Wasteland.ReleasePushObjective(result.reason,bot) end
 		if result.reason=='current_safety_rejected' or result.reason=='no_safe_action' then PushMovement.NoPath(bot) end
-		result.retryAt=DotaTime()+(rosterHandoff and ExecutionConfig.PLAN_INTERVAL or EscortConfig.RETRY_DELAY)
+		result.retryAt=DotaTime()+((rosterHandoff or result.transient) and ExecutionConfig.PLAN_INTERVAL or EscortConfig.RETRY_DELAY)
 	end
 	if task and task.provider=='basic_lane' and (result.status=='COMPLETE' or result.status=='BLOCKED' or result.status=='INVALID') then
 		LocalLane.End(bot,task,result.reason)

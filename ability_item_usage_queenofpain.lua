@@ -5,5 +5,7 @@ local Sagume = require(GetScriptDirectory()..'/THDFuncLib/heroes/sagume/sagume_c
 function AbilityUsageThink()
 	local bot = GetBot()
 	if bot == nil then return end
+	-- 独立调度也接入同帧去重的物品入口，保护窗口由共享模块复核。
+	if ConsiderSharedResourceItems(bot) then return end
 	Sagume.Think(bot)
 end

@@ -8,6 +8,7 @@ local Towers=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/tower_safet
 local Geometry=require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_geometry')
 local Consumables=require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
 local LocalRoutes=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/local_route_candidates')
+local PushJourney=require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_journey')
 local F={}
 local function State(bot,basicLane)
 	if basicLane then
@@ -100,6 +101,10 @@ local function Safe(bot,location,egress,connector,basicLane,task,from)
 		local away=origin-center
 		-- 48距离是整步准入进展；执行末段用原起点核验，仍要求当前余段单调向外。
 		local progressOrigin=origin
+		local recovery=State(bot,basicLane).recovery
+		-- 多轮失败后允许不深入基地的短侧步，随后仍检查安全出口；不授予进攻权限。
+		local lateral=egress and connector and recovery and (recovery.stage or 1)>=2
+			and Geometry.Distance(origin,location)<=320
 		if task and not task.target and task.startLocation and DotaTime()<task.deadline
 		and Geometry.Distance(location,task.location)<1
 		and Geometry.SegmentDistanceToPoint(task.startLocation,location,origin)<=64
@@ -108,7 +113,7 @@ local function Safe(bot,location,egress,connector,basicLane,task,from)
 		end
 		if not egress or Geometry.Distance(origin,center)>=3600
 		or away.x*delta.x+away.y*delta.y<0
-		or Geometry.Distance(location,center)<Geometry.Distance(progressOrigin,center)+48 then
+		or Geometry.Distance(location,center)<Geometry.Distance(progressOrigin,center)+(lateral and 0 or 48) then
 			return false,'enemy_base_excluded'
 		end
 	end
@@ -140,8 +145,25 @@ local function Safe(bot,location,egress,connector,basicLane,task,from)
 	end
 	return true
 end
+local function CheckRoutePoint(bot,state,point,egress,connector,basicLane)
+	local now=DotaTime()
+	local failed,reason=F.RecentRouteFailure(bot,point)
+	if failed then return false,'recent_route_'..tostring(reason) end
+	if state.rejected and now<(state.rejectedUntil or -90) and Geometry.Distance(point,state.rejected)<128 then
+		return false,'recent_failed_or_completed'
+	end
+	if connector and state.connectorOrigin and now<(state.connectorUntil or -90)
+	and Geometry.Distance(point,state.connectorOrigin)<128 then return false,'recent_connector_origin' end
+	return Safe(bot,point,egress,connector,basicLane)
+end
 local Snapshot
 local function Validate(bot,task,selecting)
+	if task.pushJourney then
+		local objective=Strategy.GetPushObjective(true)
+		if not objective or objective.target~=task.pushJourney.target or not Strategy.IsPushObjectiveParticipant(bot,objective) then return false,'push_journey_objective_changed' end
+		local valid,why=PushJourney.Check(bot,task.pushJourney)
+		if not valid then return false,why end
+	end
 	if task.basicLane and not selecting and task.basicLane~=F.GetLane(bot) then return false,'basic_lane_changed' end
 	local eligible,reason=Eligible(bot,task.basicLane)
 	if not eligible then return false,reason end
@@ -154,7 +176,7 @@ local function Validate(bot,task,selecting)
 	if task.waveTarget and not Actions.ValidTarget(task.waveTarget) then return false,'wave_target_lost' end
 	if task.target and (not InLane(task.target,task.lane) or not J.CanBeAttacked(task.target)) then return false,'target_lost' end
 	State(bot,task.basicLane).enemies=Snapshot(bot).enemies
-	return Safe(bot,task.target and task.target:GetLocation() or task.location,IsEgress(task.reason) and not task.target,IsConnector(task.reason),task.basicLane,task)
+	return Safe(bot,task.target and task.target:GetLocation() or task.location,IsEgress(task.reason) and not task.target,task.connector or IsConnector(task.reason),task.basicLane,task)
 end
 function F.GetLane(bot)
 	local choice=bot.THD_BasicLaneChoice
@@ -216,7 +238,19 @@ local function PrepareScope(bot,basicLane,limit)
 		if basicLane and recoveryNeeded then return nil,'recovery_required',now+Config.FALLBACK_INTERVAL end
 		if not basicLane and not recoveryNeeded then
 			local choice=F.Select(bot)
-			if choice.plan then state.noLaneSince=nil;return nil,'basic_lane_admissible',choice.untilAt end
+			if choice.plan then
+				local active=Tasks.Active(bot,'push_'..choice.lane)
+				local running=active and Tasks.IsExecutionActive(bot,'push_'..choice.lane) and Tasks.MatchingAction(bot,active)
+				local action=bot:GetCurrentActionType()
+				if running or (action~=BOT_ACTION_TYPE_IDLE and action~=BOT_ACTION_TYPE_NONE) then
+					state.noLaneSince=nil;return nil,'basic_lane_executing',choice.untilAt
+				end
+				-- 报价可用却持续空闲不能无限压住ROAM；短时让安全归位重新准备。
+				state.noLaneSince=state.noLaneSince or now
+				if now-state.noLaneSince<Config.SAFE_RETURN_CONFIRM_SECONDS then return nil,'await_basic_execution',choice.untilAt end
+				bot.THD_BasicUnexecutedUntil=now+3
+				bot.THD_BasicLaneChoice=nil
+			end
 			state.noLaneSince=state.noLaneSince or now
 			if now-state.noLaneSince<Config.SAFE_RETURN_CONFIRM_SECONDS then
 				return nil,'await_lane_recheck',math.min(choice.untilAt,now+Config.FALLBACK_INTERVAL)
@@ -245,46 +279,51 @@ local function PrepareScope(bot,basicLane,limit)
 	local candidate,checks=nil,0
 	-- 恢复周期不因最后拒绝原因变化而重建；固定出口方向、截止时间与已拒绝局部点。
 	if not basicLane and recoveryNeeded and (not baseReturnOnly or insideEnemyBase) then
+		if state.recoveryAnchor and Geometry.Distance(bot:GetLocation(),state.recoveryAnchor)>128 then
+			state.recoveryFailures,state.recoveryRejected=0,nil
+		end
+		if now<(state.recoveryRetryAt or -90) then return nil,'recovery_bounded_retry',state.recoveryRetryAt end
 		if state.recovery and now>=state.recovery.untilAt then
+			state.recoveryFailures=(state.recoveryFailures or 0)+1
+			state.recoveryRejected=state.recovery.rejected
+			state.recoveryAnchor=Copy(bot:GetLocation())
 			state.recovery=nil;state.nextSearch=now+Config.FALLBACK_INTERVAL
+			if state.recoveryFailures%4==0 then state.recoveryRetryAt=now+3 end
 			return nil,'recovery_cycle_expired',state.nextSearch
 		end
 		if not state.recovery then
 			local goal=GetLaneFrontLocation(GetTeam(),lane,-1800)
 			if insideEnemyBase then goal=bot:GetLocation()+(bot:GetLocation()-enemyAncient:GetLocation()) end
-			state.recovery={goal=Copy(goal),untilAt=now+Config.FALLBACK_DURATION,rejected={},cursor=1,rejectCounts={}}
+			local stage=(state.recoveryFailures or 0)%4+1
+			if stage>=3 and not insideEnemyBase then goal=GetShopLocation(GetTeam(),SHOP_HOME) end
+			state.recovery={goal=Copy(goal),untilAt=now+Config.FALLBACK_DURATION,rejected=state.recoveryRejected or {},cursor=1,rejectCounts={},stage=stage}
 		end
 	end
 	local recovery=not basicLane and (not baseReturnOnly or insideEnemyBase) and state.recovery or nil
-	local function Choose(location,target,kind,exact,waveTarget)
+	local function Choose(location,target,kind,exact,waveTarget,finalGoal)
 		if candidate or not location then return end
-		if not target and GetUnitToLocationDistance(bot,location)<=120 then state.reason='already_in_position';return end
+		if not target and GetUnitToLocationDistance(bot,location)<=(recovery and exact and 48 or 120) then state.reason='already_in_position';return end
 		-- 先裁出局部步再校验；远处战略终点不直接参与1000距离的局部安全门。
 		local routeGoal=location
 		if IsEgress(kind) and GetUnitToLocationDistance(bot,routeGoal)>450 then
 			-- 与480恢复验证门一致，不能把750候选消耗在必然失败的长度检查上。
 			routeGoal=bot:GetLocation()+(routeGoal-bot:GetLocation()):Normalized()*450
 		end
-		local points=(target or exact) and {routeGoal} or LocalRoutes.Build(bot:GetLocation(),routeGoal,true)
-		if (basicLane or safeReturnOnly) and not target and not exact and GetUnitToLocationDistance(bot,location)>120 then
-			-- 常规点不可见时再尝试96距离短步，仍检查每段视野和地形。
-			table.insert(points,math.min(5,#points+1),bot:GetLocation()+(location-bot:GetLocation()):Normalized()*96)
-		end
-		for index,step in ipairs(points) do
+		local points
+		if target or exact then points={{location=routeGoal,connector=IsConnector(kind)}}
+		elseif IsEgress(kind) then
+			points={};for _,point in ipairs(LocalRoutes.Build(bot:GetLocation(),routeGoal,true)) do points[#points+1]={location=point,connector=IsConnector(kind)} end
+		else points=LocalRoutes.Journey(bot:GetLocation(),routeGoal,NearOwnBase(bot) or IsConnector(kind) or not IsLocationPassable(bot:GetLocation())) end
+		for index,entry in ipairs(points) do
+			local step,connector=entry.location,entry.connector or IsConnector(kind)
 			-- 给后续分路/归位目标保留预算，避免一个不可达点耗尽所有尝试。
 			if index>6 then break end
 			if checks>=(limit or Config.LOCAL_ROUTE_MAX_CHECKS) then return end
 			checks=checks+1
 			local safe,why,detail
 			local rejectionKey=string.format('%.0f:%.0f:%.0f:%.0f',bot:GetLocation().x/128,bot:GetLocation().y/128,step.x/64,step.y/64)
-			local failed,failedReason=F.RecentRouteFailure(bot,step)
 			if recovery and recovery.rejected[rejectionKey] then safe,why=false,recovery.rejected[rejectionKey]
-			elseif failed then safe,why=false,'recent_route_'..tostring(failedReason)
-			elseif state.rejected and now<(state.rejectedUntil or -90) and Geometry.Distance(step,state.rejected)<128 then
-				safe,why=false,'recent_failed_or_completed'
-			elseif IsConnector(kind) and state.connectorOrigin and now<(state.connectorUntil or -90)
-			and Geometry.Distance(step,state.connectorOrigin)<128 then safe,why=false,'recent_connector_origin'
-			else safe,why,detail=Safe(bot,step,IsEgress(kind) and not target,IsConnector(kind),basicLane) end
+			else safe,why,detail=CheckRoutePoint(bot,state,step,IsEgress(kind) and not target,connector,basicLane) end
 			local continuation
 			if safe and recovery and insideEnemyBase then
 				-- 高地接管至少确认下一连接；只在现有可见范围内检查，计入同一搜索预算。
@@ -300,7 +339,7 @@ local function PrepareScope(bot,basicLane,limit)
 			if safe then
 				candidate={provider=basicLane and 'basic_lane' or 'local_fallback',basicLane=basicLane,intent=target and 'attack_unit' or 'move',target=target,
 					location=Copy(step),continuation=continuation,lane=lane,reason=kind,progressPolicy=target and 'clear_wave' or 'movement',
-					finalGoal=not target and not IsEgress(kind) and Copy(location) or nil,waveTarget=waveTarget,
+					finalGoal=not target and not IsEgress(kind) and Copy(finalGoal or location) or nil,waveTarget=waveTarget,connector=connector,
 					preparedAt=now,validUntil=now+Config.CANDIDATE_TTL,deadline=recovery and recovery.untilAt or now+Config.FALLBACK_DURATION,
 					stallSeconds=target and 6 or 3,validate=Validate,mode=basicLane and ({[LANE_TOP]=BOT_MODE_PUSH_TOWER_TOP,[LANE_MID]=BOT_MODE_PUSH_TOWER_MID,[LANE_BOT]=BOT_MODE_PUSH_TOWER_BOT})[basicLane] or BOT_MODE_ROAM,startLocation=Copy(bot:GetLocation()),
 					tolerance=(basicLane or safeReturnOnly or IsConnector(kind)) and 24 or 120}
@@ -319,6 +358,8 @@ local function PrepareScope(bot,basicLane,limit)
 	if recovery then
 		if recovery.nextPoint then Choose(recovery.nextPoint,nil,'local_recovery_connector',true);recovery.nextPoint=nil end
 		local points=LocalRoutes.BaseConnections(bot:GetLocation(),recovery.goal)
+		local length=({200,128,320,96})[recovery.stage or 1]
+		for index,point in ipairs(points) do points[index]=bot:GetLocation()+(point-bot:GetLocation())*(length/200) end
 		-- 每轮轮转六个方向，给其他出口候选保留原18次总预算。
 		for offset=0,5 do
 			Choose(points[(recovery.cursor+offset-1)%#points+1],nil,'local_recovery_connector',true)
@@ -340,7 +381,7 @@ local function PrepareScope(bot,basicLane,limit)
 	and (baseReturnOnly or terrainFailed or not IsLocationPassable(bot:GetLocation())) then
 		local goal=baseGoal or GetLaneFrontLocation(GetTeam(),lane,-1800)
 		for _,point in ipairs(LocalRoutes.BaseConnections(bot:GetLocation(),goal)) do
-			Choose(point,nil,baseReturnOnly and (safeReturnOnly and 'safe_return_connector' or 'base_return_connector') or 'base_lane_connector',true)
+			Choose(point,nil,baseReturnOnly and (safeReturnOnly and 'safe_return_connector' or 'base_return_connector') or 'base_lane_connector',true,nil,goal)
 		end
 	end
 	local ancient=GetAncient(GetOpposingTeam())
@@ -394,9 +435,9 @@ local function PrepareScope(bot,basicLane,limit)
 			state.recoveryLogAt=now
 			local labels={};for label,count in pairs(recovery.rejectCounts) do labels[#labels+1]=label..':'..count end
 			table.sort(labels)
-			print(string.format('[BOT][RecoverySearch] run=%s time=%.3f pid=%s x=%.1f y=%.1f goal_x=%.1f goal_y=%.1f until_at=%.3f checks=%d towers=%d rejects=%s',
+			print(string.format('[BOT][RecoverySearch] run=%s time=%.3f pid=%s x=%.1f y=%.1f goal_x=%.1f goal_y=%.1f until_at=%.3f checks=%d towers=%d rejects=%s stage=%d failures=%d',
 				Config.RUN_ID,now,bot:GetPlayerID(),bot:GetLocation().x,bot:GetLocation().y,recovery.goal.x,recovery.goal.y,
-				recovery.untilAt,checks,#(observed.towers or {}),table.concat(labels,'|')))
+				recovery.untilAt,checks,#(observed.towers or {}),table.concat(labels,'|'),recovery.stage or 1,state.recoveryFailures or 0))
 		end
 		return nil,state.reason or 'no_local_safe_candidate',state.nextSearch
 	end
@@ -413,16 +454,28 @@ local function LogChoice(bot,choice)
 		tostring(choice.plan and choice.plan.key),tostring(choice.plan~=nil),tostring(choice.reason or 'admissible'),
 		table.concat(choice.rejections or {},'|'),tostring(choice.untilAt)))
 end
+local LinkPushJourney
+local function MatchingJourney(bot,lane,plan,objective)
+	local route=PushJourney.Current(bot,lane)
+	if route and objective and objective.target==route.target and Strategy.IsPushObjectiveParticipant(bot,objective)
+		and plan and not plan.target and plan.intent=='move' and not IsEgress(plan.reason) and not IsBaseReturn(plan.reason) then return route end
+end
 function F.Select(bot)
 	local now=DotaTime()
+	if now<(bot.THD_BasicUnexecutedUntil or -90) then
+		return {at=now,untilAt=bot.THD_BasicUnexecutedUntil,rejections={},reason='basic_unexecuted_yield'}
+	end
 	local cached=bot.THD_BasicLaneChoice
+	local objective=Strategy.GetPushObjective(true)
 	if cached and now<cached.untilAt then
-		if not cached.plan or Tasks.CanOfferExecutable(bot,'push_'..cached.lane,Config.BASIC_LANE_DESIRE,cached.plan) then return cached end
+		local route=cached.plan and MatchingJourney(bot,cached.lane,cached.plan,objective)
+		local linked=not route and not (cached.plan and cached.plan.pushJourney)
+			or (route and cached.plan.pushJourney==route and PushJourney.Check(bot,route))
+		if linked and (not cached.plan or Tasks.CanOfferExecutable(bot,'push_'..cached.lane,Config.BASIC_LANE_DESIRE,cached.plan)) then return cached end
 		-- 准备后可能进入重试冷却，旧的“已准备”不能阻止其他安全任务接手。
 	end
 	local choice={at=now,untilAt=now+Config.FALLBACK_INTERVAL,rejections={}}
 	bot.THD_BasicLaneChoice=choice
-	local objective=Strategy.GetPushObjective(true)
 	local preferred=objective and objective.lane or bot:GetAssignedLane()
 	for _,lane in ipairs({LANE_TOP,LANE_MID,LANE_BOT}) do
 		local active=Tasks.Active(bot,'push_'..lane)
@@ -438,7 +491,18 @@ function F.Select(bot)
 	-- 最多三路共享18次安全检查预算，不因三次GetDesire重复扫描或发布多个候选。
 	local quota=math.floor(Config.LOCAL_ROUTE_MAX_CHECKS/math.max(1,#lanes))
 	for _,lane in ipairs(lanes) do
-		local plan,reason=PrepareScope(bot,lane,quota)
+		local current=PushJourney.Current(bot,lane)
+		local needsLink=current and objective and objective.target==current.target and Strategy.IsPushObjectiveParticipant(bot,objective)
+		local routeQuota=needsLink and math.max(1,math.floor(quota/2)) or quota
+		local plan,reason=PrepareScope(bot,lane,routeQuota)
+		local route=MatchingJourney(bot,lane,plan,objective)
+		if route then
+			plan,reason=LinkPushJourney(bot,lane,route,plan,routeQuota)
+			if not plan then
+				-- 最终挂接失败必须撤销原始计划，不能让ROAM继续因它而让出。
+				local state=State(bot,lane);state.task=nil;state.reason=reason;state.nextSearch=now+Config.FALLBACK_INTERVAL
+			end
+		end
 		if plan then
 			choice.preparedLane=lane
 			local admissible,why=Tasks.CanOfferExecutable(bot,'push_'..lane,Config.BASIC_LANE_DESIRE,plan)
@@ -464,6 +528,10 @@ function F.Prepare(bot,basicLane)
 end
 function F.Execute(bot,task)
 	if Actions.Protected(bot) then return {status='PROTECTED',reason='protected_lifecycle'} end
+	if task.pushJourney then
+		local valid,why=PushJourney.Check(bot,task.pushJourney)
+		if not valid then return {status='INVALID',reason=why} end
+	end
 	if task.intent=='wait' then
 		if DotaTime()>=task.deadline then return {status='COMPLETE',reason='regroup_finished'} end
 		local valid,reason=Validate(bot,task)
@@ -480,15 +548,29 @@ function F.Execute(bot,task)
 		local valid,why=Validate(bot,task)
 		if not valid then return {status='INVALID',reason=why} end
 		local state=State(bot,task.basicLane)
-		local nextPoint
-		for index,point in ipairs(LocalRoutes.Build(bot:GetLocation(),task.finalGoal,true)) do
-			if index>6 then break end
-			if GetUnitToLocationDistance(bot,point)>24 and not F.RecentRouteFailure(bot,point)
-			and Safe(bot,point,false,IsConnector(task.reason),task.basicLane) then nextPoint=point;break end
+		local nextPoint,nextConnector,checks=nil,nil,0
+		local rejects={}
+		for index,entry in ipairs(LocalRoutes.Journey(bot:GetLocation(),task.finalGoal,
+			NearOwnBase(bot) or task.connector or IsConnector(task.reason) or not IsLocationPassable(bot:GetLocation()))) do
+			if index>Config.LOCAL_ROUTE_MAX_CHECKS then break end
+			checks=checks+1
+			local connector=entry.connector or IsConnector(task.reason)
+			local safe,why,detail=CheckRoutePoint(bot,state,entry.location,false,connector,task.basicLane)
+			if safe and task.pushJourney then safe,why=PushJourney.PointAllowed(bot,task.pushJourney,entry.location) end
+			if safe then nextPoint,nextConnector=entry.location,connector;break end
+			rejects[why or 'unknown']=(rejects[why or 'unknown'] or 0)+1
+			Tasks.NoteRejection(bot,task.basicLane and 'push_'..task.basicLane or 'roam',why,entry.location,'journey_continue_'..index,detail)
+		end
+		if Config.DEBUG and DotaTime()-(state.routeLogAt or -90)>=2 then
+			state.routeLogAt=DotaTime()
+			local labels={};for why,count in pairs(rejects) do labels[#labels+1]=why..':'..count end;table.sort(labels)
+			print(string.format('[BOT][JourneyRoute] run=%s time=%.3f pid=%s key=%s checks=%d selected=%s connector=%s rejects=%s',
+				Config.RUN_ID,DotaTime(),bot:GetPlayerID(),task.key,checks,tostring(nextPoint~=nil),tostring(nextConnector),table.concat(labels,'|')))
 		end
 		if not nextPoint then return {status='BLOCKED',reason='journey_no_safe_step'} end
 		-- 同任务换路点：保留最终目标、身份和绝对期限，只重置本段物理进度。
 		task.location=Copy(nextPoint);task.startLocation=Copy(bot:GetLocation())
+		task.connector=nextConnector
 		task.bestDistance,task.arrivedAt,task.actionIntent=nil,nil,nil
 		task.preparedAt,task.validUntil=DotaTime(),math.min(DotaTime()+Config.CANDIDATE_TTL,task.deadline)
 		state.task=task
@@ -502,8 +584,15 @@ function F.Execute(bot,task)
 	end
 	local before=Tasks.Capture(bot)
 	if task.target then J.ActionAttackUnit(bot,'local_fallback_clear',task.target,true,0.25)
-	else J.ActionMoveToLocation(bot,'lane_work_local_fallback',task.location,0.25,task.tolerance or 120,function(point) return Safe(bot,point,IsEgress(task.reason),IsConnector(task.reason),task.basicLane,task) end) end
+	else J.ActionMoveToLocation(bot,'lane_work_local_fallback',task.location,0.25,task.tolerance or 120,function(point)
+		if task.pushJourney and not PushJourney.PointAllowed(bot,task.pushJourney,point) then return false end
+		return Safe(bot,point,IsEgress(task.reason),task.connector or IsConnector(task.reason),task.basicLane,task)
+	end) end
 	local result=Tasks.ResultAfter(bot,task,before)
+	if task.pushJourney and (result.status=='ISSUED' or result.status=='CONTINUING') then
+		local issued=bot.THD_LastIssuedAction
+		PushJourney.NoteStep(bot,task.pushJourney,issued and issued.location or task.location)
+	end
 	if result.status=='ISSUED' or result.status=='CONTINUING' then LogJourney(bot,task,'advance') end
 	return result
 end
@@ -517,7 +606,7 @@ function F.End(bot,task,reason)
 	end
 	if task and reason~='preempted' then
 		state.rejected=Copy(task.location);state.rejectedUntil=DotaTime()+Config.FALLBACK_DURATION
-		if IsConnector(task.reason) then state.connectorOrigin=task.startLocation;state.connectorUntil=DotaTime()+Config.FALLBACK_DURATION end
+		if task.connector or IsConnector(task.reason) then state.connectorOrigin=task.startLocation;state.connectorUntil=DotaTime()+Config.FALLBACK_DURATION end
 		if reason=='no_progress' or reason=='physical_stall' or (reason and string.find(reason,'impassable',1,true)) then
 			-- 只记实际失败，不把正常抢占/完成或短暂视野变化当失败区域。
 			bot.THD_LocalFailedRoutes=bot.THD_LocalFailedRoutes or {}
@@ -540,5 +629,30 @@ function F.FinishRecoveryStep(bot)
 	if not Tasks.MatchingAction(bot,task) then return false end
 	-- 只让正在安全前进的一小步完成；危险/保护变化立即解除，不锁Attack/Retreat。
 	return Validate(bot,task)==true
+end
+-- 后备只能沿护送的同一最终目标选安全路段；恢复/清兵任务仍独立让出。
+LinkPushJourney=function(bot,lane,route,plan,limit)
+	local valid,why=PushJourney.Check(bot,route)
+	if not valid then return nil,why end
+	local state=State(bot,lane)
+	state.enemies=Snapshot(bot).enemies
+	local checks=0
+	local point,rejection=PushJourney.Select(bot,route,function(p)
+		if checks>=(limit or Config.LOCAL_ROUTE_MAX_CHECKS) then return false,'linked_route_budget' end
+		checks=checks+1
+		return CheckRoutePoint(bot,state,p,false,true,lane)
+	end)
+	if not point then return nil,rejection end
+	local linked={};for key,value in pairs(plan) do linked[key]=value end
+	linked.key='push_journey_fallback:'..lane..':'..route.serial
+	linked.objective=route.target
+	linked.location,linked.startLocation=Copy(point),Copy(bot:GetLocation())
+	linked.connector,linked.waveTarget=true,nil
+	PushJourney.Attach(linked,route)
+	return linked
+end
+function F.PreparePushJourney(bot,lane,route)
+	-- Select中已完成最终挂接和准入，禁止再次否决已公布的可执行候选。
+	return F.Prepare(bot,lane)
 end
 return F

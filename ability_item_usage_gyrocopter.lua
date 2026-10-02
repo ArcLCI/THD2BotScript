@@ -165,7 +165,10 @@ function AbilityUsageThink()
 	local bot = GetBot()
 	-- 转身和后跳由高优先级规避模式推进，本入口不能被自己的保护锁卡住后另发动作。
 	if Backstep.IsActive(bot) then return end
-	if bot == nil or not bot:IsAlive() or bot:IsIllusion() or bot:IsHexed() or J.CanNotUseAction(bot) then return end
+	if bot == nil or not bot:IsAlive() or bot:IsIllusion() or bot:IsHexed() then return end
+	-- 莲花先推进自身确认；否则下方的背包保护会让确认入口永久不可达。
+	if ConsiderSharedResourceItems(bot) then return end
+	if J.CanNotUseAction(bot) then return end
 	if Consumables.IsCastConfirmationPending(bot) then return end
 	-- 目标与塔危险评估有界限频，动作保护本身仍在每次入口检查。
 	local now = DotaTime()

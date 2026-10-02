@@ -7,6 +7,7 @@ local Auxiliary=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_auxil
 local Gank=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_gank')
 local GankConfig=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_config')
 local Fallback=require(GetScriptDirectory()..'/THDFuncLib/modes/laning/local_lane_fallback')
+local Lotus=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/lotus_pool')
 local E={}
 local function State(bot)
 	bot.THD_RoamExecution=bot.THD_RoamExecution or {nextPrepare=-90}
@@ -16,6 +17,7 @@ local function EndProvider(bot,reason)
 	local state=State(bot)
 	if state.provider=='auxiliary' then Auxiliary.OnEnd()
 	elseif state.provider=='gank' then Gank.OnEnd(bot,reason)
+	elseif state.provider=='lotus_pool' then Lotus.End(bot,state.task,reason)
 	elseif state.provider=='local_fallback' then Fallback.End(bot,state.task,reason) end
 	state.provider,state.key,state.task=nil,nil,nil
 end
@@ -35,6 +37,17 @@ local function Prepare(bot,force,exclude)
 		if not plan then Tasks.NoteNoCandidate(bot,'roam',state.reason,state.nextCandidateAt) end
 		return plan,state.score,state.reason,state.nextCandidateAt
 	end
+	local active=Tasks.Active(bot,'roam')
+	if active and active.provider=='lotus_pool' and active.claimAt then
+		local finish=Lotus.Prepare(bot)
+		local finishScore=finish and Lotus.Score(bot,finish) or 0
+		if finish and finish.key~=exclude and finishScore>=Config.LOTUS_CLAIM_DESIRE then
+			-- 原期限内的安全领取收尾，不让新出现的普通ROAM候选每帧打断倒计时。
+			state.plan,state.score,state.reason=finish,finishScore,'lotus_claim_finish'
+			state.nextPrepare=math.min(state.nextPrepare,finish.validUntil,finish.deadline)
+			return finish,finishScore,state.reason,state.nextPrepare
+		end
+	end
 	local score,source=Auxiliary.GetDesire()
 	local gankRejection
 	local plan=score and score>0 and Auxiliary.PrepareExecutable(score,source) or nil
@@ -46,6 +59,18 @@ local function Prepare(bot,force,exclude)
 		if plan and plan.key==exclude then plan=nil end
 	end
 	local reason,nextAt
+	-- 莲花与非交战Gank行程比较收益，英雄专用/受保护动作仍优先。
+	if not plan or (plan.provider=='gank' and plan.mission and plan.mission.phase~='engage') then
+		local lotus=Lotus.Prepare(bot)
+		if lotus and lotus.key~=exclude then
+			local lotusScore=Tasks.OpportunityScore(bot,Lotus.Score(bot,lotus))
+			if not plan or lotusScore>(score or 0)+0.05 then
+				plan,score=lotus,lotusScore;Lotus.Note(bot,'candidate_selected',lotus,lotusScore)
+			else Lotus.Note(bot,'lost_to_gank_travel',lotus,lotusScore) end
+		end
+	else
+		Lotus.Note(bot,'higher_priority_provider:'..tostring(plan.provider))
+	end
 	if not plan then
 		plan,reason,nextAt=Fallback.Prepare(bot)
 		score=Fallback.Desire(plan)
@@ -101,6 +126,7 @@ end
 local function Execute(bot,task)
 	if task.provider=='auxiliary' then return Auxiliary.ExecutePlan(task)
 	elseif task.provider=='gank' then return Gank.ExecutePlan(bot,task)
+	elseif task.provider=='lotus_pool' then return Lotus.Execute(bot,task)
 	elseif task.provider=='local_fallback' then return Fallback.Execute(bot,task) end
 	return {status='INVALID',reason='unknown_provider'}
 end

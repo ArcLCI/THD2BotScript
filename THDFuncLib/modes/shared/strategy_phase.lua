@@ -4,7 +4,12 @@ local Power=require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 local S={}
 local teams={}
 local function Clamp(x,a,b) return math.max(a,math.min(b,x)) end
-local function Visible(u) return u and not u:IsNull() and u:CanBeSeen() and u:IsAlive() and u:IsHero() and not u:IsIllusion() end
+local function Visible(u)
+	if not u or u:IsNull() or not u:CanBeSeen() or not u:IsAlive() or not u:IsHero() then return false end
+	-- IsIllusion只允许查询同队；敌方保持未知，不能用固定false认定为真身。
+	if u:GetTeam()==GetTeam() then return not u:IsIllusion() end
+	return true
+end
 local function State(team)
 	teams[team]=teams[team] or {own={},enemy={},candidate={},nextOwn=-90,nextEvaluation=-90,logAt=-90}
 	return teams[team]

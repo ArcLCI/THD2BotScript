@@ -468,6 +468,16 @@ function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 
 end
 
+local SharedLotus,SharedActions
+local function SharedResourceItems(bot)
+	SharedActions=SharedActions or require(GetScriptDirectory()..'/THDFuncLib/action_intent')
+	if SharedActions.RunePickupProtected(bot) then return true end
+	SharedLotus=SharedLotus or require(GetScriptDirectory()..'/THDFuncLib/modes/shared/map_resource_items')
+	return SharedLotus.SharedThink(bot)
+end
+function ConsiderSharedResourceItems(bot)
+	return SharedResourceItems(bot or GetBot())
+end
 -- Can this bot do anything now?
 function IsBotAwake( bot )
 
@@ -478,7 +488,10 @@ function IsBotAwake( bot )
 	local abilityThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, 0.25, 0.25, 'ability_usage_shared')
 	if DotaTime() > 0 and not Timer.ShouldRunBotTask(bot, 'ability_usage_think_global', abilityThinkInterval, 0.03) then return false end
 	Scheduler.ObserveTaskRun(bot, 'ability_usage_shared', abilityThinkInterval)
-	return not ( bot:IsIllusion() or bot:IsHexed() or bot:IsStunned() )
+	if not bot:IsAlive() or bot:IsIllusion() or bot:IsHexed() or bot:IsStunned() then return false end
+	-- 实际英雄共用此入口；物品生命周期占用时不继续发英雄技能覆盖它。
+	if bot==GetBot() and SharedResourceItems(bot) then return false end
+	return true
 
 end
 
@@ -1698,6 +1711,8 @@ end
 function ConsiderNeutralItems(tBlacklist)
 
 	local npcBot = GetBot()
+	-- 覆盖华扇等独立调度英雄；SharedThink同帧去重且保留施法/背包保护。
+	if SharedResourceItems(npcBot) then return end
 	-- 中立物品有独立入口，补齐华扇引导、自锁与接管窗口保护。
 	if npcBot:GetUnitName() == 'npc_dota_hero_bristleback' then
 		local actions = require(GetScriptDirectory() .. '/THDFuncLib/action_intent')

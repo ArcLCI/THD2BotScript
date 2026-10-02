@@ -14,12 +14,30 @@ function A.Protect(unit, ability, startMargin)
 	unit.THD_ActionProtection = {ability=ability, untilTime=DotaTime()+(startMargin or 0.35)}
 end
 
+-- 捡符仅保护已下单的短窗口，不借用技能保护锁抬高其它模式；危险/让出立即解锁。
+function A.RunePickupProtected(unit)
+	local pickup=unit and unit.THD_RunePickup
+	if not pickup then return false end
+	if not unit:IsAlive() or DotaTime()>=pickup.deadline or unit:GetActiveMode()~=BOT_MODE_RUNE
+		or unit:GetHealth()<pickup.health-1 or GetRuneStatus(pickup.rune)~=RUNE_STATUS_AVAILABLE then
+		unit.THD_RunePickup=nil;return false
+	end
+	return true
+end
+
 function A.ValidTarget(target)
 	return target ~= nil and not target:IsNull() and target:CanBeSeen() and target:IsAlive()
 end
 
 function A.Protected(unit, owner, lifecycleOnly)
 	if unit == nil or unit:IsNull() or not unit:IsAlive() then return true end
+	if not lifecycleOnly and A.RunePickupProtected(unit) then return true end
+	-- 莲花已发单到消耗确认之间保持有界保护，确认轮询本身不经过动作入口。
+	local lotus=unit.THD_LotusCast
+	if lotus then
+		if DotaTime()<lotus.untilAt and unit:GetHealth()>=lotus.health-1 then return true end
+		unit.THD_LotusCast=nil
+	end
 	if A.KasenProtected(unit) then return true end
 	if unit:IsCastingAbility() or unit:IsChanneling() then return true end
 	-- 队列仅阻止普通动作覆盖；未来的技能/施法接近不能无限抬高模式评分或暂停进展预算。

@@ -1,6 +1,8 @@
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local Tasks = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_task')
 local ExecutionConfig=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/execution_config')
+local MapResources=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/map_resources')
+local LocalRoutes=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/local_route_candidates')
 local SkillMovement = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/skill_avoidance')
 local TowerSafety = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/tower_safety')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
@@ -37,8 +39,7 @@ local RUNE_POWER_ENEMY_NEAR_RUNE_RADIUS = 450
 local RUNE_SAFE_ABANDON_SECONDS = 12
 local RUNE_DANGER_ABANDON_SECONDS = 35
 local WISDOM_RUNE_CLEAR_RADIUS = 650
-local WISDOM_RUNE_PICKUP_RADIUS = 360
-local WISDOM_RUNE_CONFIRM_SECONDS = 2.6
+local WISDOM_RUNE_PICKUP_RADIUS = 300 -- 缺少观察时仅用于安全距离；领取使用桥接的实际radius。
 local WISDOM_RUNE_BACKUP_DISTANCE = 5200
 local WISDOM_RUNE_ENEMY_ABORT_RADIUS = 1400
 local MAX_DIST = 1600
@@ -63,7 +64,15 @@ local wisdomRuneSpots = {
 	[1] = radiantWRLocation,
 	[2] = direWRLocation,
 }
-local wisdomRuneInfo = {0, 0, false} -- time, loc spot index, did pick
+local function WisdomObservation(spot)
+	local observation=MapResources.Get(bot,'wisdom',spot)
+	if observation then
+		wisdomRuneSpots[spot]=observation.location
+		if spot==1 then radiantWRLocation=observation.location else direWRLocation=observation.location end
+	end
+	return observation
+end
+local wisdomRuneInfo = {0, 0, false} -- 开始时间、符点槽位、任务启用；不代表已取得经验。
 local timeInMin = 0
 local Bottle = nil
 local lastMin = 0
@@ -72,6 +81,10 @@ local wisdomRuneEnterTime = -9999
 local lastRunePickupTime = -9999
 local lastRunePickupLocation = nil
 local idleRuneTask = nil
+local runeExecutionOutcome=nil
+local function SetRuneOutcome(status,reason)
+	runeExecutionOutcome={status=status,reason=reason}
+end
 
 local function RuneMove(unit, actionName, location, interval, distance)
 	return J.ActionMoveToLocation(unit, actionName, location, interval, distance, function(point)
@@ -133,7 +146,7 @@ local function ClearWisdomRuneMode()
 	wisdomRuneEnterTime = -9999
 end
 
-local function MarkWisdomRunePicked()
+local function MarkWisdomRuneConsumed()
 	if bot.wisdom ~= nil
 	and bot.wisdom[timeInMin] ~= nil
 	and wisdomRuneInfo[2] ~= nil
@@ -178,17 +191,10 @@ local function GetActiveRuneDesire()
 		return BOT_MODE_DESIRE_NONE
 	end
 	if wisdomRuneInfo[3] then
-		if wisdomRuneInfo[2] == nil
-		or bot.wisdom == nil
-		or bot.wisdom[timeInMin] == nil
-		or bot.wisdom[timeInMin][wisdomRuneInfo[2]] == true
-		then
-			ClearWisdomRuneMode()
-			activeRuneReason='wisdom_completed_or_missing'
-			return BOT_MODE_DESIRE_NONE
-		end
-
-		local wisdomLoc = wisdomRuneSpots[wisdomRuneInfo[2]]
+		local observation=wisdomRuneInfo[2] and WisdomObservation(wisdomRuneInfo[2])
+		if not observation then activeRuneReason='wisdom_observation_unavailable';return 0 end
+		if observation.state=='empty' then activeRuneReason='wisdom_observed_empty';return 0 end
+		local wisdomLoc = observation.location
 		if wisdomLoc ~= nil and X.ShouldAbortWisdomRune(wisdomLoc) then
 			MarkWisdomRuneAbandoned()
 			activeRuneReason='wisdom_unsafe'
@@ -196,12 +202,12 @@ local function GetActiveRuneDesire()
 		end
 
 		if wisdomLoc ~= nil
-		and GetUnitToLocationDistance(bot, wisdomLoc) <= WISDOM_RUNE_PICKUP_RADIUS
+		and observation.state=='ready' and GetUnitToLocationDistance(bot, wisdomLoc) <= observation.radius-32
 		then
 			return BOT_MODE_DESIRE_ABSOLUTE
 		end
 
-		return RUNE_ACTIVE_STICKY_NEAR_DESIRE
+		return observation.state=='ready' and RUNE_ACTIVE_STICKY_NEAR_DESIRE or math.min(0.35,X.GetWisdomDesire(wisdomLoc))
 	end
 
 	if bot:GetActiveMode() ~= BOT_MODE_RUNE then activeRuneReason='not_active_mode';return BOT_MODE_DESIRE_NONE end
@@ -236,7 +242,8 @@ local function GetActiveRuneDesire()
 	end
 
 	nRuneStatus = GetRuneStatus(ClosestRune)
-	activeRuneReason='status_'..tostring(nRuneStatus)
+	activeRuneReason=nRuneStatus==RUNE_STATUS_AVAILABLE and 'rune_available'
+		or (nRuneStatus==RUNE_STATUS_MISSING and 'rune_missing' or 'rune_unknown')
 	if nRuneStatus == RUNE_STATUS_AVAILABLE then
 		if ClosestDistance < 700 then
 			return RUNE_ACTIVE_STICKY_NEAR_DESIRE
@@ -461,53 +468,24 @@ local function ComputeDesire()
 end
 
 function ConsiderWisdomRune()
-	if bot:GetLevel() < 30 then
-		timeInMin = X.GetMulTime()
-		X.UpdateWisdom()
-		if DotaTime() >= 7 * 60 then
-			if DotaTime() < wisdomRuneInfo[1] + 3.5 then
-				local activeWisdomSpot = wisdomRuneInfo[2]
-				local activeWisdomLoc = activeWisdomSpot ~= nil and wisdomRuneSpots[activeWisdomSpot] or nil
-				if activeWisdomLoc == nil then
-					ClearWisdomRuneMode()
-					return 0
-				end
-				if GetUnitToLocationDistance(bot, activeWisdomLoc) < 50 then
-					return 0
-				end
-				if not bot:WasRecentlyDamagedByAnyHero(3.0) then
-					return BOT_MODE_DESIRE_HIGH
-				end
-			else
-				ClearWisdomRuneMode()
-			end
-
-			local tEnemyTowers = bot:GetNearbyTowers(700, true)
-			local tEnemyHeroes = J.GetEnemiesNearLoc(bot:GetLocation(), 1200)
-			if (#tEnemyTowers > 0 and bot:WasRecentlyDamagedByTower(1.0) and J.GetHP(bot) < 0.3)
-			or #tEnemyHeroes > 0 then
-				return 0
-			end
-
-			local runeSpot = X.GetWisdomRuneSpot()
-			if runeSpot ~= nil
-			and bot.wisdom ~= nil
-			and bot.wisdom[timeInMin] ~= nil
-			and wisdomRuneSpots[runeSpot] ~= nil
-			and bot.wisdom[timeInMin][runeSpot] == false
-			and not X.IsWisdomRuneAbandoned(runeSpot)
-			and X.ShouldTryWisdomRune(wisdomRuneSpots[runeSpot]) then
-				wisdomRuneInfo[1] = DotaTime()
-				wisdomRuneInfo[2] = runeSpot
-				wisdomRuneInfo[3] = true
-				wisdomRuneEnterTime = -9999
-				return X.GetWisdomDesire(wisdomRuneSpots[runeSpot])
-			end
-		end
-	else
-		ClearWisdomRuneMode()
-	end
-	return 0
+	if not ExecutionConfig.MAP_RESOURCES_ENABLED or bot:GetLevel()>=30 or DotaTime()<7*60 then return 0 end
+	timeInMin=X.GetMulTime();X.UpdateWisdom()
+	WisdomObservation(1);WisdomObservation(2)
+	local towers=bot:GetNearbyTowers(700,true)
+	if (#towers>0 and bot:WasRecentlyDamagedByTower(1) and J.GetHP(bot)<0.3)
+	or #J.GetEnemiesNearLoc(bot:GetLocation(),1200)>0 then return 0 end
+	local spot=X.GetWisdomRuneSpot()
+	local observation=spot and WisdomObservation(spot)
+	if not observation then MapResources.Log(bot,nil,'unknown','wisdom_bridge_unavailable');return 0 end
+	if observation.state=='empty' or X.IsWisdomRuneAbandoned(spot) or not MapResources.CanTry(bot,'wisdom',spot) then return 0 end
+	if not X.ShouldTryWisdomRune(observation.location) then return 0 end
+	local score=X.GetWisdomDesire(observation.location)
+	-- 未见到实际就绪时只允许低优先级侦察，不把刷新日历当作符仍存在的证据。
+	if observation.state=='unknown' then score=math.min(score,0.35) end
+	if score<=0 then return 0 end
+	wisdomRuneInfo={DotaTime(),spot,true};wisdomRuneEnterTime=-9999
+	MapResources.Log(bot,observation,observation.state=='ready' and 'ready' or 'unknown','wisdom_candidate')
+	return score
 end
 
 local function CaptureRuneState()
@@ -529,10 +507,39 @@ local function RuneTask(snapshot)
 	if snapshot.wisdom[3] then
 		kind,key='wisdom',snapshot.wisdom[2];location=wisdomRuneSpots[key]
 	elseif DotaTime()<0 then kind,key='pregame','pregame'
-	elseif bot:IsInvulnerable() and bot:DistanceFromFountain()<100 then kind,key='fountain','fountain'
+	elseif bot:IsInvulnerable() and J.GetHP(bot)>0.95 and bot:DistanceFromFountain()<100 then
+		local lane=bot:GetAssignedLane()
+		if lane~=LANE_TOP and lane~=LANE_MID and lane~=LANE_BOT then lane=LANE_MID end
+		kind,key='fountain','fountain';location=GetLaneFrontLocation(GetTeam(),lane,0)
 	elseif snapshot.rune~=nil and snapshot.rune~=-1 then location=GetRuneSpawnLocation(snapshot.rune) end
+	local observation=kind=='wisdom' and WisdomObservation(key)
+	if observation then location=observation.location end
 	return {kind=kind,key=key,location=location,snapshot=snapshot,reason=kind,
+		resourceIdentity=observation and observation.identity,deadline=kind=='wisdom' and snapshot.wisdom[1]+30 or (kind=='fountain' and DotaTime()+6 or nil),
 		arrivalRadius=kind=='wisdom' and WISDOM_RUNE_PICKUP_RADIUS or RUNE_PICKUP_DISTANCE,stallSeconds=6}
+end
+local function ValidateRuneCandidate(task,fresh)
+	if not task then return false,'missing_candidate' end
+	if task.kind=='rune' then
+		local known=false;for _,rune in ipairs(nRuneList) do if rune==task.key then known=true;break end end
+		if not known or not task.location or task.snapshot.rune~=task.key then return false,'invalid_rune_target' end
+		if fresh and task.snapshot.status==RUNE_STATUS_AVAILABLE and GetRuneStatus(task.key)~=RUNE_STATUS_AVAILABLE then
+			return false,'rune_changed_before_commit'
+		end
+		if fresh and task.snapshot.status==RUNE_STATUS_UNKNOWN and GetRuneStatus(task.key)==RUNE_STATUS_MISSING then
+			return false,'rune_missing_before_commit'
+		end
+	elseif task.kind=='wisdom' then
+		if not task.location or not task.snapshot.wisdom[3] or task.snapshot.wisdom[2]~=task.key then return false,'invalid_wisdom_target' end
+		if DotaTime()>=(task.deadline or -90) then return false,'wisdom_task_deadline' end
+		local observation=WisdomObservation(task.key)
+		if not observation or observation.identity~=task.resourceIdentity then return false,'wisdom_observation_unavailable' end
+		if fresh and observation.state=='empty' then return false,'wisdom_empty_before_commit' end
+	elseif task.kind=='fountain' then
+		if not task.location then return false,'fountain_exit_location_missing' end
+		if DotaTime()>=(task.deadline or -90) then return false,'fountain_exit_deadline' end
+	elseif task.kind=='pregame' and DotaTime()>=0 then return false,'pregame_ended' end
+	return true
 end
 local function RuneMissionSafe()
 	if J.Retreat.ShouldYield(bot,J.Retreat.HIGH) then return false,'high_retreat' end
@@ -542,6 +549,12 @@ local function RuneMissionSafe()
 	if not strategicChange then return true end
 	-- 普通战略变化计入机会成本，但已接近的可用符可有界收尾；未知/消失符不保留。
 	local task=Tasks.Active(bot,'rune')
+	if task and task.kind=='wisdom' then
+		local observation=WisdomObservation(task.key)
+		return observation and observation.state=='ready' and task.resourceClaimAt
+			and GetUnitToLocationDistance(bot,observation.location)<=observation.radius
+			and DotaTime()<(task.resourceClaimUntil or -90),'strategic_commitment'
+	end
 	if not task or task.kind~='rune' or bot:GetActiveMode()~=BOT_MODE_RUNE
 		or GetRuneStatus(task.key)~=RUNE_STATUS_AVAILABLE or not task.location then return false,'strategic_commitment' end
 	local distance=GetUnitToLocationDistance(bot,task.location)
@@ -569,18 +582,117 @@ local function LogRune(event,task,reason,score)
 end
 local function RejectRune(task,reason)
 	if not task then return end
-	runeRejected[RuneIdentity(task)]={untilAt=DotaTime()+ExecutionConfig.RUNE_RESUME_SECONDS,status=ObservedRuneStatus(task),reason=reason}
+	bot.THD_RunePickup=nil
+	local previous=runeRejected[RuneIdentity(task)]
+	local failed=string.find(reason or '','^pickup_')~=nil
+	local failures=failed and math.min(4,(previous and previous.failures or 0)+1) or 0
+	local delay=failed and math.min(12,failures*3) or ExecutionConfig.RUNE_RESUME_SECONDS
+	runeRejected[RuneIdentity(task)]={untilAt=DotaTime()+delay,status=ObservedRuneStatus(task),reason=reason,failures=failures}
 	runeContinuation=nil
 	LogRune('released',task,reason,0)
 end
+local function PickupOutcome(task)
+	if not task or not task.pickupIssuedAt then return nil end
+	local receipt=MapResources.RuneReceipt(bot)
+	if receipt and receipt.sequence~=(task.pickupReceiptSequence or 0)
+		and receipt.time>=task.pickupIssuedAt-0.11 and receipt.time<=(task.pickupReceiptUntil or task.pickupDeadline)
+		and (task.pickupRuneType==nil or task.pickupRuneType<0 or receipt.runeType==task.pickupRuneType)
+		and task.location and J.GetDistance(receipt.location,task.location)<=350 then
+		return {status='COMPLETE',reason='rune_self_activation_confirmed'}
+	end
+	-- 指令不等于拾取成功：只确认命令之后符已消失，不把消失归因为本Bot取得。
+	if ObservedRuneStatus(task)==RUNE_STATUS_MISSING then return {status='COMPLETE',reason='rune_absent_after_pickup'} end
+	if DotaTime()>=(task.pickupReceiptUntil or task.pickupDeadline or task.pickupIssuedAt+1.5) then return {status='INVALID',reason='pickup_unconfirmed'} end
+	if not bot:IsAlive() or bot:GetHealth()<(task.pickupHealth or 0)-1 then return {status='INVALID',reason='pickup_danger'} end
+	if Actions.Protected(bot,nil,true) or bot:GetCurrentActionType()==BOT_ACTION_TYPE_USE_ABILITY
+		or J.HasQueuedAction(bot) then return {status='INVALID',reason='pickup_interrupted_by_action'} end
+	if task.location then
+		local distance=GetUnitToLocationDistance(bot,task.location)
+		task.pickupMaxDistance=math.max(task.pickupMaxDistance or 0,distance)
+		-- 原生拾取仍在执行时容纳局部绕行；不增加总期限，也不追随无限远的目标。
+		local nativePickup=bot:GetCurrentActionType()==BOT_ACTION_TYPE_PICK_UP_RUNE
+		if distance>(nativePickup and 650 or RUNE_PICKUP_DISTANCE*2) then
+			return {status='INVALID',reason=nativePickup and 'pickup_native_path_out_of_bounds' or 'pickup_displaced'}
+		end
+	end
+	return {status='WAITING',reason=DotaTime()>=(task.pickupDeadline or math.huge) and 'pickup_receipt_grace' or 'pickup_confirmation'}
+end
+local function FinishRune(task,outcome)
+	bot.THD_RunePickup=nil
+	if outcome.status=='COMPLETE' then
+		if task then runeRejected[RuneIdentity(task)]=nil end
+		LogRune('completed',task,outcome.reason,0);runeContinuation=nil
+		if task and task.kind=='wisdom' and outcome.reason=='wisdom_observed_empty' then
+			RestoreRuneState(task.snapshot);MarkWisdomRuneConsumed()
+		end
+	else RejectRune(task,outcome.reason) end
+	if task and task.kind=='wisdom' then MapResources.Defer(bot,'wisdom',task.key,outcome.reason,8) end
+	Tasks.Release(bot,'rune',outcome.reason)
+	ClearActiveRuneTarget();ClearWisdomRuneMode()
+end
+local function NotePickup(task,event)
+	if not ExecutionConfig.DEBUG then return end
+	local issued=bot.THD_LastIssuedAction
+	local position,spawn=bot:GetLocation(),GetRuneSpawnLocation(task.key)
+	local action=bot:GetCurrentActionType()
+	local receipt=MapResources.RuneReceipt(bot)
+	print(string.format('[BOT][RunePickup] run=%s time=%.3f pid=%s session=%s event=%s rune=%s distance=%.1f action=%s queued=%d issued_kind=%s issued_at=%s deadline=%.3f',
+		ExecutionConfig.RUN_ID,DotaTime(),bot:GetPlayerID(),tostring(task.runeSession),event,tostring(task.key),GetUnitToLocationDistance(bot,task.location),
+		tostring(action),bot:NumQueuedActions(),tostring(issued and issued.kind),tostring(issued and issued.at),task.pickupDeadline or -1)
+		..string.format(' rune_status=%s rune_type=%s seen_age=%s action_is_pickup=%s action_is_idle=%s x=%.1f y=%.1f spawn_x=%s spawn_y=%s visible=%s hp=%s rooted=%s stunned=%s invulnerable=%s using_ability=%s',
+			tostring(GetRuneStatus(task.key)),tostring(GetRuneType(task.key)),tostring(GetRuneTimeSinceSeen(task.key)),
+			tostring(action==BOT_ACTION_TYPE_PICK_UP_RUNE),tostring(action==BOT_ACTION_TYPE_IDLE),position.x,position.y,
+			tostring(spawn and spawn.x),tostring(spawn and spawn.y),tostring(spawn and IsLocationVisible(spawn)),
+			tostring(bot:GetHealth()),tostring(bot:IsRooted()),tostring(bot:IsStunned()),tostring(bot:IsInvulnerable()),tostring(bot:IsUsingAbility()))
+		..string.format(' receipt_sequence=%s receipt_time=%s receipt_type=%s receipt_baseline=%s receipt_until=%s max_distance=%s',
+			tostring(receipt and receipt.sequence),tostring(receipt and receipt.time),tostring(receipt and receipt.runeType),tostring(task.pickupReceiptSequence),tostring(task.pickupReceiptUntil),tostring(task.pickupMaxDistance)))
+end
+local function IssuePickup(task,retry)
+	-- 独立的短拾取保护，不覆盖技能/物品保护；补发最多一次，绝不刷新确认期限。
+	-- 前后各取一次引擎状态；API返回与记录意图都不等于引擎已经开始拾取。
+	NotePickup(task,retry and 'retry_requested' or 'requested')
+	if not retry then
+		local receipt=MapResources.RuneReceipt(bot)
+		task.pickupReceiptSequence=receipt and receipt.sequence or 0
+		task.pickupRuneType=GetRuneType(task.key)
+	end
+	Actions.Forget(bot)
+	bot:Action_PickUpRune(task.key)
+	-- 命令返回后才建立确认状态，避免下单失败却进入虚假的等待窗口。
+	if not retry then
+		task.pickupIssuedAt=DotaTime();task.pickupDeadline=DotaTime()+1.5;task.pickupHealth=bot:GetHealth()
+		-- 原发单窗口之后只等自身激活回执，不再补发，也不因符仍存在判失败。
+		task.pickupReceiptUntil=task.pickupDeadline+0.75
+	else task.pickupRetried=true end
+	bot.THD_RunePickup={rune=task.key,deadline=task.pickupReceiptUntil or task.pickupDeadline,health=task.pickupHealth}
+	Actions.NoteIssued(bot,'rune_pickup',nil,task.location)
+	lastRunePickupTime,lastRunePickupLocation=DotaTime(),task.location
+	NotePickup(task,retry and 'reissued' or 'issued')
+	SetRuneOutcome('WAITING','pickup_confirmation')
+end
 function GetDesire()
 	local active=Tasks.Active(bot,'rune')
+	local confirmed=active and PickupOutcome(active)
+	if confirmed and confirmed.status=='COMPLETE' then NotePickup(active,confirmed.reason);FinishRune(active,confirmed);return 0 end
 	local safe,safetyReason=RuneMissionSafe()
 	if not safe then
 		RejectRune(active,safetyReason)
 		Tasks.Release(bot,'rune',safetyReason);ClearActiveRuneTarget();ClearWisdomRuneMode();return 0
 	end
 	if active~=nil then
+		local valid,reason=ValidateRuneCandidate(active)
+		if not valid then FinishRune(active,{status='INVALID',reason=reason});return 0 end
+		if active.kind=='fountain' then
+			if bot:DistanceFromFountain()>=100 or not bot:IsInvulnerable() then FinishRune(active,{status='COMPLETE',reason='fountain_exit_complete'});return 0 end
+			if J.GetHP(bot)<=0.95 then FinishRune(active,{status='INVALID',reason='fountain_recovery_required'});return 0 end
+			return Tasks.Offer(bot,'rune',active.score,active)
+		end
+		local pickup=PickupOutcome(active)
+		if pickup then
+			if pickup.status~='WAITING' then NotePickup(active,pickup.reason);FinishRune(active,pickup);return 0 end
+			LogRune('active',active,pickup.reason,active.score)
+			return Tasks.Offer(bot,'rune',math.max(active.score or 0,0.96),active)
+		end
 		RestoreRuneState(active.snapshot)
 		if not Tasks.Check(bot,'rune',true) then
 			RejectRune(active,'task_invalid_or_no_progress')
@@ -590,7 +702,9 @@ function GetDesire()
 		if active.kind=='rune' or active.kind=='wisdom' then
 			-- 存活任务只复核当前符点、危险与进度，不在Think里重新寻找另一个符。
 			local score=GetActiveRuneDesire()
-			if score<=0 then RejectRune(active,activeRuneReason);Tasks.Release(bot,'rune',activeRuneReason);return 0 end
+			if score<=0 then
+				FinishRune(active,{status=activeRuneReason=='wisdom_observed_empty' and 'COMPLETE' or 'INVALID',reason=activeRuneReason});return 0
+			end
 			Tasks.ObserveValue(bot,'rune',active)
 			score=Tasks.ProgressScore(bot,'rune',score)
 			LogRune('active',active,activeRuneReason,score)
@@ -608,6 +722,15 @@ function GetDesire()
 	if saved then RestoreRuneState(saved) end
 	if score<=0 or pendingRuneSnapshot==nil then Tasks.Release(bot,'rune','no_candidate');return 0 end
 	local candidate=RuneTask(pendingRuneSnapshot)
+	if candidate.kind=='wisdom' then
+		local observation=WisdomObservation(candidate.key)
+		if observation and observation.state=='unknown' then score=math.min(score,0.35) end
+	end
+	local valid,reason=ValidateRuneCandidate(candidate,true)
+	if not valid then
+		LogRune('admission_rejected',candidate,reason,0)
+		Tasks.Release(bot,'rune',reason);pendingRuneSnapshot=nil;return 0
+	end
 	local rejected=runeRejected[RuneIdentity(candidate)]
 	if rejected and DotaTime()<rejected.untilAt and ObservedRuneStatus(candidate)==rejected.status then
 		candidate.retryAt=rejected.untilAt;LogRune('admission_rejected',candidate,rejected.reason,0)
@@ -621,11 +744,16 @@ end
 function OnStart()
 	Utils.NoteModeStart(bot,'rune')
 	local task=Tasks.Start(bot,'rune')
+	if task then
+		local valid,reason=ValidateRuneCandidate(task,true)
+		if not valid then FinishRune(task,{status='INVALID',reason=reason});return end
+	end
 	if task then RestoreRuneState(task.snapshot) end
 	local resume=task and task.resume
 	if resume and DotaTime()<resume.expiresAt and ObservedRuneStatus(task)==RUNE_STATUS_AVAILABLE then
 		-- 短暂让出模式后延续同一符点的进度与起始时间，不重置未知等待/停滞预算。
-		for _,field in ipairs({'startedAt','progressAt','bestDistance','health','runeSession'}) do task[field]=resume.task[field] end
+		for _,field in ipairs({'startedAt','progressAt','bestDistance','health','runeSession','pickupIssuedAt','pickupDeadline',
+			'pickupReceiptUntil','pickupReceiptSequence','pickupRuneType','pickupRetried','pickupHealth'}) do task[field]=resume.task[field] end
 		runeModeStartTime=resume.modeStart
 		LogRune('resumed',task,'same_available_rune',task.score)
 	else
@@ -636,8 +764,11 @@ function OnStart()
 end
 
 function OnEnd()
+	bot.THD_RunePickup=nil
 	local task=Tasks.Active(bot,'rune')
-	if task and task.kind=='rune' and bot:IsAlive() and ObservedRuneStatus(task)==RUNE_STATUS_AVAILABLE
+	local pickup=PickupOutcome(task)
+	if pickup and pickup.status~='WAITING' then FinishRune(task,pickup);task=nil end
+	if task and not task.pickupIssuedAt and task.kind=='rune' and bot:IsAlive() and ObservedRuneStatus(task)==RUNE_STATUS_AVAILABLE
 	and not J.Retreat.ShouldYield(bot,J.Retreat.HIGH) then
 		runeContinuation={task=task,modeStart=runeModeStartTime,expiresAt=DotaTime()+ExecutionConfig.RUNE_RESUME_SECONDS}
 		LogRune('suspended',task,'mode_end',task.score)
@@ -648,15 +779,26 @@ function OnEnd()
 	ClearActiveRuneTarget();ClearWisdomRuneMode()
 end
 
-local function ExecuteRuneTask()
+local function ExecuteRuneTask(task)
 	if J.CanNotUseAction(bot) then return end
     if not Timer.ShouldRunBotTask(bot, 'rune_think', 0.25, 0.04) then return end
-    if bot:IsInvulnerable()
-    and J.GetHP(bot) > 0.95
-    and bot:DistanceFromFountain() < 100 then
-        RuneMove(bot, "rune_fountain_leave", J.GetStableRandomLocation(bot, 'rune_fountain_leave', bot:GetLocation(), 450, 550, 1.5), 0.5)
-        return
-    end
+	if task.kind=='fountain' then
+		-- 出泉任务不落入普通符分支；固定目的地和6秒期限，只重选安全局部路点。
+		if bot:DistanceFromFountain()>=100 or not bot:IsInvulnerable() then SetRuneOutcome('COMPLETE','fountain_exit_complete');return end
+		local function MoveExit(point)
+			local towers=TowerSafety.Observe(bot,'rune_fountain_leave')
+			if not towers.available or not Geometry.ValidateMovementSegment(bot:GetLocation(),point,towers.towers,96)
+				or not Geometry.ValidateLocalTerrainSegment(bot:GetLocation(),point,true) then return false end
+			return RuneMove(bot,'rune_fountain_leave',point,0.4,48)
+		end
+		local point=task.exitStep
+		if point and GetUnitToLocationDistance(bot,point)>48 and MoveExit(point) then return end
+		for index,entry in ipairs(LocalRoutes.Journey(bot:GetLocation(),task.location,true)) do
+			if index>18 then break end
+			if MoveExit(entry.location) then task.exitStep=entry.location;return end
+		end
+		SetRuneOutcome('INVALID','fountain_exit_no_safe_step');return
+	end
 
     if J.CanNotUseAction(bot)
 	or bot:GetCurrentActionType() == BOT_ACTION_TYPE_PICK_UP_RUNE
@@ -666,13 +808,14 @@ local function ExecuteRuneTask()
     end
 
 	if J.Retreat.ShouldYield(bot, J.Retreat.HIGH) then
+		SetRuneOutcome('INVALID','high_retreat')
 		ClearActiveRuneTarget()
 		ClearWisdomRuneMode()
 		return
 	end
 
 	if wisdomRuneInfo[3] then
-		return PickWisdomRune()
+		return PickWisdomRune(task)
 	end
 
     if DotaTime() < 0 then
@@ -715,8 +858,8 @@ local function ExecuteRuneTask()
     local nEnemyHeroes = J.GetEnemiesNearLoc(bot:GetLocation(), botAttackRange)
 
 	if idleRuneTask ~= nil then
-		if bot:GetActiveModeDesire() <= 0 then ClearActiveRuneTarget(); return end
-		if not ValidateIdleRuneTask() then ClearActiveRuneTarget(); return end
+		if bot:GetActiveModeDesire() <= 0 then SetRuneOutcome('INVALID','idle_rune_zero_desire');ClearActiveRuneTarget(); return end
+		if not ValidateIdleRuneTask() then SetRuneOutcome('INVALID','idle_rune_invalid');ClearActiveRuneTarget(); return end
 		ClosestRune = idleRuneTask.rune
 	else
 		-- 沿用OnStart/同模式交接的符点，执行时只刷新距离。
@@ -724,11 +867,13 @@ local function ExecuteRuneTask()
 	end
 
 	if ClosestRune == nil or ClosestRune == -1 then
+		SetRuneOutcome('INVALID','missing_execution_target')
 		return
 	end
 
 	local closestRuneLoc = GetRuneSpawnLocation(ClosestRune)
 	if closestRuneLoc == nil then
+		SetRuneOutcome('INVALID','missing_execution_location')
 		return
 	end
 
@@ -737,29 +882,24 @@ local function ExecuteRuneTask()
 
 	if idleRuneTask ~= nil then
 		-- 低欲望接管只执行已验证的精确符点，不沿用普通分支的随机偏移或攻击转移。
-		if not IdleRuneSafe(ClosestRune) then ClearActiveRuneTarget(); return end
+		if not IdleRuneSafe(ClosestRune) then SetRuneOutcome('INVALID','idle_rune_unsafe');ClearActiveRuneTarget(); return end
 		if ClosestDistance <= RUNE_PICKUP_DISTANCE then
-			bot:Action_PickUpRune(ClosestRune)
-			lastRunePickupTime, lastRunePickupLocation = DotaTime(), closestRuneLoc
-			ClearActiveRuneTarget()
+			IssuePickup(task,false)
 		else
-			RuneMove(bot, 'idle_available_rune', closestRuneLoc, 0.35, 120)
+			if not RuneMove(bot, 'idle_available_rune', closestRuneLoc, 0.35, 120) then SetRuneOutcome('INVALID','idle_rune_path_rejected') end
 		end
 		return
 	end
 
 	if nRuneStatus == RUNE_STATUS_AVAILABLE then
 		if ClosestDistance <= RUNE_PICKUP_DISTANCE then
-			bot:Action_PickUpRune(ClosestRune)
-			lastRunePickupTime = DotaTime()
-			lastRunePickupLocation = closestRuneLoc
-			ClosestRune = -1
-			ClosestDistance = -1
+			IssuePickup(task,false)
 			return
 		end
 
 		if ClosestDistance > RUNE_PICKUP_DISTANCE then
 			if X.ShouldAbortRune(ClosestRune, closestRuneLoc, ClosestDistance) then
+				SetRuneOutcome('INVALID','rune_enemy_intercept')
 				X.MarkRuneAbandoned(ClosestRune)
 				ClearActiveRuneTarget()
 				J.ClearActionsThrottled(bot, 'rune_abort_enemy', false, 0.2)
@@ -775,11 +915,12 @@ local function ExecuteRuneTask()
 				return
 			end
 
-			RuneMove(bot, "rune_move_closest", J.GetStableRandomLocation(bot, 'rune_move_closest_'..tostring(ClosestRune), GetRuneSpawnLocation(ClosestRune), 15, 30, 0.8), 0.4)
+			if not RuneMove(bot, "rune_move_closest", J.GetStableRandomLocation(bot, 'rune_move_closest_'..tostring(ClosestRune), GetRuneSpawnLocation(ClosestRune), 15, 30, 0.8), 0.4) then SetRuneOutcome('INVALID','rune_path_rejected') end
 			return
 		end
 	else
 		if X.ShouldAbortRune(ClosestRune, closestRuneLoc, ClosestDistance) then
+			SetRuneOutcome('INVALID','rune_missing_enemy_intercept')
 			X.MarkRuneAbandoned(ClosestRune)
 			ClearActiveRuneTarget()
 			J.ClearActionsThrottled(bot, 'rune_abort_enemy_missing', false, 0.2)
@@ -795,65 +936,51 @@ local function ExecuteRuneTask()
             return
         end
 
-		RuneMove(bot, "rune_move_spawn", GetRuneSpawnLocation(ClosestRune), 0.4)
+		if not RuneMove(bot, "rune_move_spawn", GetRuneSpawnLocation(ClosestRune), 0.4) then SetRuneOutcome('INVALID','rune_spawn_path_rejected') end
 		return
 	end
  end
 
-function PickWisdomRune()
-	local wisdomLoc = wisdomRuneSpots[wisdomRuneInfo[2]]
-	if wisdomLoc == nil then
-		ClearWisdomRuneMode()
-		return 0
+function PickWisdomRune(task)
+	local observation=task and WisdomObservation(task.key)
+	if not observation then SetRuneOutcome('INVALID','wisdom_observation_unavailable');return 0 end
+	if observation.state=='empty' then
+		MapResources.Log(bot,observation,'consumed','site_observed_empty')
+		SetRuneOutcome('COMPLETE','wisdom_observed_empty');return 0
 	end
-
-	local blocker = X.GetWisdomRuneBlocker(wisdomLoc)
-	if blocker ~= nil then
-		wisdomRuneEnterTime = -9999
-		J.ActionAttackUnit(bot, 'rune_clear_wisdom_creep', blocker, true, 0.35)
-		return 1
-	end
-
-	local distance = GetUnitToLocationDistance(bot, wisdomLoc)
-	if bot.wisdom ~= nil
-	and bot.wisdom[timeInMin] ~= nil
-	and wisdomRuneInfo[2] ~= nil
-	and bot.wisdom[timeInMin][wisdomRuneInfo[2]] == true
-	then
-		ClearWisdomRuneMode()
-		return 0
-	end
-
+	local wisdomLoc=observation.location
 	if X.ShouldAbortWisdomRune(wisdomLoc) then
-		MarkWisdomRuneAbandoned()
-		J.ClearActionsThrottled(bot, 'rune_wisdom_abort_enemy', false, 0.2)
-		return 0
+		SetRuneOutcome('INVALID','wisdom_enemy_intercept');MarkWisdomRuneAbandoned()
+		J.ClearActionsThrottled(bot,'rune_wisdom_abort_enemy',false,0.2);return 0
 	end
-
-	if distance <= WISDOM_RUNE_PICKUP_RADIUS then
-		if wisdomRuneEnterTime < 0 then
-			wisdomRuneEnterTime = DotaTime()
+	local distance=GetUnitToLocationDistance(bot,wisdomLoc)
+	if task.resourceClaimAt and distance>observation.radius then SetRuneOutcome('INVALID','wisdom_claim_area_left');return 0 end
+	if observation.state=='ready' and distance<=1000 then
+		local blocker=X.GetWisdomRuneBlocker(wisdomLoc)
+		if blocker then
+			J.ActionAttackUnit(bot,'rune_clear_wisdom_creep',blocker,true,0.35);return 1
 		end
-
-		if DotaTime() - wisdomRuneEnterTime >= WISDOM_RUNE_CONFIRM_SECONDS then
-			MarkWisdomRunePicked()
-			return 0
-		end
-
-		J.ClearActionsThrottled(bot, 'rune_wisdom_wait_pickup', false, 0.5)
-		return 1
-	else
-		wisdomRuneEnterTime = -9999
 	end
-
-	local point, kind = SkillMovement.ResolveMove(bot, 'rune_wisdom_move', wisdomLoc + RandomVector(15))
-	if point == nil then return 1 end
-	if kind == 'detour' then
-		Actions.Move(bot,point,24)
-		SkillMovement.NoteTaskMove(bot, 'rune_wisdom_move', point, kind)
+	if distance<=math.max(64,observation.radius-32) then
+		if observation.state=='unknown' then
+			task.resourceUnknownUntil=task.resourceUnknownUntil or DotaTime()+2.5
+			if DotaTime()>=task.resourceUnknownUntil then SetRuneOutcome('INVALID','wisdom_observation_timeout');return 0 end
+			MapResources.Log(bot,observation,'unknown','await_visible_observation');return 1
+		end
+		if not task.resourceClaimAt then
+			task.resourceClaimAt=DotaTime();task.resourceClaimUntil=math.min(task.deadline,DotaTime()+observation.countdown+2)
+		end
+		if DotaTime()>=task.resourceClaimUntil then SetRuneOutcome('INVALID','wisdom_claim_timeout');return 0 end
+		-- 原生区域机制负责倒计时；不清动作队列，不再以本地等待时间宣称成功。
+		MapResources.Log(bot,observation,'claiming','await_native_state_change');return 1
+	end
+	MapResources.Log(bot,observation,'approach',observation.state=='ready' and 'native_ready' or 'scout_unknown')
+	local point,kind=SkillMovement.ResolveMove(bot,'rune_wisdom_move',wisdomLoc)
+	if point==nil then SetRuneOutcome('INVALID','wisdom_no_safe_path');return 0 end
+	if kind=='detour' then
+		Actions.Move(bot,point,24);SkillMovement.NoteTaskMove(bot,'rune_wisdom_move',point,kind)
 	else
-		Actions.Move(bot,point,24,'direct')
-		SkillMovement.NoteTaskMove(bot, 'rune_wisdom_move', point, kind, BOT_ACTION_TYPE_MOVE_TO_DIRECTLY)
+		Actions.Move(bot,point,24,'direct');SkillMovement.NoteTaskMove(bot,'rune_wisdom_move',point,kind,BOT_ACTION_TYPE_MOVE_TO_DIRECTLY)
 	end
 	return 1
 end
@@ -991,12 +1118,12 @@ function X.GetWisdomRuneBlocker(vWisdomLoc)
 	local blocker = nil
 	local blockerDistance = math.huge
 	local unitLists = {
-		UNIT_LIST_ENEMY_CREEPS,
-		UNIT_LIST_NEUTRAL_CREEPS,
+		bot:GetNearbyLaneCreeps(WISDOM_RUNE_CLEAR_RADIUS,true),
+		bot:GetNearbyNeutralCreeps(WISDOM_RUNE_CLEAR_RADIUS),
 	}
 
 	for _, unitList in pairs(unitLists) do
-		for _, unit in pairs(GetUnitList(unitList)) do
+		for _, unit in pairs(unitList or {}) do
 			if J.IsValid(unit)
 			and unit:IsCreep()
 			and GetUnitToLocationDistance(unit, vWisdomLoc) <= WISDOM_RUNE_CLEAR_RADIUS
@@ -1033,7 +1160,8 @@ function X.ShouldAbortWisdomRune(vWisdomLoc)
 		return true
 	end
 
-	if distance > WISDOM_RUNE_PICKUP_RADIUS
+	local observation=wisdomRuneInfo[2] and WisdomObservation(wisdomRuneInfo[2])
+	if distance > (observation and observation.radius or WISDOM_RUNE_PICKUP_RADIUS)
 	and bot:WasRecentlyDamagedByAnyHero(4.0)
 	then
 		return true
@@ -1366,9 +1494,33 @@ end
 
 function Think()
 	local task=Tasks.Commit(bot,'rune')
-	if not Tasks.Check(bot,'rune',RuneMissionSafe()) then return end
+	if not task then return end
+	local valid,reason=ValidateRuneCandidate(task)
+	if not valid then FinishRune(task,{status='INVALID',reason=reason});return end
+	local safe,safetyReason=RuneMissionSafe()
+	if not safe then FinishRune(task,{status='INVALID',reason=safetyReason});return end
+	local pickup=PickupOutcome(task)
+	if pickup then
+		if pickup.status~='WAITING' then NotePickup(task,pickup.reason);FinishRune(task,pickup)
+		else
+			if not task.pickupRetried and DotaTime()>=task.pickupIssuedAt+0.35 and DotaTime()<task.pickupDeadline
+				and bot:GetCurrentActionType()~=BOT_ACTION_TYPE_PICK_UP_RUNE
+				and GetUnitToLocationDistance(bot,task.location)<=RUNE_PICKUP_DISTANCE then IssuePickup(task,true) end
+			if not task.pickupActionLogAt or DotaTime()-task.pickupActionLogAt>=0.35 then
+				task.pickupActionLogAt=DotaTime();NotePickup(task,'waiting')
+			end
+			LogRune('active',task,pickup.reason,task.score)
+		end
+		return
+	end
+	if not Tasks.Check(bot,'rune',true) then RejectRune(task,'task_invalid_or_no_progress');ClearActiveRuneTarget();ClearWisdomRuneMode();return end
 	RestoreRuneState(task.snapshot)
-	ExecuteRuneTask()
+	runeExecutionOutcome=nil
+	ExecuteRuneTask(task)
+	if runeExecutionOutcome then
+		if runeExecutionOutcome.status~='WAITING' then FinishRune(task,runeExecutionOutcome);return end
+		LogRune('active',task,runeExecutionOutcome.reason,task.score)
+	end
 	task.snapshot=CaptureRuneState()
 end
 

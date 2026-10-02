@@ -49,4 +49,23 @@ function R.BaseConnections(origin,goal)
 	end
 	return result
 end
+-- 行程首段与续段共用候选顺序；侧向连接仍由调用者完整检查安全，不授予穿塔权限。
+function R.Journey(origin,goal,allowConnections)
+	local result,seen={},{}
+	local function Add(point,connector)
+		if not point then return end
+		local key=string.format('%.0f:%.0f',point.x/16,point.y/16)
+		if seen[key] then return end
+		seen[key]=true;result[#result+1]={location=point,connector=connector==true}
+	end
+	local ordinary=R.Build(origin,goal,true)
+	for index=1,3 do Add(ordinary[index],false) end
+	if (goal-origin):Length2D()>120 then Add(origin+(goal-origin):Normalized()*96,false) end
+	if allowConnections then
+		local connections=R.BaseConnections(origin,goal)
+		for _,index in ipairs({4,5,6,7,8,9,10,11,12}) do Add(connections[index],true) end
+	end
+	for _,point in ipairs(ordinary) do Add(point,false) end
+	return result
+end
 return R

@@ -71,6 +71,32 @@ function M.OpportunityScore(bot,score)
 	end
 	return score
 end
+function M.NoteAlternative(bot,name,score,candidate)
+	if not ExecutionConfig.DEBUG then return end
+	local currentName=({[BOT_MODE_PUSH_TOWER_TOP]='push_1',[BOT_MODE_PUSH_TOWER_MID]='push_2',[BOT_MODE_PUSH_TOWER_BOT]='push_3',
+		[BOT_MODE_DEFEND_TOWER_TOP]='defend_1',[BOT_MODE_DEFEND_TOWER_MID]='defend_2',[BOT_MODE_DEFEND_TOWER_BOT]='defend_3'})[bot:GetActiveMode()]
+	if not currentName or currentName==name or not (string.find(name,'^push_') or string.find(name,'^defend_')) then return end
+	local state,now=State(bot,name),DotaTime()
+	if now-(state.alternativeLogAt or -90)<2 then return end
+	state.alternativeLogAt=now
+	local previous=State(bot,currentName);local current=previous.active
+	local function Goal(task)
+		if not task then return nil end
+		if task.target and Actions.ValidTarget(task.target) then return task.target:GetLocation() end
+		return task.finalGoal or task.location
+	end
+	local from,to=Goal(current),Goal(candidate)
+	local separation=from and to and math.sqrt((from.x-to.x)^2+(from.y-to.y)^2) or -1
+	local observation=previous.valueObservation
+	local snapshot=candidate.snapshot or {}
+	local function Value(value) return tostring(value):gsub('%s','_') end
+	-- 仅记录切换依据，不增加或抑制任何候选分数；避免把真实回防误当抖动。
+	print(string.format('[BOT][TaskAlternative] run=%s time=%.3f pid=%s from=%s to=%s current_key=%s candidate_key=%s current_desire=%.3f offered=%.3f raw=%s current_progress_age=%.3f current_action=%s goal_separation=%.1f candidate_distance=%.1f enemy_heroes=%d base_pressure=%s reason=%s',
+		ExecutionConfig.RUN_ID,now,bot:GetPlayerID(),currentName,name,Value(current and current.key),Value(candidate.key),
+		bot:GetActiveModeDesire(),score,Value(candidate.progressBaseScore or score),
+		observation and observation.verifiedAt and now-observation.verifiedAt or -1,Value(bot:GetCurrentActionType()),separation,
+		to and GetUnitToLocationDistance(bot,to) or -1,#(snapshot.lEnemyHeroesAroundLoc or {}),Value(snapshot.nEnemyUnitsAroundAncient),Value(candidate.reason)))
+end
 function M.Active(bot, name) return State(bot,name).active end
 function M.Candidate(bot, name) return State(bot,name).candidate end
 function M.RetryAt(bot,name) return State(bot,name).retryAt or -90 end
@@ -102,6 +128,7 @@ function M.Offer(bot, name, score, task)
 	candidate.score, candidate.scoredAt = score, DotaTime()
 	candidate.reason = candidate.reason or name
 	state.candidate=candidate
+	M.NoteAlternative(bot,name,score,candidate)
 	return score
 end
 function M.Start(bot, name)
