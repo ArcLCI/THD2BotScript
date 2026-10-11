@@ -1,7 +1,9 @@
 -- 候选与活动任务分开保存；退出仅释放任务，绝不清理技能/物品的动作保护。
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local ExecutionConfig = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/execution_config')
+local TeamStrategy = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/team_strategy')
 local StrategyShadow = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/strategy_phase')
+local NativeProgress=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/native_push_progress')
 local M = {}
 local function State(bot, name)
 	bot.THD_ModeTasks = bot.THD_ModeTasks or {}
@@ -24,10 +26,16 @@ local function Copy(source)
 	return result
 end
 -- 只用实际接近/目标掉血形成短时收益，不把提交命令或进入区域算作进展。
+local function DurableMission(task,name)
+	return task and task.objective~=nil and (string.find(name,'^push_')~=nil or task.pushJourney~=nil)
+end
+local function ValueIdentity(task,name)
+	return (DurableMission(task,name) and 'push:' or '')..tostring(task.objective or task.key or name)
+end
 function M.ObserveValue(bot,name,task)
 	if not ExecutionConfig.ENABLED or not task then return end
 	local state,now=State(bot,name),DotaTime()
-	local missionIdentity=tostring(task.objective or task.key or name)
+	local missionIdentity=ValueIdentity(task,name)
 	local identity=missionIdentity
 	local target=task.target
 	identity=identity..':'..tostring(target)
@@ -35,6 +43,33 @@ function M.ObserveValue(bot,name,task)
 	local location=visible and target:GetLocation() or task.finalGoal or task.location
 	local distance=location and GetUnitToLocationDistance(bot,location)
 	local health=visible and bot:GetAttackTarget()==target and target:GetHealth() or nil
+	if DurableMission(task,name) then
+		-- 同建筑的账本独立于provider和短任务；反向走过再回来不重复领取进展奖励。
+		bot.THD_PushValueLedger=bot.THD_PushValueLedger or {}
+		local ledgers=bot.THD_PushValueLedger
+		local ledger=ledgers[missionIdentity]
+		if not ledger or ledger.objective~=task.objective then
+			ledger={missionIdentity=missionIdentity,objective=task.objective,healthByTarget=setmetatable({}, {__mode='k'})}
+			ledgers[missionIdentity]=ledger
+		end
+		local goal=task.pushJourney and task.pushJourney.goal
+			or (Actions.ValidTarget(task.objective) and task.objective:GetLocation()) or ledger.goal
+		if goal then ledger.goal=Vector(goal.x,goal.y,goal.z) end
+		local remaining=ledger.goal and GetUnitToLocationDistance(bot,ledger.goal)
+		if remaining and (not ledger.distance or ledger.distance-remaining>=48) then
+			if ledger.distance then ledger.verifiedAt=now end
+			ledger.distance=remaining
+		end
+		local prior=target and ledger.healthByTarget[target]
+		if health and prior and health<prior then ledger.verifiedAt=now end
+		if health then ledger.healthByTarget[target]=math.min(prior or health,health) end
+		ledger.identity,ledger.at=identity,now
+		state.valueObservation=ledger
+		for key,entry in pairs(ledgers) do
+			if key~=missionIdentity and now-(entry.at or now)>120 then ledgers[key]=nil end
+		end
+		return
+	end
 	local old=state.valueObservation
 	if not old or old.identity~=identity or now-old.at>2 then
 		state.valueObservation={identity=identity,missionIdentity=missionIdentity,distance=distance,health=health,at=now};return
@@ -47,9 +82,8 @@ end
 function M.ProgressScore(bot,name,score,silent)
 	if not ExecutionConfig.ENABLED then return score end
 	local state=State(bot,name);local task=state.active;local observation=state.valueObservation
-	local localJourney=task and task.finalGoal and (task.provider=='basic_lane' or task.provider=='local_fallback')
-	if not task or score<=0 or (score<0.2 and not localJourney) or score>=ExecutionConfig.PROGRESS_VALUE_CAP or not observation or not observation.verifiedAt
-		or observation.missionIdentity~=tostring(task.objective or task.key or name)
+	if not task or score<=0 or score<0.2 or score>=ExecutionConfig.PROGRESS_VALUE_CAP or not observation or not observation.verifiedAt
+		or observation.missionIdentity~=ValueIdentity(task,name)
 		or DotaTime()>=(task.deadline or math.huge)
 		or DotaTime()-observation.verifiedAt>ExecutionConfig.PROGRESS_VALUE_SECONDS or not M.Valid(bot,task) then return score end
 	if task.executionVersion==2 and not M.IsExecutionActive(bot,name) then return score end
@@ -64,12 +98,20 @@ function M.ProgressScore(bot,name,score,silent)
 	end
 	return adjusted
 end
-function M.OpportunityScore(bot,score)
-	-- 普通远行候选计入放弃现有推进/防守产出的成本；不改Attack/Retreat或紧急任务。
-	for _,name in ipairs({'push_1','push_2','push_3','defend_1','defend_2','defend_3'}) do
-		if M.ProgressScore(bot,name,0.5,true)>0.5 then return math.max(0,score-ExecutionConfig.LEAVE_PROGRESS_COST) end
-	end
-	return score
+function M.OpportunityScore(bot,score,consumer,committed)
+    -- 只影响普通候选；已提交领取、原生战斗/撤退与紧急任务不走此折扣。
+    if committed then return score end
+    if ExecutionConfig.NATIVE_PROGRESS_AVOID_INTERRUPTS and NativeProgress.IsProductive(bot) then
+        local adjusted=math.max(0,score-TeamStrategy.LeaveProgressCost(ExecutionConfig.LEAVE_PROGRESS_COST))
+        NativeProgress.NoteOpportunity(bot,score,adjusted,consumer)
+        return adjusted
+    end
+    for _,name in ipairs({'defend_1','defend_2','defend_3'}) do
+        if M.ProgressScore(bot,name,0.5,true)>0.5 then
+            return math.max(0,score-TeamStrategy.LeaveProgressCost(ExecutionConfig.LEAVE_PROGRESS_COST))
+        end
+    end
+    return score
 end
 function M.NoteAlternative(bot,name,score,candidate)
 	if not ExecutionConfig.DEBUG then return end
@@ -108,6 +150,7 @@ function M.Release(bot, name, reason, retry)
 	if hadTask or reason=='mode_end' then state.gapAt,state.gapIdentity=nil,nil end
 	state.active, state.candidate = nil, nil
 	state.valueObservation=nil
+	if not bot:IsAlive() then bot.THD_PushValueLedger=nil end
 	state.reason = reason
 	if retry then state.retryAt = DotaTime()+retry end
 	-- 无候选的负结果仍可缓存，不能把每次返回0变成下一帧全量扫描。
@@ -221,7 +264,11 @@ local function ExecutionLog(bot,name,result,task)
 		..string.format(' previous_deadline=%s candidate_deadline=%s candidate_until=%s candidate_expired=%s committed_at=%s remaining_distance=%s execution_check=%s',
 			Token(result.previousDeadline),Token(result.candidateDeadline),Token(task and task.validUntil),
 			Token(task and now>=(task.validUntil or -90)),Token(task and task.committedAt),
-			Token(task and task.location and GetUnitToLocationDistance(bot,task.location)),Token(executionReason)))
+			Token(task and task.location and GetUnitToLocationDistance(bot,task.location)),Token(executionReason))
+		..string.format(' actor_token=%s actor_name=%s actor_is_current=%s mission_id=%s mission_phase=%s value_best=%s value_verified_at=%s',
+			Token(bot),Token(bot:GetUnitName()),Token(bot==GetBot()),Token(task and ValueIdentity(task,name)),
+			Token(task and ((task.pushJourney and task.pushJourney.phase) or task.missionPhase or task.reason)),
+			Token(state.valueObservation and state.valueObservation.distance),Token(state.valueObservation and state.valueObservation.verifiedAt)))
 end
 
 function M.NoteRejection(bot,name,reason,point,stage,detail)
@@ -233,9 +280,8 @@ end
 function M.NoteExecutionReady(bot)
 	if not ExecutionConfig.DEBUG or bot.THD_ExecutionReady then return end
 	bot.THD_ExecutionReady=true
-	print(string.format('[BOT][Execution] run=%s event=ready pid=%s enabled=%s push=%s roam=%s fallback=%s',
-		ExecutionConfig.RUN_ID,bot:GetPlayerID(),tostring(ExecutionConfig.ENABLED),tostring(ExecutionConfig.PushEnabled()),
-		tostring(ExecutionConfig.RoamEnabled()),tostring(ExecutionConfig.FallbackEnabled())))
+	print(string.format('[BOT][Execution] run=%s event=ready pid=%s enabled=%s push=native roam=%s fallback=removed',
+		ExecutionConfig.RUN_ID,bot:GetPlayerID(),tostring(ExecutionConfig.ENABLED),tostring(ExecutionConfig.RoamEnabled())))
 end
 
 function M.NoteNoCandidate(bot,name,reason,nextAt)
@@ -395,7 +441,13 @@ function M.CommitExecutable(bot,name)
 		-- 这里只交接任务引用，不回调其他模式、不清其动作和技能保护。
 		M.Release(bot,priorOwner,'execution_handoff')
 	end
-	nextTask.committedAt=now
+	-- 报价刷新不是新动作启动；同任务同动作保留启动时刻，防止反复获得0.5秒空档。
+	local sameAction=active and previous==active and previous.key==nextTask.key and previous.intent==nextTask.intent and previous.target==nextTask.target
+	if sameAction and previous.location and nextTask.location then
+		local dx,dy=previous.location.x-nextTask.location.x,previous.location.y-nextTask.location.y
+		sameAction=dx*dx+dy*dy<=(nextTask.tolerance or 120)^2
+	elseif sameAction and previous.location~=nextTask.location then sameAction=false end
+	nextTask.committedAt=sameAction and previous.committedAt or now
 	state.active=nextTask;bot.THD_ExecutionOwner=name
 	return nextTask
 end

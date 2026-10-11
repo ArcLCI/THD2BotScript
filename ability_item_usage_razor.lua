@@ -1,5 +1,7 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Survival = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/combat_commitment')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -10,6 +12,7 @@ local ability01,ability02,ability04,abilityEx,abilityPose,cast04Location,castExL
 function MyItemUsageThink()
 
 	local npcBot = GetBot()
+	if J.CanNotUseAction(npcBot) then return false end
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
@@ -27,7 +30,7 @@ function MyItemUsageThink()
 		if ( castItemHorseRedDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_horse_red )
-			return
+			return true
 		end
 	end
 
@@ -37,7 +40,7 @@ function MyItemUsageThink()
 		if ( castItemHorseKingDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_horse_king )
-			return
+			return true
 		end
 	end
 	if ( item_root~=nil and item_root:IsFullyCastable() )
@@ -46,7 +49,7 @@ function MyItemUsageThink()
 		if ( castItemRootDesire > 0 )
 		then
 			npcBot:Action_UseAbilityOnEntity( item_root, castItemRootTarget )
-			return
+			return true
 		end
 	end
 	if ( item_speed~=nil and item_speed:IsFullyCastable() )
@@ -55,7 +58,7 @@ function MyItemUsageThink()
 		if ( castItemSpeedDesire > 0 or cast04Desire > 0)
 		then
 			npcBot:Action_UseAbility( item_speed )
-			return
+			return true
 		end
 	end
 end
@@ -63,11 +66,14 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function AbilityUsageThink()
+	Survival.Observe(GetBot())
 
 	if not IsBotAwake() then return end
+	if J.CanNotUseAction(GetBot()) then return end
 
-	MyItemUsageThink()
+	if MyItemUsageThink() then return end
 	ConsiderNeutralItems()
+	if J.CanNotUseAction(GetBot()) then return end
 
 
 	local npcBot = GetBot()
@@ -81,11 +87,21 @@ function AbilityUsageThink()
 	abilityEx = npcBot:GetAbilityByName( "ability_thdots_ikuEx" )
 	abilityPose = npcBot:GetAbilityByName( "ability_thdots_iku_pose" )
 
+	-- 近身受压时优先击退，不让雷衣开关先占据本次决策；没有近身威胁不主动减速逃跑。
+	if IsRetreating(npcBot,'ability_thdots_iku02') or (J.GetHP(npcBot)<0.35 and npcBot:WasRecentlyDamagedByAnyHero(2)) then
+		cast02Desire=ConsiderAbilityIku02()
+		if cast02Desire>0 then
+			npcBot:Action_UseAbility(ability02)
+			Survival.Issued(npcBot,ability02,nil,'iku_defensive_knockback')
+			return
+		end
+	end
 	-- Consider using each ability
 	cast01Desire = ConsiderAbilityIku01()
 	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability01 )
+		Survival.Issued(npcBot,ability01,nil,'iku_toggle')
 		return
 	end
 
@@ -93,6 +109,7 @@ function AbilityUsageThink()
 	if ( cast02Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability02)
+		Survival.Issued(npcBot,ability02,nil,'iku_knockback')
 		return
 	end
 
@@ -100,6 +117,7 @@ function AbilityUsageThink()
 	if ( cast04Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnLocation( ability04, cast04Location )
+		Survival.Issued(npcBot,ability04,cast04Location,'iku_ultimate')
 		return
 	end
 
@@ -107,6 +125,7 @@ function AbilityUsageThink()
 	if ( castExDesire > 0 )
 	then
 		npcBot:Action_UseAbilityOnLocation( abilityEx, castExLocation )
+		Survival.Issued(npcBot,abilityEx,castExLocation,'iku_ex')
 		return
 	end
 
@@ -114,6 +133,7 @@ function AbilityUsageThink()
 	if ( castPoseDesire > 0 )
 	then
 		npcBot:Action_UseAbility( abilityPose )
+		Survival.Issued(npcBot,abilityPose,nil,'iku_pose')
 		return
 	end
 end
@@ -228,15 +248,25 @@ function ConsiderAbilityIku02()
 		return BOT_ACTION_DESIRE_NONE
 	end
 
-	local nCastRange = 250
+	local nCastRange = ability02:GetSpecialValueInt('radius')
 	local tableNearbyEnemyHeroes = CachedGetNearbyHeroes( npcBot, nCastRange, true, BOT_MODE_NONE )
+	if IsRetreating(npcBot,'ability_thdots_iku02') or (J.GetHP(npcBot)<0.35 and npcBot:WasRecentlyDamagedByAnyHero(2)) then
+		for _,enemy in pairs(tableNearbyEnemyHeroes) do
+			if CanCastIku02OnTarget(enemy) and not IsPossibleIllusion(enemy)
+			and (enemy:GetAttackTarget()==npcBot or npcBot:WasRecentlyDamagedByAnyHero(2)) then
+				return BOT_ACTION_DESIRE_HIGH
+			end
+		end
+		Survival.Note(npcBot,'iku_retreat_no_close_threat',ability02)
+		return BOT_ACTION_DESIRE_NONE
+	end
 	-- Fighting or Retreating with hero
 	if ( npcBot:GetActiveMode() == BOT_MODE_ATTACK )
 	then
 		for _,npcEnemy in pairs( tableNearbyEnemyHeroes )
 		do
 			if ( CanCastIku02OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ) and
-			GetUnitToLocationDistance(npcBot:GetTarget(),GetShopLocation(npcBot:GetTeam(),SHOP_HOME))<=
+				GetUnitToLocationDistance(npcEnemy,GetShopLocation(npcBot:GetTeam(),SHOP_HOME))<=
 			GetUnitToLocationDistance(npcBot,GetShopLocation(npcBot:GetTeam(),SHOP_HOME)))
 			then
 				return BOT_ACTION_DESIRE_MODERATE
@@ -244,13 +274,6 @@ function ConsiderAbilityIku02()
 			if npcEnemy:HasModifier("modifier_ability_thdots_iku04") then
 				return BOT_ACTION_DESIRE_HIGH
 			end
-		end
-	end
-	if IsRetreating(npcBot, 'ability_thdots_iku02') then
-		local cur_speed = npcBot:GetCurrentMovementSpeed()
-		if ( cur_speed >= 420 )
-		then
-			return BOT_ACTION_DESIRE_MODERATE
 		end
 	end
 

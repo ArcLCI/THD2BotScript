@@ -8,7 +8,7 @@ local Consumables=require(GetScriptDirectory()..'/THDFuncLib/consumable_inventor
 local Towers=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/tower_safety')
 local Geometry=require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_geometry')
 local Routes=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/local_route_candidates')
-local Strategy=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/wasteland_strategy')
+local Strategy=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/base_threat')
 local J=require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local L={}
 local states=setmetatable({}, {__mode='k'})
@@ -35,7 +35,7 @@ local function Value(bot,observation,distance)
 end
 function L.Score(bot,task)
 	local observation=Resources.Get(bot,'lotus',task.resourceIndex)
-	if not observation or observation.state~='ready' then return Config.FALLBACK_DESIRE end
+	if not observation or observation.state~='ready' then return Config.RESOURCE_RETURN_DESIRE end
 	local distance=GetUnitToLocationDistance(bot,observation.location)
 	-- 只给已执行且仍安全的圈内等待短时收尾优先级，不靠权重强抢远处资源。
 	if task.claimAt and distance<=observation.radius and DotaTime()<task.deadline then return Config.LOTUS_CLAIM_DESIRE end

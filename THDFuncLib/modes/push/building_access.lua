@@ -1,6 +1,6 @@
 -- 建筑攻击距离包含碰撞边界；候选仅提供位置，调用方负责权限和逐段安全复核。
 local Geometry=require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_geometry')
-local Config=require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_escort_config')
+local Config=require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_observation_config')
 local B={}
 function B.Reach(bot,target)
 	if not target or target:IsNull() or not target:CanBeSeen() or not target:IsAlive() then return 0 end

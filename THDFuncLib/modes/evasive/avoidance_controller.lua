@@ -6,7 +6,7 @@ local TowerSafety = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/towe
 local ZoneManager = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_zone_manager')
 local AvoidancePath = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/avoidance_path')
 local Pickoff = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_pickoff')
-local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/wasteland_strategy')
+local Buildings = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/building_rules')
 local Retreat = require(GetScriptDirectory()..'/THDFuncLib/modes/retreat/aba_retreat')
 local HighGroundExit = require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/high_ground_exit')
 
@@ -304,8 +304,8 @@ local function GetHighLevelTeamfightPriority(bot)
 	then
 		return nil
 	end
-	local teamAverageLevel = Wasteland.GetStrictTeamAverageLevel ~= nil
-		and tonumber(Safe(nil, function() return Wasteland.GetStrictTeamAverageLevel() end)) or nil
+	local teamAverageLevel = Buildings.GetStrictTeamAverageLevel ~= nil
+		and tonumber(Safe(nil, function() return Buildings.GetStrictTeamAverageLevel() end)) or nil
 	if teamAverageLevel == nil
 	or teamAverageLevel < (tonumber(Config.HIGH_LEVEL_TEAMFIGHT_MIN_TEAM_AVERAGE_LEVEL) or 25)
 	then
@@ -321,7 +321,7 @@ local function GetHighLevelTeamfightPriority(bot)
 	or (tonumber(details.allyCount) or 0) < (tonumber(details.enemyCount) or 0) then return nil end
 	local tower = Retreat.GetTowerThreat(bot, 3.0, nil, true)
 	if tower.unseenIncoming == true or (tower.unavoidableDamage or 0) >= health
-	or (tower.predictedDamage or 0) / health >= Wasteland.HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO then return nil end
+	or (tower.predictedDamage or 0) / health >= Buildings.HIGH_GROUND_MAX_TOWER_DAMAGE_RATIO then return nil end
 	return {
 		botLevel = botLevel,
 		teamAverageLevel = teamAverageLevel,
@@ -329,17 +329,6 @@ local function GetHighLevelTeamfightPriority(bot)
 		enemyCount = tonumber(details.enemyCount) or 0,
 		totalHeroCount = tonumber(details.totalHeroCount) or 0,
 	}
-end
-
-local function GetHighGroundAssaultAuthorization(bot)
-	local authorization = bot ~= nil and bot.THD_HighGroundAssaultAuthorization or nil
-	if type(authorization) ~= 'table' then return nil end
-	-- 目标释放或成员被移除后立即失效，避免仅按 TTL 继续绕过塔圈。
-	if not Wasteland.HasLiveHighGroundAssaultAuthorization(bot) then
-		bot.THD_HighGroundAssaultAuthorization = nil
-		return nil
-	end
-	return authorization
 end
 
 local function FilterAuthorizedHighGroundZones(zones, authorization, scan)
@@ -1028,7 +1017,7 @@ function Controller.GetDesire(bot)
 	local state = GetState(bot)
 	Handoff.Observe(bot, state)
 	HighGroundExit.Observe(bot)
-	local highGroundAuthorization = GetHighGroundAssaultAuthorization(bot)
+	local highGroundAuthorization = nil
 	local highLevelTeamfight = GetHighLevelTeamfightPriority(bot)
 	local scan = TowerSafety.Scan(bot, {
 		highGroundAssaultAuthorization = highGroundAuthorization,
@@ -1145,7 +1134,7 @@ function Controller.Think(bot)
 			ResetProgress(state, bot:GetLocation())
 		end
 	end
-	local highGroundAuthorization = GetHighGroundAssaultAuthorization(bot)
+	local highGroundAuthorization = nil
 	local highLevelTeamfight = GetHighLevelTeamfightPriority(bot)
 	local scan = TowerSafety.Scan(bot, {
 		highGroundAssaultAuthorization = highGroundAuthorization,
@@ -1397,7 +1386,7 @@ local Planned=require(GetScriptDirectory()..'/THDFuncLib/modes/evasive/tower_esc
 	Enabled=function(bot) return Controller.IsEnabled(bot) and IsValidBot(bot) end,
 	Observe=function(bot)
 		local state=GetState(bot)
-		local authorization=GetHighGroundAssaultAuthorization(bot)
+		local authorization=nil
 		local teamfight=GetHighLevelTeamfightPriority(bot)
 		local scan=TowerSafety.Scan(bot,{highGroundAssaultAuthorization=authorization,highLevelTeamfight=teamfight})
 		local known=FilterAuthorizedHighGroundZones(RefreshKnownZones(bot,scan),authorization,scan)

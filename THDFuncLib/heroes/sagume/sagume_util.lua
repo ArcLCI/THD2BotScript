@@ -111,7 +111,8 @@ end
 function U.Allies(bot, range)
 	local result = {bot}
 	for _, ally in pairs(U.Safe({}, function() return bot:GetNearbyHeroes(math.min(1600,range), false, BOT_MODE_NONE) end)) do
-		if ally ~= bot and U.Valid(ally) and not U.Safe(true, function() return ally:IsIllusion() end) then result[#result+1] = ally end
+		if ally ~= bot and U.Valid(ally) and ally:GetTeam() == GetTeam()
+		and not U.Safe(true, function() return ally:IsIllusion() end) then result[#result+1] = ally end
 	end
 	return result
 end

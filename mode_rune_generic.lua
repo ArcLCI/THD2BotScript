@@ -86,8 +86,10 @@ local function SetRuneOutcome(status,reason)
 	runeExecutionOutcome={status=status,reason=reason}
 end
 
-local function RuneMove(unit, actionName, location, interval, distance)
+local function RuneMove(unit, actionName, location, interval, distance, exact)
 	return J.ActionMoveToLocation(unit, actionName, location, interval, distance, function(point)
+		-- 最后触碰不能被避障替换成远离符点的路点；无法精确到点时直接让出。
+		if exact and Geometry.Distance(point,location)>1 then return false end
 		local observation=TowerSafety.Observe(unit, 'rune')
 		if observation.available~=true or not Geometry.ValidateMovementSegment(unit:GetLocation(), point, observation.towers, 96) then return false end
 		if actionName=='idle_available_rune' and #J.GetLastSeenEnemiesNearLoc(unit:GetLocation(), Geometry.Distance(unit:GetLocation(),point)+1200)>0 then return false end
@@ -564,6 +566,8 @@ local pendingRuneSnapshot=nil
 local runeContinuation=nil
 local runeSession=0
 local runeRejected={}
+local lateRuneReceipts={}
+local claimedRuneReceiptSequence=0
 local runeLogAt=-90
 local function RuneIdentity(task)
 	return tostring(task.kind)..':'..tostring(task.key)..(task.kind=='wisdom' and ':'..tostring(task.snapshot.minute) or '')
@@ -587,22 +591,24 @@ local function RejectRune(task,reason)
 	local failed=string.find(reason or '','^pickup_')~=nil
 	local failures=failed and math.min(4,(previous and previous.failures or 0)+1) or 0
 	local delay=failed and math.min(12,failures*3) or ExecutionConfig.RUNE_RESUME_SECONDS
-	runeRejected[RuneIdentity(task)]={untilAt=DotaTime()+delay,status=ObservedRuneStatus(task),reason=reason,failures=failures}
+	runeRejected[RuneIdentity(task)]={untilAt=DotaTime()+delay,status=ObservedRuneStatus(task),reason=reason,failures=failures,
+		requireTouch=reason=='pickup_native_path_out_of_bounds' or (previous and previous.requireTouch)}
 	runeContinuation=nil
 	LogRune('released',task,reason,0)
 end
 local function PickupOutcome(task)
 	if not task or not task.pickupIssuedAt then return nil end
 	local receipt=MapResources.RuneReceipt(bot)
-	if receipt and receipt.sequence~=(task.pickupReceiptSequence or 0)
+	if receipt and receipt.sequence>math.max(task.pickupReceiptSequence or 0,claimedRuneReceiptSequence)
 		and receipt.time>=task.pickupIssuedAt-0.11 and receipt.time<=(task.pickupReceiptUntil or task.pickupDeadline)
 		and (task.pickupRuneType==nil or task.pickupRuneType<0 or receipt.runeType==task.pickupRuneType)
 		and task.location and J.GetDistance(receipt.location,task.location)<=350 then
+		claimedRuneReceiptSequence=receipt.sequence
 		return {status='COMPLETE',reason='rune_self_activation_confirmed'}
 	end
 	-- 指令不等于拾取成功：只确认命令之后符已消失，不把消失归因为本Bot取得。
 	if ObservedRuneStatus(task)==RUNE_STATUS_MISSING then return {status='COMPLETE',reason='rune_absent_after_pickup'} end
-	if DotaTime()>=(task.pickupReceiptUntil or task.pickupDeadline or task.pickupIssuedAt+1.5) then return {status='INVALID',reason='pickup_unconfirmed'} end
+	if DotaTime()>=(task.pickupReceiptUntil or task.pickupDeadline or task.pickupIssuedAt+1.5) then return {status='INVALID',reason='pickup_receipt_pending'} end
 	if not bot:IsAlive() or bot:GetHealth()<(task.pickupHealth or 0)-1 then return {status='INVALID',reason='pickup_danger'} end
 	if Actions.Protected(bot,nil,true) or bot:GetCurrentActionType()==BOT_ACTION_TYPE_USE_ABILITY
 		or J.HasQueuedAction(bot) then return {status='INVALID',reason='pickup_interrupted_by_action'} end
@@ -618,6 +624,21 @@ local function PickupOutcome(task)
 	return {status='WAITING',reason=DotaTime()>=(task.pickupDeadline or math.huge) and 'pickup_receipt_grace' or 'pickup_confirmation'}
 end
 local function FinishRune(task,outcome)
+	-- 动作预算结束立即让出模式；迟到的自身激活回执另用短账本核对，不继续占用动作保护。
+	if task and task.pickupIssuedAt and outcome.status~='COMPLETE' then
+		local record={};for key,value in pairs(task) do record[key]=value end
+		-- 只延长只读回执账本，不延长拾取动作、模式占用或安全边界。
+		record.receiptAuditUntil=DotaTime()+10
+		record.receiptAuditRelease=outcome.reason
+		lateRuneReceipts[#lateRuneReceipts+1]=record
+	end
+	-- 失败退出同时停止本次仍在执行的拾取，避免零欲望后继续沿原生路径越走越远。
+	local issued=bot.THD_LastIssuedAction
+	if task and task.pickupIssuedAt and issued and issued.at>=task.pickupIssuedAt
+	and issued.kind=='rune_pickup' and bot:GetCurrentActionType()==BOT_ACTION_TYPE_PICK_UP_RUNE
+	and not Actions.Protected(bot,nil,true) and not bot:IsUsingAbility() and not J.HasQueuedAction(bot) then
+		bot:Action_ClearActions(false);Actions.Forget(bot)
+	end
 	bot.THD_RunePickup=nil
 	if outcome.status=='COMPLETE' then
 		if task then runeRejected[RuneIdentity(task)]=nil end
@@ -629,6 +650,24 @@ local function FinishRune(task,outcome)
 	if task and task.kind=='wisdom' then MapResources.Defer(bot,'wisdom',task.key,outcome.reason,8) end
 	Tasks.Release(bot,'rune',outcome.reason)
 	ClearActiveRuneTarget();ClearWisdomRuneMode()
+end
+local function PollLateRuneReceipts()
+	local receipt=MapResources.RuneReceipt(bot)
+	for index=#lateRuneReceipts,1,-1 do
+		local task=lateRuneReceipts[index]
+		local confirmed=receipt and receipt.sequence>math.max(task.pickupReceiptSequence or 0,claimedRuneReceiptSequence)
+			and receipt.time>=task.pickupIssuedAt-0.11 and receipt.time<=task.receiptAuditUntil
+			and (not task.pickupRuneType or task.pickupRuneType<0 or receipt.runeType==task.pickupRuneType)
+			and J.GetDistance(receipt.location,task.location)<=350
+		if confirmed then
+			claimedRuneReceiptSequence=receipt.sequence
+			LogRune('completed',task,'rune_self_activation_confirmed_late',0)
+			runeRejected[RuneIdentity(task)]=nil;table.remove(lateRuneReceipts,index)
+		elseif DotaTime()>=task.receiptAuditUntil then
+			LogRune('released',task,task.receiptAuditRelease=='pickup_receipt_pending' and 'pickup_unconfirmed' or 'pickup_receipt_audit_expired',0)
+			table.remove(lateRuneReceipts,index)
+		end
+	end
 end
 local function NotePickup(task,event)
 	if not ExecutionConfig.DEBUG then return end
@@ -648,6 +687,19 @@ local function NotePickup(task,event)
 			tostring(receipt and receipt.sequence),tostring(receipt and receipt.time),tostring(receipt and receipt.runeType),tostring(task.pickupReceiptSequence),tostring(task.pickupReceiptUntil),tostring(task.pickupMaxDistance)))
 end
 local function IssuePickup(task,retry)
+	local rejected=runeRejected[RuneIdentity(task)]
+	-- 原生拾取曾向外绕远时，下一次先用已校验移动贴近符点，不重复同一绕行。
+	if not retry and rejected and rejected.requireTouch and GetUnitToLocationDistance(bot,task.location)>48 then
+		if not RuneMove(bot,'rune_touch_after_detour',task.location,0.4,24,true) then SetRuneOutcome('INVALID','rune_touch_path_rejected') end
+		return
+	end
+	if not retry then
+		-- 新发单接管归因边界；一次真实激活不能同时补记给此前多个会话。
+		for index=#lateRuneReceipts,1,-1 do
+			LogRune('released',lateRuneReceipts[index],'pickup_receipt_superseded',0)
+			table.remove(lateRuneReceipts,index)
+		end
+	end
 	-- 独立的短拾取保护，不覆盖技能/物品保护；补发最多一次，绝不刷新确认期限。
 	-- 前后各取一次引擎状态；API返回与记录意图都不等于引擎已经开始拾取。
 	NotePickup(task,retry and 'retry_requested' or 'requested')
@@ -671,6 +723,7 @@ local function IssuePickup(task,retry)
 	SetRuneOutcome('WAITING','pickup_confirmation')
 end
 function GetDesire()
+	PollLateRuneReceipts()
 	local active=Tasks.Active(bot,'rune')
 	local confirmed=active and PickupOutcome(active)
 	if confirmed and confirmed.status=='COMPLETE' then NotePickup(active,confirmed.reason);FinishRune(active,confirmed);return 0 end
@@ -738,7 +791,11 @@ function GetDesire()
 	end
 	if runeContinuation and DotaTime()<runeContinuation.expiresAt and RuneIdentity(candidate)==RuneIdentity(runeContinuation.task)
 	and ObservedRuneStatus(candidate)==RUNE_STATUS_AVAILABLE then candidate.resume=runeContinuation end
-	return Tasks.Offer(bot,'rune',Tasks.OpportunityScore(bot,score),candidate)
+	-- 已到可领取普通符附近的短收尾不按远行机会成本降权。
+	local nearbyReady=candidate.kind=='rune' and candidate.location
+		and GetUnitToLocationDistance(bot,candidate.location)<=RUNE_PICKUP_DISTANCE
+		and GetRuneStatus(candidate.key)==RUNE_STATUS_AVAILABLE
+	return Tasks.Offer(bot,'rune',Tasks.OpportunityScore(bot,score,'rune_candidate',candidate.pickupIssuedAt~=nil or nearbyReady),candidate)
 end
 
 function OnStart()
@@ -753,7 +810,7 @@ function OnStart()
 	if resume and DotaTime()<resume.expiresAt and ObservedRuneStatus(task)==RUNE_STATUS_AVAILABLE then
 		-- 短暂让出模式后延续同一符点的进度与起始时间，不重置未知等待/停滞预算。
 		for _,field in ipairs({'startedAt','progressAt','bestDistance','health','runeSession','pickupIssuedAt','pickupDeadline',
-			'pickupReceiptUntil','pickupReceiptSequence','pickupRuneType','pickupRetried','pickupHealth'}) do task[field]=resume.task[field] end
+			'pickupReceiptUntil','pickupReceiptSequence','pickupRuneType','pickupRetried','pickupHealth','pickupTouchAttempted'}) do task[field]=resume.task[field] end
 		runeModeStartTime=resume.modeStart
 		LogRune('resumed',task,'same_available_rune',task.score)
 	else
@@ -1506,6 +1563,16 @@ function Think()
 			if not task.pickupRetried and DotaTime()>=task.pickupIssuedAt+0.35 and DotaTime()<task.pickupDeadline
 				and bot:GetCurrentActionType()~=BOT_ACTION_TYPE_PICK_UP_RUNE
 				and GetUnitToLocationDistance(bot,task.location)<=RUNE_PICKUP_DISTANCE then IssuePickup(task,true) end
+			-- 补发后仍原地空闲时只尝试一次精确触碰；不延长确认期限、不把到点当领取成功。
+			if task.pickupRetried and not task.pickupTouchAttempted and DotaTime()>=task.pickupIssuedAt+0.75
+			and DotaTime()<task.pickupDeadline and bot:GetCurrentActionType()==BOT_ACTION_TYPE_IDLE
+			and GetUnitToLocationDistance(bot,task.location)<=RUNE_PICKUP_DISTANCE then
+				task.pickupTouchAttempted=true
+				local protection=bot.THD_RunePickup;bot.THD_RunePickup=nil
+				local moved=IdleRuneSafe(task.key) and RuneMove(bot,'idle_available_rune',task.location,0.1,1,true)
+				bot.THD_RunePickup=protection
+				NotePickup(task,moved and 'touch_submitted' or 'touch_rejected')
+			end
 			if not task.pickupActionLogAt or DotaTime()-task.pickupActionLogAt>=0.35 then
 				task.pickupActionLogAt=DotaTime();NotePickup(task,'waiting')
 			end

@@ -1,3 +1,4 @@
+local Acceptance = require(GetScriptDirectory()..'/THDFuncLib/acceptance_observer')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/bot_diagnostics_config')
 local Debug = {}
 local currentCall = nil
@@ -75,8 +76,10 @@ end
 function Debug.Wrap(mode, callback)
 	if type(callback) ~= 'function' then return callback end
 	return function(...)
-		if not Enabled() then return callback(...) end
+		-- 候选回调覆盖自定义英雄；观察器自行按每名Bot限频，不额外求值或改变欲望。
 		local bot = GetBot()
+		Acceptance.Pump(bot,'mode_desire')
+		if not Enabled() then return callback(...) end
 		if bot == nil then return callback(...) end
 		local state = GetState(bot)
 		local entry = state.entries[mode]

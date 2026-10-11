@@ -1,6 +1,8 @@
 
 require(GetScriptDirectory() ..  "/thd2_item_usage")
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
+local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
+local Survival = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/combat_commitment')
 
 ----------------------------------------------------------------------------------------------------
 
@@ -12,6 +14,7 @@ cast04Desire = 0
 function MyItemUsageThink()
 
 	local npcBot = GetBot()
+	if J.CanNotUseAction(npcBot) then return false end
 
 	-- Check if we're already using an ability
 	if ( npcBot:IsMuted() or npcBot:IsUsingAbility() ) then return end
@@ -39,7 +42,7 @@ function MyItemUsageThink()
 		if ( castItemTeethDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_teeth )
-			return
+			return true
 		end
 	end
 
@@ -49,7 +52,7 @@ function MyItemUsageThink()
 		if ( castItemShieldDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_shield )
-			return
+			return true
 		end
 	end
 
@@ -59,7 +62,7 @@ function MyItemUsageThink()
 		if ( castItemSpeedDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_speed )
-			return
+			return true
 		end
 	end
 
@@ -69,7 +72,7 @@ function MyItemUsageThink()
 		if ( castItemHorseRedDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_horse_red )
-			return
+			return true
 		end
 	end
 
@@ -79,18 +82,21 @@ function MyItemUsageThink()
 		if ( castItemHorseKingDesire > 0 )
 		then
 			npcBot:Action_UseAbility( item_horse_king )
-			return
+			return true
 		end
 	end
 
 end
 
 function AbilityUsageThink()
+	Survival.Observe(GetBot())
 
 	if not IsBotAwake() then return end
+	if J.CanNotUseAction(GetBot()) then return end
 
-	MyItemUsageThink()
+	if MyItemUsageThink() then return end
 	ConsiderNeutralItems()
+	if J.CanNotUseAction(GetBot()) then return end
 
 	
 	local npcBot = GetBot()
@@ -109,13 +115,16 @@ function AbilityUsageThink()
 	if ( castexDesire > 0 )
 	then
 		npcBot:Action_UseAbility( abilityEx )
+		Survival.Issued(npcBot,abilityEx,nil,'youmu_guard')
 		return
 	end
 
-	cast01Desire, cast01Location = ConsiderAbilityYoumu01()
+	local cast01Reason
+	cast01Desire, cast01Location, cast01Reason = ConsiderAbilityYoumu01()
 	if ( cast01Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnLocation( ability01, cast01Location )
+		Survival.Issued(npcBot,ability01,cast01Location,cast01Reason or 'youmu_dash')
 		return
 	end
 
@@ -123,6 +132,7 @@ function AbilityUsageThink()
 	if ( cast03Desire > 0 )
 	then
 		npcBot:Action_UseAbility( ability03 )
+		Survival.Issued(npcBot,ability03,nil,'youmu_blade')
 		return
 	end
 
@@ -130,6 +140,7 @@ function AbilityUsageThink()
 	if ( cast04Desire > 0 )
 	then
 		npcBot:Action_UseAbilityOnEntity( ability04 , cast04Target)
+		Survival.Issued(npcBot,ability04,cast04Target:GetLocation(),'youmu_ultimate')
 		return
 	end
 
@@ -194,7 +205,17 @@ function ConsiderAbilityYoumu01()
 	local nRadius = ability01:GetSpecialValueInt( "radius" )
 	local nDamage = ability01:GetAbilityDamage()
 	local nLevel = ability01:GetLevel()
-	local nCastRange = (nLevel-1)*100 + 699
+	local nCastRange = ability01:GetSpecialValueInt('AbilityCastRange')
+	if nCastRange<=0 then nCastRange=(nLevel-1)*100+699 end
+	-- 先解决逃生，不能因为大招可用却无合法目标而封锁冲刺。
+	local escaping=IsRetreating(npcBot,'ability_thdots_youmu01')
+		or (J.GetHP(npcBot)<0.35 and (npcBot:WasRecentlyDamagedByAnyHero(2) or npcBot:WasRecentlyDamagedByTower(2)))
+	if escaping and not npcBot:HasModifier('modifier_fountain_aura_buff') then
+		local point=Survival.EscapePoint(npcBot,nCastRange)
+		if point then return BOT_ACTION_DESIRE_HIGH,point,'youmu_dash_escape' end
+		Survival.Note(npcBot,'youmu_escape_no_safe_landing',ability01)
+		return BOT_ACTION_DESIRE_NONE,nil
+	end
 
 	-- consider attack range
 
@@ -209,7 +230,9 @@ function ConsiderAbilityYoumu01()
 		do
 			if ( npcBot:GetTarget() == npcEnemy and CanCastYoumu01OnTarget( npcEnemy ) and not IsPossibleIllusion( npcEnemy ))
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation()
+				local safe,why=Survival.SafeLanding(npcBot,npcEnemy:GetLocation(),false)
+				if safe then return BOT_ACTION_DESIRE_HIGH,npcEnemy:GetLocation(),'youmu_dash_engage' end
+				Survival.Note(npcBot,why,ability01,npcEnemy:GetLocation())
 			end
 
 		end
@@ -225,19 +248,14 @@ function ConsiderAbilityYoumu01()
 
 		if ( npcTarget ~= nil )
 		then
-			if ( CanCastYoumu01OnTarget( npcTarget ) )
+			if ( CanCastYoumu01OnTarget( npcTarget ) and npcTarget:IsHero() and not IsPossibleIllusion(npcTarget)
+			and GetUnitToUnitDistance(npcBot,npcTarget)<=nCastRange )
 			then
-				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetLocation()
+				local safe,why=Survival.SafeLanding(npcBot,npcTarget:GetLocation(),false)
+				if safe then return BOT_ACTION_DESIRE_HIGH,npcTarget:GetLocation(),'youmu_dash_engage' end
+				Survival.Note(npcBot,why,ability01,npcTarget:GetLocation())
 			end
 		end
-	end
-	-- 我军败了！快撤！
-	if (IsSeriouslyRetreating(npcBot, 'ability_thdots_youmu01') and not ability04:IsFullyCastable() and
-		not npcBot:HasModifier("modifier_fountain_aura_buff")) then
-		local v_home = GetAncient(npcBot:GetTeam()):GetLocation()
-		local v_target = ( v_home - npcBot:GetLocation() ) / GetUnitToLocationDistance( npcBot, v_home)
-		local v_final = npcBot:GetLocation() + v_target * nCastRange
-		return BOT_ACTION_DESIRE_HIGH, v_final
 	end
 
 	return BOT_ACTION_DESIRE_NONE, nil

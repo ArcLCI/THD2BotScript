@@ -1,4 +1,13 @@
 local RoamConfig = {}
+function RoamConfig.GetPositionRule(position)
+	local rule=RoamConfig.POSITION_RULES[position]
+	-- 少人后期不能因缺少2/4/5号位而永远没有发起者，仍用已有抓单健康/魔法门。
+	local team=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/team_strategy').Snapshot()
+	if not rule and team.available<=4 and DotaTime()>=RoamConfig.LANING_PHASE_END_TIME then
+		return RoamConfig.PICKOFF_POSITION_RULES[position]
+	end
+	return rule
+end
 
 -- 新 gank 框架默认关闭；现有持续施法、连招和拾取逻辑不受此开关影响。
 RoamConfig.ENABLED = true

@@ -1,3 +1,4 @@
+local TeamStrategy=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/team_strategy')
 local Tasks = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_task')
 local ExecutionConfig=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/execution_config')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
@@ -344,7 +345,7 @@ function Defend.GetDefendDesireHelper(bot, lane, state)
 		if (#nDefendAllyHeroes < state.nEnemyUnitsAroundAncient + 1
 		or ancientHp < 0.95
 		or (state.nEffctiveAllyHeroesNearPingedDefendLoc < state.aliveAllyHeroes and state.nEffctiveAllyHeroesNearPingedDefendLoc <= #state.lEnemyHeroesAroundLoc + 1 )
-		or (#state.lEnemyHeroesAroundLoc >= 3 and state.nEffctiveAllyHeroesNearPingedDefendLoc < state.aliveAllyHeroes))
+		or (#state.lEnemyHeroesAroundLoc >= TeamStrategy.Group(3) and state.nEffctiveAllyHeroesNearPingedDefendLoc < state.aliveAllyHeroes))
 		and J.GetLocationToLocationDistance(defendLoc, laneFront) < nSearchRange
 		and #J.GetNearbyHeroes(bot, math.max(attackRange + 100, 1000), true, BOT_MODE_NONE) <= 0
 		and ((#state.nInRangeEnemy <= 1 and not (J.IsValidHero(state.botTarget) and J.GetHP(state.botTarget) < 0.3)) or not bot:WasRecentlyDamagedByAnyHero(2)) then

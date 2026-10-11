@@ -1,8 +1,9 @@
+local TeamStrategy=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/team_strategy')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local LaneAssignment = require(GetScriptDirectory()..'/THDFuncLib/modes/laning/lane_assignment')
 local Config = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_config')
 local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
-local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/wasteland_strategy')
+local NativeProgress=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/native_push_progress')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 
 local Pickoff = {}
@@ -456,15 +457,15 @@ local function BuildStagingLocation(location)
 	return {x = x, y = y, z = z}
 end
 
-local function BuildTravelCandidate(unit, targetLocation, strategyState)
+local function BuildTravelCandidate(unit, targetLocation)
 	if not IsValidUnit(unit) or IsBusy(unit) then return nil, 'busy' end
 	if Safe(false, function() return unit:IsBot() end) ~= true then return nil, 'not_bot' end
 	local position = GetPosition(unit)
 	local number = POSITION_NUMBER[position]
 	if number == nil then return nil, 'position_unknown' end
 	local activeMode = Safe(BOT_MODE_NONE, function() return unit:GetActiveMode() end)
-	if Wasteland.ShouldProtectOuterPushParticipant(position, activeMode, strategyState, unit) then
-		return nil, 'wasteland_outer_push_commitment'
+	if NativeProgress.ShouldPreserve(unit) then
+		return nil, 'native_productive_push'
 	end
 	local distance = LocationDistance(unit, targetLocation)
 	if position == 'safe_core' and distance > Config.PICKOFF_GROUP_RADIUS then
@@ -519,9 +520,8 @@ end
 
 local function SelectParticipants(targetLocation, requiredCount, fixedLeader, requiredItems)
 	local candidates, rejected = {}, {}
-	local strategyState = Wasteland.IsEnabled() and Wasteland.GetState() or nil
 	for _, member in ipairs(GetTeamMembers()) do
-		local candidate, reason = BuildTravelCandidate(member, targetLocation, strategyState)
+		local candidate, reason = BuildTravelCandidate(member, targetLocation)
 		if candidate ~= nil then table.insert(candidates, candidate)
 		else rejected[reason or 'unknown'] = (rejected[reason or 'unknown'] or 0) + 1 end
 	end
@@ -530,16 +530,16 @@ local function SelectParticipants(targetLocation, requiredCount, fixedLeader, re
 	if fixedLeader ~= nil then
 		local leaderID = GetPlayerID(fixedLeader)
 		for _, candidate in ipairs(candidates) do
-			if candidate.playerID == leaderID and Config.POSITION_RULES[candidate.position] ~= nil then
+			if candidate.playerID == leaderID and Config.GetPositionRule(candidate.position) ~= nil then
 				table.insert(selected, candidate)
 				break
 			end
 		end
 		if #selected == 0 then return {}, rejected end
 	else
-		-- 1/3号位可以参团但不能成为共享 ROAM 信号发起者，避免选出永远无法 OnStart 的 leader。
+		-- 发起者与OnStart共用角色规则；少人后期允许健康核心补位，避免没有合法leader。
 		for _, candidate in ipairs(candidates) do
-			if Config.POSITION_RULES[candidate.position] ~= nil then
+			if Config.GetPositionRule(candidate.position) ~= nil then
 				table.insert(selected, candidate)
 				break
 			end
@@ -560,7 +560,7 @@ local function SelectParticipants(targetLocation, requiredCount, fixedLeader, re
 				end
 				if not duplicate and CandidateHasItem(candidate, itemName) then holder = candidate break end
 			end
-			if holder == nil or #selected >= Config.PICKOFF_MAX_PARTICIPANTS then return {}, rejected end
+			if holder == nil or #selected >= TeamStrategy.Group(Config.PICKOFF_MAX_PARTICIPANTS) then return {}, rejected end
 			table.insert(selected, holder)
 		end
 	end
@@ -677,6 +677,9 @@ local function BuildPickoffPlan(bot, state, observation, fixedLeader)
 	local group = CountEnemyGroup(state, observation)
 	if #group < 1 or #group > Config.PICKOFF_MAX_ENEMIES then return nil, 'enemy_group_size' end
 	local requiredCount = #group + 1
+	local capacity=math.min(TeamStrategy.Snapshot().aliveBots,math.max(#group,TeamStrategy.Group(Config.PICKOFF_MAX_PARTICIPANTS)))
+	if capacity>=#group then requiredCount=math.min(requiredCount,capacity) end
+	local balancedGroup=requiredCount<=#group
 	-- 接收队友公告时按被冻结的任务发起者计算距离，不能让接收者的位置反转用烟判断。
 	local leaderDistance = LocationDistance(fixedLeader or bot, observation.location)
 	local teamHasSmoke = Config.SMOKE_ENABLED == true
@@ -706,6 +709,7 @@ local function BuildPickoffPlan(bot, state, observation, fixedLeader)
 	end
 	local enemyPower = 0
 	for _, enemy in ipairs(group) do enemyPower = enemyPower + GetEnemyPower(enemy) end
+	if balancedGroup and enemyPower<=0 then return nil,'dynamic_group_enemy_power_unknown' end
 	local ratio = enemyPower > 0 and allyPower / enemyPower or 2
 	local killLimit = #group == 1 and Config.PICKOFF_SINGLE_KILL_TIME or Config.PICKOFF_PAIR_FIRST_KILL_TIME
 	local unknown, reinforcementSafe, reinforcementID = CountUnknownAndCheckReinforcements(
@@ -793,9 +797,9 @@ local function BuildPatrolPlan(bot, state, fixedLeader, requiredZoneID)
 	end
 	if evidence == nil then return nil, 'patrol_no_evidence' end
 	local targetLocation = evidence.zone ~= nil and evidence.zone.location or evidence.observation.location
-	local participants, rejects = SelectParticipants(targetLocation, Config.SMOKE_PATROL_PARTICIPANTS,
+	local participants, rejects = SelectParticipants(targetLocation, TeamStrategy.Group(Config.SMOKE_PATROL_PARTICIPANTS),
 		fixedLeader, {'item_smoke_of_deceit'})
-	if #participants < Config.SMOKE_PATROL_PARTICIPANTS then return nil, 'patrol_participants_unavailable', rejects end
+	if #participants < TeamStrategy.Group(Config.SMOKE_PATROL_PARTICIPANTS) then return nil, 'patrol_participants_unavailable', rejects end
 	for _, participant in ipairs(participants) do
 		if participant.position == 'safe_core'
 			or GetHealthFraction(participant.unit) < Config.SMOKE_MIN_HEALTH
@@ -825,7 +829,7 @@ local function BuildPatrolPlan(bot, state, fixedLeader, requiredZoneID)
 		zoneID = zoneID, leader = participants[1].unit, leaderID = participants[1].playerID,
 		leaderLevel = Safe(0, function() return participants[1].unit:GetLevel() end),
 		participantIDs = participantIDs, participantLevels = participantLevels,
-		requiredCount = Config.SMOKE_PATROL_PARTICIPANTS, allyCount = #participants, enemyCount = 0,
+		requiredCount = TeamStrategy.Group(Config.SMOKE_PATROL_PARTICIPANTS), allyCount = #participants, enemyCount = 0,
 		score = 1.5, travelTime = participants[1].travelTime, travelPlans = travelPlans,
 		useTP = participants[1].plan.route == 'tp', route = participants[1].plan.route,
 		lastLocation = targetLocation, rallyLocation = targetLocation,

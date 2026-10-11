@@ -1,7 +1,7 @@
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/bot_generic")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
-local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/modes/shared/wasteland_strategy")
+local Buildings = require(GetScriptDirectory() .. "/THDFuncLib/modes/shared/building_rules")
 
 local owner = GetBot()
 local FIRE_UNIT = "npc_thdots_unit_patchouli_fire_fire"
@@ -40,7 +40,7 @@ local function ThrottledAttack(unit, target)
 	local isBuilding = target.IsBuilding ~= nil
 		and select(2, pcall(function() return target:IsBuilding() end)) == true
 	if isBuilding then
-		local allowed = Wasteland.CanControlledUnitAttackBuilding(owner, target)
+		local allowed = Buildings.CanControlledUnitAttackBuilding(owner, target)
 		if not allowed then return false end
 	end
 	return Actions.Attack(unit,target,true)

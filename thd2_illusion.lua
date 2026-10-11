@@ -2,7 +2,7 @@ local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 local X = {}
 local Timer = require(GetScriptDirectory()..'/thd2_timer')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
-local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/wasteland_strategy')
+local Buildings = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/building_rules')
 local ownerBot
 
 -- Minion 入口可独立加载，不依赖物品模块先注册同名全局函数。
@@ -88,7 +88,7 @@ local function MinionActionAttackUnit(unit, actionName, target, once, interval)
 	local isBuilding = target.IsBuilding ~= nil
 		and select(2, pcall(function() return target:IsBuilding() end)) == true
 	if isBuilding then
-		local allowed = Wasteland.CanControlledUnitAttackBuilding(ownerBot, target)
+		local allowed = Buildings.CanControlledUnitAttackBuilding(ownerBot, target)
 		if not allowed then return false end
 	end
     return Actions.Attack(unit,target,once)
@@ -103,11 +103,6 @@ end
 local function MinionActionAttackMove(unit, actionName, vLoc, interval, bucket)
     if not CanIssueMinionAction(unit) then return false end
     if vLoc == nil then return false end
-	local allowed = Wasteland.CanControlledUnitAttackMove(ownerBot, vLoc)
-	if not allowed then
-		-- 高地或共享目标尚未开放时降级为普通移动，禁止自动索敌建筑。
-		return MinionActionMoveToLocation(unit, actionName .. '_managed_move', vLoc, interval, bucket)
-	end
     return Actions.Move(unit,vLoc,bucket,'attack_move')
 end
 

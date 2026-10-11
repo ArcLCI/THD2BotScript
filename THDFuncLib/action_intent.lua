@@ -31,6 +31,10 @@ end
 
 function A.Protected(unit, owner, lifecycleOnly)
 	if unit == nil or unit:IsNull() or not unit:IsAlive() then return true end
+	if A.TeiBurstProtected(unit) then return true end
+	if owner ~= 'tei_engagement' and A.TeiEngagementProtected(unit) then return true end
+	-- 妖梦冲刺由游戏侧0.4秒位移modifier驱动，不能在两个位移tick之间下替换动作。
+	if unit:GetUnitName()=='npc_dota_hero_juggernaut' and unit:HasModifier('modifier_thdots_youmu01_think_interval') then return true end
 	if not lifecycleOnly and A.RunePickupProtected(unit) then return true end
 	-- 莲花已发单到消耗确认之间保持有界保护，确认轮询本身不经过动作入口。
 	local lotus=unit.THD_LotusCast
@@ -39,6 +43,7 @@ function A.Protected(unit, owner, lifecycleOnly)
 		unit.THD_LotusCast=nil
 	end
 	if A.KasenProtected(unit) then return true end
+	if A.MokouProtected(unit) then return true end
 	if unit:IsCastingAbility() or unit:IsChanneling() then return true end
 	-- 队列仅阻止普通动作覆盖；未来的技能/施法接近不能无限抬高模式评分或暂停进展预算。
 	if not lifecycleOnly then
@@ -72,6 +77,38 @@ function A.Protected(unit, owner, lifecycleOnly)
 		or (owner ~= 'tei_turn' and unit.THD_TeiBackstep ~= nil and now <= unit.THD_TeiBackstep.expires)
 end
 
+function A.TeiEngagementProtected(unit)
+	local state=unit and unit.THD_TeiEngagement
+	if state==nil or not unit:IsAlive() then return false end
+	if DotaTime()<=state.expires then return true end
+	local pending=state.pendingJump
+	return pending~=nil and pending.handle~=nil and not pending.handle:IsNull()
+		and (DotaTime()<=pending.expires or pending.handle:IsInAbilityPhase() or pending.handle:IsChanneling())
+end
+
+-- 因幡帝爆发准备跨越多个动作；步骤之间同样受保护，不向普通移动/物品让出空隙。
+function A.TeiBurstProtected(unit)
+	local state = unit and unit.THD_TeiBurst
+	if state == nil or not unit:IsAlive() then return false end
+	if DotaTime() <= state.expires then return true end
+	local step = state.pending
+	return step ~= nil and step.handle ~= nil and not step.handle:IsNull()
+		and (DotaTime() <= step.confirmUntil or step.handle:IsInAbilityPhase() or step.handle:IsChanneling())
+end
+
+-- 妹红只保护已提交的启动窗口和真实位移/变蛋/冲锋，不锁住大招普攻增益。
+function A.MokouProtected(unit)
+	if unit == nil or unit:GetUnitName() ~= 'npc_dota_hero_chaos_knight' or not unit:IsAlive() then return false end
+	local state = unit.THD_MokouAction
+	if state ~= nil and state.phase == 'issued' and DotaTime() <= state.expires then return true end
+	for _, name in ipairs({'ability_thdots_mokou01', 'ability_thdots_mokou03', 'ability_thdots_mokouEx', 'ability_thdots_mokou04'}) do
+		local ability = unit:GetAbilityByName(name)
+		if ability ~= nil and (ability:IsInAbilityPhase() or ability:IsChanneling()) then return true end
+	end
+	return unit:HasModifier('modifier_thdots_Mokou01_think_interval')
+		or unit:HasModifier('modifier_phenx_egg_caster')
+end
+
 -- 只锁华扇已提交动作，不锁候选接管或鬼脉结束后的普攻增益。
 function A.KasenProtected(unit)
 	if unit == nil or unit:GetUnitName() ~= 'npc_dota_hero_bristleback' or not unit:IsAlive() then return false end
@@ -89,8 +126,8 @@ function A.Forget(unit)
 	if unit ~= nil then unit.THD_ActionIntent = nil end
 end
 
-function A.Attack(unit, target, once)
-	if not A.ValidTarget(target) or A.Protected(unit) then return false, false end
+function A.Attack(unit, target, once, owner)
+	if not A.ValidTarget(target) or A.Protected(unit, owner) then return false, false end
 	if target:IsInvulnerable() or target:IsAttackImmune() or target:HasModifier('modifier_fountain_glyph') then return false,false end
 	-- 动作仍然存活时复用；一次攻击完成回到空闲后才允许下一次攻击。
 	if unit:GetCurrentActionType() == BOT_ACTION_TYPE_ATTACK and unit:GetAttackTarget() == target then
@@ -137,6 +174,8 @@ function A.GuardDesire(unit, mode, callback)
 				unit.THD_ModeLifecycleVersion,unit:GetTeam(),unit:GetPlayerID(),DotaTime()))
 		end
 		local turn=unit.THD_TeiBackstep
+		if A.TeiBurstProtected(unit) then return BOT_MODE_DESIRE_NONE end
+		if A.TeiEngagementProtected(unit) then return BOT_MODE_DESIRE_NONE end
 		if turn~=nil and (turn.phase=='await_mode' or turn.phase=='turn') and DotaTime()<=turn.expires then return BOT_MODE_DESIRE_NONE end
 		-- 仅在已提交动作的生命周期内保护当前模式，不给普通收益增加全局倍率。
 		if unit:IsAlive() and A.Protected(unit,nil,true) then

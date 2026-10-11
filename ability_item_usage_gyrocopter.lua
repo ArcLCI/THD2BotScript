@@ -5,11 +5,13 @@ local TowerSafety = require(GetScriptDirectory() .. '/THDFuncLib/modes/shared/to
 local Consumables = require(GetScriptDirectory() .. '/THDFuncLib/consumable_inventory')
 local CombatPower = require(GetScriptDirectory() .. '/THDFuncLib/combat_power')
 local Backstep = require(GetScriptDirectory() .. '/THDFuncLib/heroes/tei/tei_backstep')
+local Burst = require(GetScriptDirectory() .. '/THDFuncLib/heroes/tei/tei_burst')
+local Engagement = require(GetScriptDirectory() .. '/THDFuncLib/heroes/tei/tei_engagement')
 
 local E_BUFF = 'modifier_ability_thdots_tei03'
 local R_BUFF = 'modifier_ability_thdots_tei04'
 local HORSE_BUFF = 'modifier_item_horse_king_open'
-local RUN_ID = 'TEI-R4-20260919'
+local RUN_ID = 'TEI-R8-20261011'
 local TEETH_BUFF = 'modifier_item_teeth_berserk_buff'
 local TRINITY_BUFF = 'modifier_item_trinity_active_shield'
 
@@ -163,6 +165,9 @@ end
 
 function AbilityUsageThink()
 	local bot = GetBot()
+	-- 爆发推进必须先于0.10秒常规决策节流、共享资源物品及自身动作保护。
+	if Burst.Update(bot) then return end
+	if Engagement.Update(bot) then return end
 	-- 转身和后跳由高优先级规避模式推进，本入口不能被自己的保护锁卡住后另发动作。
 	if Backstep.IsActive(bot) then return end
 	if bot == nil or not bot:IsAlive() or bot:IsIllusion() or bot:IsHexed() then return end
@@ -172,13 +177,14 @@ function AbilityUsageThink()
 	if Consumables.IsCastConfirmationPending(bot) then return end
 	-- 目标与塔危险评估有界限频，动作保护本身仍在每次入口检查。
 	local now = DotaTime()
-	if now - (bot.THD_TeiLastThink or -90) < 0.10 then return end
+	local continuingCombat = Burst.InCombat(bot)
+	if not continuingCombat and now - (bot.THD_TeiLastThink or -90) < 0.10 then return end
 	bot.THD_TeiLastThink = now
 	if not bot.THD_TeiLoaded then
 		bot.THD_TeiLoaded = true
 		print(string.format('[BOT][Tei] run=%s team=%d player=%d event=loaded profile=damage', RUN_ID, bot:GetTeam(), bot:GetPlayerID()))
 	end
-	ObserveAbilityUsageTask(bot, 'tei_ability_usage', 0.10)
+	ObserveAbilityUsageTask(bot, 'tei_ability_usage', continuingCombat and 0 or 0.10)
 	local q = bot:GetAbilityByName('ability_thdots_tei01')
 	local w = bot:GetAbilityByName('ability_thdots_tei02')
 	local e = bot:GetAbilityByName('ability_thdots_tei03')
@@ -186,7 +192,11 @@ function AbilityUsageThink()
 	local enemies = Enemies(bot)
 	local nearby = NearestDistance(bot:GetLocation(), enemies)
 	local pressure = #enemies > 0 and bot:WasRecentlyDamagedByAnyHero(2.5)
-	local retreat = J.IsRetreating(bot) or (pressure and J.GetHP(bot) < 0.4)
+	-- 后补刚结束时EVASIVE可能尚未切走，不能仅因该模式+近期受伤就误判为撤退。
+	local outputHandoff = Burst.InCombat(bot) and bot:GetActiveMode() == BOT_MODE_EVASIVE_MANEUVERS
+		and DotaTime()-(bot.THD_TeiBurstReleasedAt or -90) <= 0.20
+	local retreat = (not outputHandoff and J.IsRetreating(bot))
+		or J.Retreat.ShouldYield(bot, J.Retreat.HIGH) or (pressure and J.GetHP(bot) < 0.4)
 	local canCast = not bot:IsSilenced()
 	local reserve = w ~= nil and w:GetLevel() > 0 and w:GetManaCost() or 50
 	local target = J.GetProperTarget(bot)
@@ -197,24 +207,46 @@ function AbilityUsageThink()
 	if retreat and #enemies > 0 then
 		if Backstep.Start(bot, w, 'escape', nil) or TryJump(bot, enemies, true) then return end
 	end
+	-- 冻结本轮目标和可用动作；确认完成前不进入下方追击、普攻增益及物品分支。
+	local burstTarget = target
+	if not ValidEnemy(bot, burstTarget) or not burstTarget:IsHero() or J.IsSuspiciousIllusion(burstTarget) then
+		burstTarget = nil
+		for _, enemy in ipairs(enemies) do
+			if not enemy:IsAttackImmune() and (burstTarget == nil or GetUnitToUnitDistance(bot, enemy) < GetUnitToUnitDistance(bot, burstTarget)) then burstTarget = enemy end
+		end
+	end
+	local attackTargetNow = bot:GetAttackTarget()
+	local attackingHeroNow = ValidEnemy(bot, attackTargetNow) and attackTargetNow:IsHero() and not J.IsSuspiciousIllusion(attackTargetNow)
+	local burstContext = committed or J.IsInTeamFight(bot, 1200) or attackingHeroNow or (pressure and #enemies >= 2)
+	local opportunity = Engagement.Opportunity(bot,burstTarget)
+	-- 后手英雄不能把自己的进攻欲望当作先手已接战；仅开放真实接触或明确残血击杀。
+	committed = committed and opportunity.allowed
+	local function ValidateBurst(unit, enemy)
+		-- 自己接管EVASIVE不等于撤退，不能用模式名反过来取消整套爆发。
+		return ValidEnemy(unit, enemy) and not enemy:IsAttackImmune()
+			and GetUnitToUnitDistance(unit, enemy) <= 1300 and SafeCombat(unit, Enemies(unit), true)
+	end
+	local postBurst = Burst.RefreshCombat(bot, burstTarget, burstContext, retreat)
+	local function UseCombatAction(ability, modifier, isItem)
+		if postBurst then return Burst.Supplement(bot,burstTarget,ability,modifier,isItem,ValidateBurst,reserve) end
+		return Issue(bot,ability)
+	end
+	if not retreat and burstContext and burstTarget ~= nil and GetUnitToUnitDistance(bot, burstTarget) <= 1200 then
+		if Engagement.Start(bot, burstTarget, ValidateBurst, GuaranteedMooncake(bot)) then return end
+	end
 	-- 三位一体护盾用于受压/撤退，沉默期间仍可使用物品保护自身。
 	local trinity = Item(bot, 'item_trinity')
 	if trinity ~= nil and not bot:HasModifier(TRINITY_BUFF) and nearby <= 1000
-	and (retreat or (pressure and J.GetHP(bot) <= 0.75)) then
-		Issue(bot, trinity); return
+	and (retreat or (pressure and J.GetHP(bot) <= 0.75) or (postBurst and burstContext)) then
+		if UseCombatAction(trinity,TRINITY_BUFF,true) then return end
 	end
 	local dragon = Item(bot, 'item_dragon_star')
 	if dragon ~= nil and not bot:HasModifier('modifier_item_dragon_star_buff')
 	and nearby <= 1000 and (retreat or committed or (pressure and J.GetHP(bot) < 0.75)) then
-		Issue(bot, dragon); return
+		if UseCombatAction(dragon,'modifier_item_dragon_star_buff',true) then return end
 	end
 	if retreat and nearby <= 1000 and canCast then
 		if Ready(r) and not bot:HasModifier(R_BUFF) then Issue(bot, r); return end
-		for _, enemy in ipairs(enemies) do
-			-- Bot接口没有游戏侧 IsRangedAttacker，以可见攻击距离保守判断远程压力。
-			if enemy:GetAttackRange() > 310 and GetUnitToUnitDistance(bot, enemy) < 800
-			and Ready(e) and not bot:HasModifier(E_BUFF) then Issue(bot, e); return end
-		end
 	end
 	-- 被贴脸时侧后跳拉开，原地替身用于减速追兵；保留落地后的普攻接触范围。
 	if not retreat and pressure and nearby <= 450 and not bot:IsDisarmed()
@@ -223,13 +255,21 @@ function AbilityUsageThink()
 	local horse = Item(bot, 'item_horse_king')
 	if horse ~= nil then
 		local active = bot:HasModifier(HORSE_BUFF)
-		local wanted = (committed or (retreat and #enemies > 0)) and bot:GetMana() > reserve + 100
-		if wanted ~= active then Issue(bot, horse); return end
+		if committed or (retreat and #enemies > 0) then bot.THD_TeiHorseHoldUntil = math.max(bot.THD_TeiHorseHoldUntil or -90, DotaTime()+1.0) end
+		local wanted = (committed or (retreat and #enemies > 0) or DotaTime() < (bot.THD_TeiHorseHoldUntil or -90)) and bot:GetMana() > reserve + 100
+		if wanted ~= active then
+			if wanted and postBurst then
+				if UseCombatAction(horse,HORSE_BUFF,true) then return end
+			else Issue(bot, horse); return end
+		end
 	end
-	if committed then
-		local followupMana = (Ready(e) and e:GetManaCost() or 0) + (Ready(r) and r:GetManaCost() or 0)
-		-- 追击需要先背对目标；转身任务验证目标、人数和落点，失败才交给跳跃装置。
-		if Backstep.Start(bot, w, 'chase', target, followupMana) or TryJump(bot, enemies, false, target) then return end
+	if committed and (Burst.IsReady(bot) or postBurst) then
+		-- 未使用乳牙或沉默已解除时恢复二技能追击；当前沉默期间只使用跳跃物品。
+		if postBurst and canCast then
+			local followupMana = (Ready(e) and e:GetManaCost() or 0) + (Ready(r) and r:GetManaCost() or 0)
+			if Backstep.Start(bot,w,'chase',target,followupMana) then return end
+		end
+		if TryJump(bot, enemies, false, target) then return end
 	end
 	local attackTarget = bot:GetAttackTarget()
 	local eRadius = Special(e, 'radius', 800)
@@ -258,41 +298,46 @@ function AbilityUsageThink()
 		end
 	end
 	local buffCombat = not retreat and canCast and not bot:IsDisarmed()
-		and buffEnemyInRange and SafeCombat(bot, enemies, true)
+		and opportunity.allowed and postBurst and buffEnemyInRange and SafeCombat(bot, enemies, true)
+	local pendingSupplement = false
 	if buffCombat then
 		local eReserve = Ready(e) and not bot:HasModifier(E_BUFF) and e:GetManaCost() or 0
 		-- 远处英雄只能借枪斗术触及时，须已有枪斗术或本轮有法力紧接开启，避免空开大招。
 		local canDeliverR = buffEnemyDistance <= bot:GetAttackRange() + 250 or bot:HasModifier(E_BUFF) or Ready(e)
 		if canDeliverR and Ready(r) and not bot:HasModifier(R_BUFF)
 		and bot:GetMana() >= r:GetManaCost() + reserve + eReserve then
-			Issue(bot, r); return
+			if UseCombatAction(r,R_BUFF,false) then return end
+			pendingSupplement = true
 		end
 		-- 先把枪斗术攻速/多目标窗口开出来，月饼的随机正面效果放到后面。
 		if Ready(e) and not bot:HasModifier(E_BUFF) and bot:GetMana() >= e:GetManaCost() + reserve then
-			Issue(bot, e); return
+			if UseCombatAction(e,E_BUFF,false) then return end
+			pendingSupplement = true
+		end
+	end
+	-- 后手乳牙之前先补当前值得使用的技能，不因自我沉默错过已经转好的月饼。
+	if (attackingHero or (postBurst and buffCombat)) and canCast and Ready(q) and GuaranteedMooncake(bot) then
+		local eReserve = Ready(e) and not bot:HasModifier(E_BUFF) and e:GetManaCost() or 0
+		if bot:GetMana() >= q:GetManaCost() + reserve + eReserve then
+			if UseCombatAction(q,nil,false) then return end
+			pendingSupplement = true
 		end
 	end
 	-- 乳牙会沉默自身，必须先确认双增益；团战允许提前开，不强求已有普攻锁定。
 	local burstContact = attackingEnemyHero or (anchorAttack and buffEnemyDistance <= eRadius)
 	local teamfightBurst = (J.IsInTeamFight(bot, 1200) or buffEnemyCount >= 2)
 		and buffEnemyDistance <= eRadius
-	if not retreat and not bot:IsDisarmed() and buffEnemyInRange and (teamfightBurst or burstContact)
+	if not pendingSupplement and not retreat and not bot:IsDisarmed() and buffEnemyInRange and (teamfightBurst or burstContact)
 	and bot:HasModifier(E_BUFF) and bot:HasModifier(R_BUFF)
 	and BuffRemaining(bot, E_BUFF) >= 1.0 and BuffRemaining(bot, R_BUFF) >= 1.0
 	and not bot:HasModifier(TEETH_BUFF) and SafeCombat(bot, enemies, true) then
 		local teeth = Item(bot, 'item_teeth')
-		if teeth ~= nil then Issue(bot, teeth); return end
+		if teeth ~= nil and UseCombatAction(teeth,TEETH_BUFF,true) then return end
 	end
-	if attackingHero and canCast and Ready(q) and GuaranteedMooncake(bot) then
-		local eReserve = Ready(e) and not bot:HasModifier(E_BUFF) and e:GetManaCost() or 0
-		if bot:GetMana() >= q:GetManaCost() + reserve + eReserve then Issue(bot, q); return end
-	end
-	-- 安全刷兵只取枪斗术攻速，不虚构对小兵的分裂伤害。
+	-- 枪斗术仅留给英雄击杀/团战；普通清兵不再消耗其冷却。
 	local farmTarget = bot:GetAttackTarget()
 	if not retreat and not bot:IsDisarmed() and #enemies == 0 and ValidEnemy(bot, farmTarget) and not farmTarget:IsHero()
 	and not farmTarget:IsBuilding() and GetUnitToUnitDistance(bot, farmTarget) <= bot:GetAttackRange() + 50 then
-		if canCast and Ready(e) and not bot:HasModifier(E_BUFF)
-		and bot:GetMana() >= e:GetManaCost() + reserve + 100 then Issue(bot, e); return end
 		if canCast and Ready(q) and GuaranteedMooncake(bot)
 		and bot:GetMana() >= q:GetManaCost() + reserve then Issue(bot, q); return end
 	end

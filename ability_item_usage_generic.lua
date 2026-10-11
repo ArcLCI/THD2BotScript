@@ -5,6 +5,7 @@ local Scheduler = require(GetScriptDirectory()..'/thd2_scheduler')
 local Consumables = require(GetScriptDirectory()..'/THDFuncLib/consumable_inventory')
 local LotusItems = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/map_resource_items')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
+local Acceptance = require(GetScriptDirectory()..'/THDFuncLib/acceptance_observer')
 
 
 local X = {ConsiderItemDesire = {}}
@@ -1064,6 +1065,9 @@ end
 
 function ItemUsageThink()
 	if RefreshBotHandle() then return end
+	Acceptance.Pump(bot) -- 每秒只读一次，保护窗口内也保留观测。
+	-- 妹红从候选交接到冲锋/变蛋结束统一拥有动作，通用物品不能插单。
+	if Actions.MokouProtected(bot) or (bot.THD_MokouAction ~= nil and DotaTime() <= bot.THD_MokouAction.expires) then return end
 	if Actions.RunePickupProtected(bot) then NoteItemUsageSkip(bot,'rune_pickup_protected');return end
 	-- 华扇候选等待模式接管时也不让通用物品抢先下单。
 	if J.IsKasenActionProtected(bot) or (bot.THD_KasenAction ~= nil and DotaTime() <= bot.THD_KasenAction.expires) then NoteItemUsageSkip(bot,'kasen_action');return end
@@ -1087,6 +1091,8 @@ end
 
 function AbilityUsageThink()
 	if RefreshBotHandle() then return end
+	Acceptance.Pump(bot) -- 每秒只读一次，保护窗口内也保留观测。
+	if Actions.MokouProtected(bot) or (bot.THD_MokouAction ~= nil and DotaTime() <= bot.THD_MokouAction.expires) then return end
 	if Actions.RunePickupProtected(bot) then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 	if J.IsTowerEscapeActive(bot) then return end

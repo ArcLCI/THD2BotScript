@@ -98,10 +98,12 @@ Add('ability_thdots_yugi04', C.COUNTERPRESSURE, 'ability_item_usage_centaur.lua'
 	'三步必杀以移动触发斩杀或纯粹伤害，是移动威慑而非已生效定身。')
 
 -- Mokou / Marisa
+Add('ability_thdots_mokou01', C.MOBILITY, 'ability_item_usage_chaos_knight.lua', U.CAST, Q.NOT_CONTROL,
+	'向安全落点位移；必须支付自伤，低血量不能直接当作可用逃生。')
 Add('ability_thdots_mokou03', C.SURVIVAL, 'ability_item_usage_chaos_knight.lua', U.CAST, Q.NOT_CONTROL,
-	'低生命撤退时进入凤凰蛋式生存窗口。')
+	'脱战安全位置孵化恢复；英雄伤害可破蛋，不作为近敌保命或团战控制。')
 Add('ability_thdots_mokou04', C.SURVIVAL, 'ability_item_usage_chaos_knight.lua', U.CAST, Q.NOT_CONTROL,
-	'提供持续恢复和移动速度。')
+	'先支付当前生命比例的魔法自伤，再获得持续恢复和移动速度。')
 Add('ability_thdots_marisa01', C.MOBILITY, 'ability_item_usage_crystal_maiden.lua', U.CAST, Q.NOT_CONTROL,
 	'向目标位置高速冲刺。')
 Add('ability_thdots_marisa02', C.COUNTERPRESSURE, 'ability_item_usage_crystal_maiden.lua', U.CAST, Q.NOT_CONTROL,

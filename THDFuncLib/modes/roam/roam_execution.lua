@@ -6,8 +6,8 @@ local J=require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Auxiliary=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_auxiliary')
 local Gank=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_gank')
 local GankConfig=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_config')
-local Fallback=require(GetScriptDirectory()..'/THDFuncLib/modes/laning/local_lane_fallback')
 local Lotus=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/lotus_pool')
+local ResourcePickup=require(GetScriptDirectory()..'/THDFuncLib/modes/roam/resource_pickup')
 local E={}
 local function State(bot)
 	bot.THD_RoamExecution=bot.THD_RoamExecution or {nextPrepare=-90}
@@ -18,7 +18,7 @@ local function EndProvider(bot,reason)
 	if state.provider=='auxiliary' then Auxiliary.OnEnd()
 	elseif state.provider=='gank' then Gank.OnEnd(bot,reason)
 	elseif state.provider=='lotus_pool' then Lotus.End(bot,state.task,reason)
-	elseif state.provider=='local_fallback' then Fallback.End(bot,state.task,reason) end
+	elseif state.provider=='resource_pickup' then ResourcePickup.End(bot,state.task,reason) end
 	state.provider,state.key,state.task=nil,nil,nil
 end
 local function Prepare(bot,force,exclude)
@@ -28,15 +28,6 @@ local function Prepare(bot,force,exclude)
 		(now<(state.plan.validUntil or -90) and now<(state.plan.deadline or math.huge)
 		and Tasks.Valid(bot,state.plan))) then return state.plan,state.score,state.reason,state.nextPrepare end
 	state.nextPrepare=now+Config.PLAN_INTERVAL
-	if Fallback.NeedsExitPlan(bot) then
-		-- 高地内Roam只竞争可执行的退出计划；不能以普通远行或拾取接管后才寻找出口。
-		local plan,reason,nextAt=Fallback.Prepare(bot)
-		state.plan,state.score,state.reason=plan,Fallback.Desire(plan),reason or (plan and plan.reason) or 'no_safe_exit_plan'
-		state.nextPrepare=math.min(state.nextPrepare,plan and plan.validUntil or state.nextPrepare)
-		state.nextCandidateAt=nextAt or state.nextPrepare
-		if not plan then Tasks.NoteNoCandidate(bot,'roam',state.reason,state.nextCandidateAt) end
-		return plan,state.score,state.reason,state.nextCandidateAt
-	end
 	local active=Tasks.Active(bot,'roam')
 	if active and active.provider=='lotus_pool' and active.claimAt then
 		local finish=Lotus.Prepare(bot)
@@ -55,15 +46,19 @@ local function Prepare(bot,force,exclude)
 	if not plan and type(GankConfig.IsEnabled)=='function' and GankConfig.IsEnabled() then
 		score=Gank.GetDesire(bot)
 		if score and score>0 then plan,gankRejection=Gank.PrepareExecutable(bot) end
-		if plan and plan.mission and plan.mission.phase~='engage' then score=Tasks.OpportunityScore(bot,score) end
+		if plan and plan.mission and plan.mission.phase~='engage' then score=Tasks.OpportunityScore(bot,score,'gank_travel') end
 		if plan and plan.key==exclude then plan=nil end
 	end
 	local reason,nextAt
+	if not plan then
+		local pickup,pickupScore=ResourcePickup.Prepare(bot)
+		if pickup and pickup.key~=exclude then plan,score=pickup,Tasks.OpportunityScore(bot,pickupScore,'resource_pickup',pickup.pickupAt~=nil) end
+	end
 	-- 莲花与非交战Gank行程比较收益，英雄专用/受保护动作仍优先。
 	if not plan or (plan.provider=='gank' and plan.mission and plan.mission.phase~='engage') then
 		local lotus=Lotus.Prepare(bot)
 		if lotus and lotus.key~=exclude then
-			local lotusScore=Tasks.OpportunityScore(bot,Lotus.Score(bot,lotus))
+			local lotusScore=Tasks.OpportunityScore(bot,Lotus.Score(bot,lotus),'lotus_travel',lotus.claimAt~=nil)
 			if not plan or lotusScore>(score or 0)+0.05 then
 				plan,score=lotus,lotusScore;Lotus.Note(bot,'candidate_selected',lotus,lotusScore)
 			else Lotus.Note(bot,'lost_to_gank_travel',lotus,lotusScore) end
@@ -71,11 +66,7 @@ local function Prepare(bot,force,exclude)
 	else
 		Lotus.Note(bot,'higher_priority_provider:'..tostring(plan.provider))
 	end
-	if not plan then
-		plan,reason,nextAt=Fallback.Prepare(bot)
-		score=Fallback.Desire(plan)
-		if not plan and gankRejection then reason='gank:'..gankRejection..'|fallback:'..tostring(reason) end
-	end
+	if not plan then score=0;reason=gankRejection and 'gank:'..gankRejection or 'no_candidate' end
 	state.plan,state.score,state.reason=plan,score or 0,reason or (plan and plan.reason) or 'no_safe_option'
 	if plan then state.nextPrepare=math.min(state.nextPrepare,plan.validUntil or now,plan.deadline or math.huge) end
 	state.nextCandidateAt=nextAt or state.nextPrepare
@@ -127,7 +118,7 @@ local function Execute(bot,task)
 	if task.provider=='auxiliary' then return Auxiliary.ExecutePlan(task)
 	elseif task.provider=='gank' then return Gank.ExecutePlan(bot,task)
 	elseif task.provider=='lotus_pool' then return Lotus.Execute(bot,task)
-	elseif task.provider=='local_fallback' then return Fallback.Execute(bot,task) end
+	elseif task.provider=='resource_pickup' then return ResourcePickup.Execute(bot,task) end
 	return {status='INVALID',reason='unknown_provider'}
 end
 function E.Think(bot)

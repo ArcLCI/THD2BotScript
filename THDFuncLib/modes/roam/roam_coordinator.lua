@@ -1,3 +1,4 @@
+local TeamStrategy=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/team_strategy')
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 local J = require(GetScriptDirectory()..'/THDFuncLib/thd_func')
 local Defend = require(GetScriptDirectory()..'/THDFuncLib/modes/defend/aba_defend')
@@ -5,7 +6,6 @@ local LaneAssignment = require(GetScriptDirectory()..'/THDFuncLib/modes/laning/l
 local Config = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_config')
 local Initiation = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_initiation')
 local Pickoff = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_pickoff')
-local Wasteland = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/wasteland_strategy')
 local MissionID = require(GetScriptDirectory()..'/THDFuncLib/modes/roam/roam_mission_id')
 local CombatPower = require(GetScriptDirectory()..'/THDFuncLib/combat_power')
 local YumemiFlight = require(GetScriptDirectory()..'/THDFuncLib/heroes/yumemi/yumemi_gank_flight')
@@ -172,17 +172,6 @@ local function ObserveTeamMission(state, missionID, missionStart, leaderID, targ
 end
 
 local function HasTeamObjectiveCommitment(bot)
-	local outerCommitment = Wasteland.GetOuterTowerCommitment()
-	if outerCommitment ~= nil then
-		-- 使用租约成员而非“当前仍可推进”成员，避免暂时防守/撤退时被 Roam 二次分配。
-		local reserved = Wasteland.IsPushObjectiveReservedParticipant ~= nil
-			and Wasteland.IsPushObjectiveReservedParticipant(bot, outerCommitment)
-			or Wasteland.IsPushObjectiveParticipant(bot, outerCommitment)
-		if reserved then
-			return true, 'push_objective_participant'
-		end
-		return false, nil
-	end
 	local now = DotaTime()
 	local shared = GetSharedTeamState()
 	local doingRoshan = J.IsRoshanCommitmentActive(bot)
@@ -436,7 +425,7 @@ local function IsSupportLaneSafe(bot)
 end
 
 function Coordinator.IsInitiatorPosition(position)
-	return type(position) == 'string' and Config.POSITION_RULES[position] ~= nil
+	return type(position) == 'string' and Config.GetPositionRule(position) ~= nil
 end
 
 local function CanInitiate(bot)
@@ -446,7 +435,7 @@ local function CanInitiate(bot)
 		return false, 'hard_blocked_mode_' .. tostring(Safe(BOT_MODE_NONE, function() return bot:GetActiveMode() end))
 	end
 	local position = GetPosition(bot)
-	local rule = Config.POSITION_RULES[position]
+	local rule = Config.GetPositionRule(position)
 	if rule == nil then return false, 'position_not_allowed_' .. tostring(position) end
 	if GetLevel(bot) < rule.minLevel then return false, 'level_too_low' end
 	if GetHealthFraction(bot) < rule.minHealth then return false, 'health_too_low' end
@@ -836,7 +825,7 @@ local function GetTravelCandidate(member, target, targetLane)
 		return nil, 'early_travel_too_long'
 	end
 	local position = GetPosition(member)
-	local rule = Config.POSITION_RULES[position]
+	local rule = Config.GetPositionRule(position)
 	local candidate = {
 		unit = member,
 		playerID = GetPlayerID(member),
@@ -1059,10 +1048,10 @@ local function BuildParticipants(target, targetLane, fixedLeader)
 		for _, current in ipairs(selected) do
 			if current.playerID == candidate.playerID then duplicate = true break end
 		end
-		local selectionLimit = Config.MAX_ROAMERS
-		if candidate.earlyRoam then selectionLimit = Config.EARLY_ROAM_MAX_ROAMERS end
+		local selectionLimit = TeamStrategy.Group(Config.MAX_ROAMERS)
+		if candidate.earlyRoam then selectionLimit = TeamStrategy.Group(Config.EARLY_ROAM_MAX_ROAMERS) end
 		for _, current in ipairs(selected) do
-			if current.earlyRoam then selectionLimit = Config.EARLY_ROAM_MAX_ROAMERS break end
+			if current.earlyRoam then selectionLimit = TeamStrategy.Group(Config.EARLY_ROAM_MAX_ROAMERS) break end
 		end
 		if not duplicate and #selected < selectionLimit then table.insert(selected, candidate) end
 	end
@@ -1232,7 +1221,7 @@ local function BuildTargetPlan(bot, target, fixedLeader)
 	local initiationDescription = Initiation.DescribeMission({participantIDs = participantIDs}, GetTeamMembers())
 	local hasReadyOpener = (initiationDescription.readyCount or 0) > 0
 	if healthFraction >= Config.HIGH_HEALTH_TARGET_FRACTION
-		and #participantIDs < Config.HIGH_HEALTH_MIN_PARTICIPANTS
+		and #participantIDs < TeamStrategy.Group(Config.HIGH_HEALTH_MIN_PARTICIPANTS)
 		and not hasReadyOpener
 	then
 		return nil, 'high_health_without_setup', {
@@ -1812,7 +1801,7 @@ local function NoteAttributedRoamKill(bot, mission)
 	local metrics = mission.metrics or {}
 	if metrics.attackTargetSeen ~= true then return false end
 	StrategyShadow.NoteGankOutcome(bot,GetMissionID(mission))
-	return Wasteland.NoteRoamKill(mission.targetLane, GetMissionID(mission), bot)
+	return true -- 击杀结果仅送观察器，不建立旧击杀转推任务。
 end
 
 function Coordinator.IsCombatPathSafe(bot,point)
@@ -1844,7 +1833,7 @@ function Coordinator.GetCombatDecision(bot,mission)
 	AddUniqueUnit(allies,seen,bot)
 	local alliedPlayers={[GetPlayerID(bot)]=true}
 	for _,ally in ipairs(J.GetNearbyHeroes(bot,Config.LOCAL_FIGHT_RADIUS,false,BOT_MODE_NONE) or {}) do
-		if CanInspectUnit(ally) and ally:IsHero() and not ally:IsIllusion() and not alliedPlayers[GetPlayerID(ally)] then
+		if CanInspectUnit(ally) and ally:GetTeam() == GetTeam() and ally:IsHero() and not ally:IsIllusion() and not alliedPlayers[GetPlayerID(ally)] then
 			alliedPlayers[GetPlayerID(ally)]=true;AddUniqueUnit(allies,seen,ally)
 		end
 	end
@@ -2308,7 +2297,7 @@ function Coordinator.GetDesire(bot)
 		tostring(proposal.requiresDust == true)
 	))
 	-- 只压低尚未接受的新提案；已发信号的参与者和活动任务继续保持原高优先级。
-	return Wasteland.AdjustRoamProposalDesire(PROPOSAL_DESIRE, nil, bot)
+	return PROPOSAL_DESIRE
 end
 
 function Coordinator.OnStart(bot)

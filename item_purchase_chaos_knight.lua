@@ -1,33 +1,24 @@
+require(GetScriptDirectory() .. '/thd2_item_purchase')
 
-require(GetScriptDirectory() ..  "/thd2_item_purchase")
-
-local tableItemsToBuy = {
-	"item_broom",
-	"item_peach",
-	"item_recipe_gap_creator",
-	"item_anchor",
-	"item_ganggenier",
-	"item_yuetufensuijvren",
-	"item_loneliness",
-	"item_frozen_frog",
+-- 持续输出：先完成叉勺续航，末期复用已有成品升级，始终只占六个最终装备位。
+local damageItems = {
+	'item_horse_red',
+	'item_naginata', 'item_hoshiguma_cup',
+	'item_dragon_star',
+	'item_wanbaochui', -- 先有续航和驱散，再通过万宝槌缩短Q冷却。
+	'item_yuetufensuijvren',
+	'item_recipe_wanbaochui2', -- 复用已有万宝槌永久化，释放装备位，不重复购买成品。
+	'item_autumn_leaves',
+	'item_camera',
+	'item_horse_king_compressor', 'item_recipe_horse_king',
+	'item_recipe_trinity',
+	'item_wanmeitiaoyuezhuangzhi', 'item_gap_creator',
 }
-
-----------------------------------------------------------------------------------------------------
-
-local seed_id = nil
-local next_purchase = -1
+local seedID
 
 function ItemPurchaseThink()
-	if seed_id == nil then
-		seed_id = RandomInt(1,999999999)
-	end
-	local npcBot = GetBot()
-	local randIndex = RandomInt(1,3)
-	local tableEdible = {"item_mushroom_pie_immediate","item_mushroom_kebab_immediate","item_mushroom_soup_immediate"}
-	if DotaTime() > 0 and next_purchase > 0 and GetEquipmentMaxNum(tableItemsToBuy) < next_purchase then
-		table.insert(tableItemsToBuy,tableEdible[2])
-	end
-	next_purchase = ConsiderItemPurchase(tableItemsToBuy,seed_id)
+	local bot = GetBot()
+	if bot == nil or bot:IsIllusion() then return end
+	if seedID == nil then seedID = RandomInt(1, 999999999) end
+	ConsiderItemPurchase(damageItems, seedID)
 end
-
-----------------------------------------------------------------------------------------------------

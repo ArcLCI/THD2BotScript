@@ -1036,7 +1036,7 @@ function J.WeAreStronger(bot, radius)
 	local maxOurPower = 0;
 
     for _, h in pairs(mates) do
-		if J.IsValid(h) and not h:IsIllusion() then
+		if J.IsValid(h) and h:GetTeam() == GetTeam() and not h:IsIllusion() then
 			local power = CombatPower.Estimate(h)
 			ourPower = ourPower + power;
 			maxOurPower = math.max(maxOurPower, power)
@@ -1396,10 +1396,9 @@ function J.GetNearbyHeroes(bot, nRadius, bEnemy, bBotMode)
 	local radius = math.max(0, nRadius)
 	local radiusSqr = radius * radius
 
-	local tag = bot:GetPlayerID() * 2048 + math.floor(radius)
-	tag = tag * 2
-	if bEnemy then tag = tag + 1 end
-	tag = tag * 64 + bBotMode
+	-- 本体与幻象共享玩家ID；按实体和查询参数分隔，避免跨实体或半径进位碰撞。
+	local team = GetTeam()
+	local tag = tostring(team)..':'..tostring(bot)..':'..tostring(radius)..':'..tostring(bEnemy == true)..':'..tostring(bBotMode)
 
 	if LastGetNearbyHeroesDotaTime[tag] == nil then
     	LastGetNearbyHeroesDotaTime[tag] = -6000
@@ -1439,7 +1438,21 @@ function J.GetNearbyHeroes(bot, nRadius, bEnemy, bBotMode)
 		end
 	end
 
-	return LastGetNearbyHeroesResult[tag]
+	-- 缓存命中也核对阵营和可见性；只在需要过滤时复制，保留高频查询的快路径。
+	local units = LastGetNearbyHeroesResult[tag]
+	local result = nil
+	local checkTeam = bot:GetTeam() == team
+	for index, hero in ipairs(units) do
+		if not J.IsValidHero(hero) or (checkTeam and ((hero:GetTeam() ~= team) ~= (bEnemy == true))) then
+			if result == nil then
+				result = {}
+				for previous = 1, index - 1 do result[#result + 1] = units[previous] end
+			end
+		elseif result ~= nil then
+			result[#result + 1] = hero
+		end
+	end
+	return result or units
 end
 
 function J.IsInRange( bot, npcTarget, nRadius )
@@ -1470,6 +1483,8 @@ end
 -- 因幡帝只保护短转身、发单确认、施法前摇和后跳，不锁住枪斗术的普攻增益期。
 function J.IsTeiActionProtected(bot)
 	if bot == nil or bot:GetUnitName() ~= 'npc_dota_hero_gyrocopter' then return false end
+	if ActionIntent.TeiBurstProtected(bot) then return true end
+	if ActionIntent.TeiEngagementProtected(bot) then return true end
 	if not bot:IsAlive() then bot.THD_TeiActionUntil = nil; bot.THD_TeiBackstep = nil; return false end
 	-- 二技能转身期间只允许专属规避模式推进；过期任务不能长期霸占模式。
 	local backstep = bot.THD_TeiBackstep

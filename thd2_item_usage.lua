@@ -372,11 +372,11 @@ local LastGetNearbyHeroesResult = {}
 local time_sum2=0
 local last_print_time2=-6000
 
-local function FilterVisibleNearbyHeroes(units)
+local function FilterVisibleNearbyHeroes(units, enemies, team)
 	local visible = nil
 	for index, unit in ipairs(units) do
 		-- 缓存只保存候选句柄；视野和生命周期必须在本次返回时重新确认。
-		if not SafeCanBeSeen(unit) then
+		if not SafeCanBeSeen(unit) or (team ~= nil and ((unit:GetTeam() ~= team) ~= (enemies == true))) then
 			if visible == nil then
 				visible = {}
 				for previous = 1, index - 1 do
@@ -423,10 +423,9 @@ function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 	end
 	botPlayerId = playerId
 
-	local tag = botPlayerId*2048 + nRadius
-	tag = tag*2
-	if bEnemies then tag = tag + 1 end
-	tag = tag*64+nMode
+	-- 玩家ID不能区分本体与幻象，浮点半径也不能与阵营标志做算术拼接。
+	local team = GetTeam()
+	local tag = tostring(team)..':'..tostring(bot)..':'..tostring(nRadius)..':'..tostring(bEnemies == true)..':'..tostring(nMode)
 
 	if LastGetNearbyHeroesDotaTime[tag] == nil then
 		LastGetNearbyHeroesDotaTime[tag] = -6000
@@ -464,13 +463,16 @@ function CachedGetNearbyHeroes( bot, nRadius, bEnemies, nMode )
 
 	--time_sum2 = time_sum2 + RealTime() - st
 
-	return FilterVisibleNearbyHeroes(LastGetNearbyHeroesResult[tag])
+	-- 敌方实体作搜索中心的旧调用保留原生阵营语义，只过滤视野。
+	return FilterVisibleNearbyHeroes(LastGetNearbyHeroesResult[tag], bEnemies, bot:GetTeam() == team and team or nil)
 
 end
 
 local SharedLotus,SharedActions
 local function SharedResourceItems(bot)
 	SharedActions=SharedActions or require(GetScriptDirectory()..'/THDFuncLib/action_intent')
+	-- 爆发确认由专属流程推进，共享物品在整段准备期不能插单。
+	if SharedActions.TeiBurstProtected(bot) or SharedActions.TeiEngagementProtected(bot) then return true end
 	if SharedActions.RunePickupProtected(bot) then return true end
 	SharedLotus=SharedLotus or require(GetScriptDirectory()..'/THDFuncLib/modes/shared/map_resource_items')
 	return SharedLotus.SharedThink(bot)
@@ -483,6 +485,10 @@ function IsBotAwake( bot )
 
 	if bot == nil then bot = GetBot() end
 	if bot == nil then return false end
+	local mokou = bot.THD_MokouAction
+	if bot:GetUnitName() == 'npc_dota_hero_chaos_knight' and
+		((mokou ~= nil and DotaTime() <= mokou.expires) or bot:HasModifier('modifier_phenx_egg_caster')
+		or bot:HasModifier('modifier_thdots_Mokou01_think_interval')) then return false end
 	-- 防越塔移动租约由 EVASIVE 模式独占，旧英雄技能入口不得覆盖路径动作。
 	if J.IsTowerEscapeActive(bot) then return false end
 	local abilityThinkInterval = Scheduler.GetLowPowerThinkInterval(bot, 0.25, 0.25, 'ability_usage_shared')
@@ -1711,6 +1717,11 @@ end
 function ConsiderNeutralItems(tBlacklist)
 
 	local npcBot = GetBot()
+	if J.IsTeiActionProtected(npcBot) then return end
+	if npcBot:GetUnitName() == 'npc_dota_hero_chaos_knight' then
+		local actions = require(GetScriptDirectory() .. '/THDFuncLib/action_intent')
+		if actions.MokouProtected(npcBot) or (npcBot.THD_MokouAction ~= nil and DotaTime() <= npcBot.THD_MokouAction.expires) then return end
+	end
 	-- 覆盖华扇等独立调度英雄；SharedThink同帧去重且保留施法/背包保护。
 	if SharedResourceItems(npcBot) then return end
 	-- 中立物品有独立入口，补齐华扇引导、自锁与接管窗口保护。

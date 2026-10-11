@@ -16,6 +16,8 @@ local RESTORE_TIMEOUT = 8.0
 local ACTION_RETRY_INTERVAL = 0.5
 local CAST_ISSUED_SETTLE_TIME = 0.5
 local CAST_CONFIRM_TIMEOUT = 1.25
+local BACKPACK_READY_DELAY = 6.0
+local BACKPACK_READY_MARGIN = 0.25 -- 避开引擎冷却恰好到点但本帧仍拒绝施放的边界。
 
 -- kind 只描述 Bot API 的施法入口；具体使用时机仍由请求方决定。
 local REGISTRY = {
@@ -27,6 +29,7 @@ local REGISTRY = {
 	item_ward_sentry = {kind = 'location', keepPriority = 20},
 	item_ward_dispenser = {kind = 'location', keepPriority = 20},
 	item_cheese = {kind = 'none', keepPriority = 40},
+	item_roshans_banner = {kind = 'location', keepPriority = 35},
 	item_famango = {kind = 'none', keepPriority = 20},
 	item_great_famango = {kind = 'none', keepPriority = 25},
 	item_greater_famango = {kind = 'none', keepPriority = 30},
@@ -56,6 +59,7 @@ local PROTECTED_ITEMS = {
 
 -- Bot 句柄是 userdata，不能可靠地直接增加 Lua 字段；弱键表仍将状态绑定到对应 Bot 生命周期。
 local STATES = setmetatable({}, {__mode = 'k'})
+local inventoryHistory = setmetatable({}, {__mode = 'k'})
 local backpackBridgeEnabled = false
 
 local function Now()
@@ -271,8 +275,44 @@ local function NormalizeRequest(itemName, requester, priority, deadline, castSpe
 	}, nil
 end
 
+-- 以实际观察到离开副包为起点，不把整理拦截或IsFullyCastable当作六秒已结束。
+-- 跨请求记住物品句柄的副包来源，覆盖主栏耗尽后引擎自动补入另一组的情况。
+function M.ObserveInventory(bot)
+	local now=Now()
+	local history=inventoryHistory[bot]
+	if not history then history={items=setmetatable({}, {__mode='k'})};inventoryHistory[bot]=history end
+	if history.at==now then return end
+	history.at=now
+	for slot=MAIN_SLOT_MIN,BACKPACK_SLOT_MAX do
+		local item=bot:GetItemInSlot(slot)
+		if item and REGISTRY[item:GetName()] then
+			local record=history.items[item] or {};history.items[item]=record
+			if slot>=BACKPACK_SLOT_MIN then record.backpack=true;record.readyAt=nil
+			elseif record.backpack then record.backpack=false;record.readyAt=now+BACKPACK_READY_DELAY+BACKPACK_READY_MARGIN end
+		end
+	end
+end
+local function BackpackReady(state,item,slot)
+	local history=inventoryHistory[state.bot]
+	local record=history and history.items[item]
+	if record and record.readyAt then
+		state.backpackReadyAt=math.max(state.backpackReadyAt or -90,record.readyAt)
+		if Now()<record.readyAt then return false end
+	end
+	if slot>=BACKPACK_SLOT_MIN and slot<=BACKPACK_SLOT_MAX then
+		state.cooldownHandle=item;state.backpackReadyAt=nil
+		return false
+	end
+	if state.cooldownHandle==item then
+		state.backpackReadyAt=state.backpackReadyAt or Now()+BACKPACK_READY_DELAY+BACKPACK_READY_MARGIN
+		return Now()>=state.backpackReadyAt
+	end
+	return true
+end
 local function ActivateRequest(bot, request)
+	M.ObserveInventory(bot)
 	local state = {
+		bot = bot,
 		requester = request.requester,
 		itemName = request.itemName,
 		priority = request.priority,
@@ -289,6 +329,8 @@ local function ActivateRequest(bot, request)
 		bridgeAttemptTime = nil,
 	}
 	STATES[bot] = state
+	local item,slot=FindLeasedItem(bot,state)
+	if item then BackpackReady(state,item,slot) end
 	return state
 end
 
@@ -429,11 +471,13 @@ local function GetCooldown(item)
 end
 
 function M.MarkCastIssued(bot, requester)
+	M.ObserveInventory(bot)
 	local state = STATES[bot]
 	if state == nil or state.restorePending == true then return false, 'idle' end
 	if requester ~= nil and state.requester ~= requester then return false, 'not_owner' end
 	local item, slot = FindLeasedItem(bot, state)
 	if item == nil or slot < MAIN_SLOT_MIN or slot > MAIN_SLOT_MAX then return false, 'item_not_ready' end
+	if not BackpackReady(state,item,slot) then return false,'backpack_cooldown' end
 	state.castIssuedTime = Now()
 	state.castIssuedCharges = GetCharges(item)
 	state.castIssuedCooldown = GetCooldown(item)
@@ -454,8 +498,12 @@ local function GetCastConfirmationStatus(bot, state)
 	if state.castIssuedTime == nil then return nil end
 	local item = FindLeasedItem(bot, state)
 	if item == nil then
-		state.castConfirmed = true
-		return 'cast_confirmed'
+		-- 死亡或跨入口时读取库存可能失败；只有原句柄确已移除，才以消失确认消耗。
+		local removed,readable=CallMethod(state.leasedItemHandle,'IsNull',false)
+		if readable and removed==true then
+			state.castConfirmed = true
+			return 'cast_confirmed'
+		end
 	end
 	local charges = GetCharges(item)
 	if charges ~= nil and state.castIssuedCharges ~= nil and charges < state.castIssuedCharges then
@@ -482,6 +530,8 @@ end
 function M.PollCastConfirmation(bot,requester)
 	local state=STATES[bot]
 	if not state or state.requester~=requester or state.restorePending then return nil end
+	-- 确认轮询也要续租，不能在等待期间让原生整理把物品搬回备用栏。
+	BackpackGuard.Touch(bot,state)
 	return GetCastConfirmationStatus(bot,state)
 end
 
@@ -541,6 +591,7 @@ local function TryBridge(bot, state, item)
 end
 
 function M.GetReadyItem(bot, itemName, requester)
+	M.ObserveInventory(bot)
 	local state = STATES[bot]
 	if state == nil or state.restorePending == true then return nil end
 	if state.castIssuedTime ~= nil or state.castConfirmed == true then return nil end
@@ -548,6 +599,7 @@ function M.GetReadyItem(bot, itemName, requester)
 	BackpackGuard.Touch(bot, state)
 	local item, slot = FindLeasedItem(bot, state)
 	if item == nil or slot < MAIN_SLOT_MIN or slot > MAIN_SLOT_MAX then return nil end
+	if not BackpackReady(state,item,slot) then return nil end
 	local castable, ok = CallMethod(item, 'IsFullyCastable', false)
 	if not ok or castable ~= true then return nil end
 	state.ready = true
@@ -567,6 +619,9 @@ function M.Think(bot)
 		BeginRestore(state, 'deadline')
 		return TryRestore(bot, state)
 	end
+	-- 原截止时间仍有效；在死亡清理前先交还已经真实消耗的结果。
+	local castStatus = GetCastConfirmationStatus(bot, state)
+	if castStatus=='cast_confirmed' then return true,castStatus end
 
 	local alive = ReadRequiredBoolean(bot, 'IsAlive')
 	if alive ~= true then
@@ -574,7 +629,6 @@ function M.Think(bot)
 		return TryRestore(bot, state)
 	end
 
-	local castStatus = GetCastConfirmationStatus(bot, state)
 	if castStatus ~= nil then return true, castStatus end
 
 	if state.bridgeAttemptTime ~= nil then
@@ -602,6 +656,7 @@ function M.Think(bot)
 			BeginRestore(state, 'ready_timeout')
 			return TryRestore(bot, state)
 		end
+		if not BackpackReady(state,item,slot) then state.ready=false;return true,'backpack_cooldown_wait' end
 		local castable, castableOK = CallMethod(item, 'IsFullyCastable', false)
 		state.ready = castableOK and castable == true
 		return true, state.ready and 'ready' or 'cooldown_wait'
@@ -611,6 +666,7 @@ function M.Think(bot)
 		BeginRestore(state, 'unsupported_slot')
 		return TryRestore(bot, state)
 	end
+	BackpackReady(state,item,slot)
 
 	if state.swapTime ~= nil then
 		if now < state.swapTime + ACTION_RETRY_INTERVAL then return true, 'swap_wait' end
@@ -629,7 +685,9 @@ function M.Think(bot)
 	end
 
 	if not IsSafeToStart(bot) then return true, 'unsafe_wait' end
-	if backpackBridgeEnabled and state.bridgeAttemptTime == nil and state.bridgeFailed ~= true then
+	local standardConsumable=state.itemName=='item_cheese' or state.itemName=='item_magic_mushroom' or state.itemName=='item_roshans_banner'
+		or state.itemName=='item_famango' or state.itemName=='item_great_famango' or state.itemName=='item_greater_famango'
+	if backpackBridgeEnabled and not standardConsumable and state.bridgeAttemptTime == nil and state.bridgeFailed ~= true then
 		local issued, reason = TryBridge(bot, state, item)
 		if issued then return true, reason end
 	end

@@ -1,5 +1,6 @@
 -- 推进中的个人承伤门：不分配坦克，不替其他成员关闭任务，也不发布动作。
-local Config=require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_escort_config')
+local Config=require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_observation_config')
+local Actor=require(GetScriptDirectory()..'/THDFuncLib/modes/shared/actor_diagnostics')
 local P={}
 function P.Evaluate(bot,target,threat,enemyCount)
 	local now,hp,maximum=DotaTime(),bot:GetHealth(),math.max(1,bot:GetMaxHealth())
@@ -10,7 +11,7 @@ function P.Evaluate(bot,target,threat,enemyCount)
 		if Config.DEBUG and (state.reason~=reason or now-(state.at or -90)>=Config.LOG_INTERVAL) then
 			print(string.format('[BOT][PushTower] run=%s time=%.3f pid=%s allowed=%s reason=%s hp=%.1f max_hp=%.1f predicted=%.1f incoming=%.1f locked=%s retry_at=%s',
 				Config.RUN_ID,now,bot:GetPlayerID(),tostring(allowed),reason,hp,maximum,predicted,incoming,
-				tostring(threat.locked==true),tostring(bot.THD_PushTowerRetryAt)))
+				tostring(threat.locked==true),tostring(bot.THD_PushTowerRetryAt))..Actor.Fields(bot))
 			bot.THD_PushTowerLog={reason=reason,at=now}
 		end
 		return allowed,reason

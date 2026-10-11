@@ -1,5 +1,5 @@
 -- 有界血量历史只描述可见净进展；影子估值不授予攻击/续攻权限。
-local Config=require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_escort_config')
+local Config=require(GetScriptDirectory()..'/THDFuncLib/modes/push/push_observation_config')
 local P={}
 local function Visible(unit)
 	return unit~=nil and not unit:IsNull() and unit:CanBeSeen() and unit:IsAlive()

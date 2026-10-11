@@ -1,9 +1,5 @@
 local CandidateDebug = require(GetScriptDirectory()..'/THDFuncLib/modes/shared/mode_candidate_debug')
 local ModeDesireDebug = {}
-local wastelandOK, Wasteland = pcall(
-	require,
-	GetScriptDirectory()..'/THDFuncLib/modes/shared/wasteland_strategy'
-)
 local thdFuncOK, J = pcall(
 	require,
 	GetScriptDirectory()..'/THDFuncLib/thd_func'
@@ -123,18 +119,6 @@ local function GetUnitKind(unit)
 	return 'unit'
 end
 
-local function GetObjectiveSnapshot(bot)
-	if not wastelandOK or type(Wasteland) ~= 'table'
-		or type(Wasteland.GetPushObjectiveDebugSnapshot) ~= 'function'
-	then
-		return nil
-	end
-	local ok, snapshot = pcall(function()
-		return Wasteland.GetPushObjectiveDebugSnapshot(bot)
-	end)
-	return ok and type(snapshot) == 'table' and snapshot or nil
-end
-
 local function GetRoshanSnapshot(bot)
 	if not thdFuncOK or type(J) ~= 'table'
 		or type(J.GetRoshanCommitmentDebugSnapshot) ~= 'function'
@@ -233,7 +217,7 @@ function ModeDesireDebug.Think(bot)
 	local hero = type(bot.GetUnitName) == 'function' and bot:GetUnitName() or 'unknown'
 	local alive = type(bot.IsAlive) ~= 'function' or bot:IsAlive()
 	local attackTarget = GetAttackTarget(bot)
-	local objective = GetObjectiveSnapshot(bot)
+	local objective = nil -- 旧schema保留空字段；原生进展由独立只读日志记录。
 	local roshan = GetRoshanSnapshot(bot)
 	local objectiveTarget = objective ~= nil and objective.target or nil
 	local attackTargetId = GetUnitId(attackTarget)

@@ -1,7 +1,7 @@
 local Actions = require(GetScriptDirectory()..'/THDFuncLib/action_intent')
 require(GetScriptDirectory() .. "/bot_generic")
 local J = require(GetScriptDirectory() .. "/THDFuncLib/thd_func")
-local Wasteland = require(GetScriptDirectory() .. "/THDFuncLib/modes/shared/wasteland_strategy")
+local Buildings = require(GetScriptDirectory() .. "/THDFuncLib/modes/shared/building_rules")
 local CombatPower = require(GetScriptDirectory() .. "/THDFuncLib/combat_power")
 
 local bot = GetBot()
@@ -106,7 +106,7 @@ local function AttackUnit(wolf, target)
 	local isBuilding = target.IsBuilding ~= nil
 		and select(2, pcall(function() return target:IsBuilding() end)) == true
 	if isBuilding then
-		local allowed = Wasteland.CanControlledUnitAttackBuilding(bot, target)
+		local allowed = Buildings.CanControlledUnitAttackBuilding(bot, target)
 		if not allowed then return false end
 	end
 	return Actions.Attack(wolf,target,false)
